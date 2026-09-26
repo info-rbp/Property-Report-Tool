@@ -31,8 +31,10 @@ export interface DrivePhoto {
 
 export interface TenancyDetails {
   reportType: ReportType;
-  formName: string; // e.g., "Entry condition report – general tenancies (Form 1a)"
-  actNotice: string; // "Residential Tenancies and Rooming Accommodation Act 2008 (Section 65)"
+  formName: string; // e.g., "Property Condition Report"
+  actNotice: string; // e.g., "RESIDENTIAL TENANCIES ACT 1987 (WA) Section 27C(6)"
+  formNumber?: string; // "FORM 1"
+  governingBody?: string; // "Department of Energy, Mines, Industry Regulation and Safety - Consumer Protection"
   companyName: string;
   companyAddress: string;
   companyPhone: string;
@@ -44,17 +46,24 @@ export interface TenancyDetails {
   inspectionDate: string;
   tenancyStartDate: string;
   tenants: string;
+  tenantReceivedDate?: string;
   reportReturnDate: string;
   coverPhotoUrl?: string;
-  waterIndividuallyMetered: boolean;
-  waterMeterReading: string;
-  waterEfficient: boolean;
-  supportingDocumentationAttached: boolean;
+
+  // WA Form 1 specific section: Approximate dates when work last done
+  paintingPremisesExternalDate?: string;
+  paintingPremisesInternalDate?: string;
+  floorcoveringsLaidDate?: string;
+  floorcoveringsCleanedDate?: string;
+
+  // Additional comments
   additionalComments: string;
   agentSignName: string;
   agentSignDate: string;
+  tenant1SignName?: string;
+  tenant2SignName?: string;
+  tenant3SignName?: string;
   disclaimerText: string;
-  keysSuppliedSummary: string;
 }
 
 export interface ReportData {

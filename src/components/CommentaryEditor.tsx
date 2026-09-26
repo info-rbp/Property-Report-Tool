@@ -1,6 +1,19 @@
 import React, { useState } from 'react';
-import { TenancyDetails, InspectionArea, ReportType } from '../types/report';
-import { Building2, Calendar, FileText, Plus, Trash2, CheckSquare, Edit3, ChevronDown, ChevronUp } from 'lucide-react';
+import { InspectionArea, InspectionItem, TenancyDetails } from '../types/report';
+import {
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  Check,
+  X,
+  Building2,
+  FileText,
+  Calendar,
+  User,
+  ShieldCheck,
+  CheckSquare
+} from 'lucide-react';
 
 interface CommentaryEditorProps {
   details: TenancyDetails;
@@ -15,7 +28,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   onChangeDetails,
   onChangeAreas,
 }) => {
-  const [activeTab, setActiveTab] = useState<'details' | 'areas' | 'compliance'>('areas');
+  const [activeTab, setActiveTab] = useState<'areas' | 'details' | 'compliance'>('areas');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
 
   const handleUpdateDetail = (key: keyof TenancyDetails, value: any) => {
@@ -28,18 +41,18 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   const handleUpdateItem = (
     areaId: string,
     itemId: string,
-    field: 'clean' | 'undamaged' | 'working' | 'agentComments' | 'name',
-    val: any
+    field: keyof InspectionItem,
+    value: any
   ) => {
     const updated = areas.map((area) => {
       if (area.id !== areaId) return area;
       return {
         ...area,
-        items: area.items.map((it) => {
-          if (it.id !== itemId) return it;
+        items: area.items.map((item) => {
+          if (item.id !== itemId) return item;
           return {
-            ...it,
-            [field]: val,
+            ...item,
+            [field]: value,
           };
         }),
       };
@@ -48,23 +61,23 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   };
 
   const handleAddItem = (areaId: string) => {
+    const newItemName = prompt('Enter item name (e.g. Blinds, Light Fitting, Air Conditioner):');
+    if (!newItemName) return;
+
     const updated = areas.map((area) => {
       if (area.id !== areaId) return area;
-      const newItemId = `item-${Date.now()}`;
+      const newItem: InspectionItem = {
+        id: `custom-item-${Date.now()}`,
+        name: newItemName.trim(),
+        clean: true,
+        undamaged: true,
+        working: true,
+        agentComments: 'Clean, intact and in working order.',
+        isCustom: true,
+      };
       return {
         ...area,
-        items: [
-          ...area.items,
-          {
-            id: newItemId,
-            name: 'New Item / Fixture',
-            clean: true,
-            undamaged: true,
-            working: true,
-            agentComments: 'Good condition, intact.',
-            isCustom: true,
-          },
-        ],
+        items: [...area.items, newItem],
       };
     });
     onChangeAreas(updated);
@@ -82,35 +95,51 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   };
 
   const handleAddArea = () => {
-    const newAreaName = prompt('Enter new Area / Room name (e.g. Master Ensuite, Garage, Study):');
+    const newAreaName = prompt('Enter new Area / Room name (e.g. Master Bedroom, Garage, Ensuite):');
     if (!newAreaName) return;
     const newArea: InspectionArea = {
       id: `area-${Date.now()}`,
-      name: newAreaName.trim(),
+      name: newAreaName.trim().toUpperCase(),
       items: [
         {
           id: `item-${Date.now()}-1`,
-          name: 'Doors/walls/ceiling',
+          name: 'Doors/Doorway Frames',
+          clean: true,
+          undamaged: true,
+          working: true,
+          agentComments: 'Painted white, intact.',
+        },
+        {
+          id: `item-${Date.now()}-2`,
+          name: 'Ceiling/Cornices',
+          clean: true,
+          undamaged: true,
+          working: true,
+          agentComments: 'Painted white, intact.',
+        },
+        {
+          id: `item-${Date.now()}-3`,
+          name: 'Walls',
+          clean: true,
+          undamaged: true,
+          working: true,
+          agentComments: 'Clean, intact.',
+        },
+        {
+          id: `item-${Date.now()}-4`,
+          name: 'Floor',
           clean: true,
           undamaged: true,
           working: true,
           agentComments: 'Clean and good condition.',
         },
         {
-          id: `item-${Date.now()}-2`,
-          name: 'Fans/light fittings',
+          id: `item-${Date.now()}-5`,
+          name: 'Light Fittings',
           clean: true,
           undamaged: true,
           working: true,
-          agentComments: 'Intact and working.',
-        },
-        {
-          id: `item-${Date.now()}-3`,
-          name: 'Floor/floor coverings',
-          clean: true,
-          undamaged: true,
-          working: true,
-          agentComments: 'Good condition.',
+          agentComments: 'Globe provided, working.',
         },
       ],
     };
@@ -119,7 +148,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   };
 
   const handleDeleteArea = (areaId: string) => {
-    if (confirm('Are you sure you want to remove this area and all its items?')) {
+    if (confirm('Are you sure you want to remove this area and all its condition items?')) {
       onChangeAreas(areas.filter((a) => a.id !== areaId));
     }
   };
@@ -130,7 +159,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
       <div className="flex border-b border-neutral-200 bg-neutral-50 px-4">
         <button
           onClick={() => setActiveTab('areas')}
-          className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors ${
+          className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
             activeTab === 'areas'
               ? 'border-neutral-900 text-neutral-900 bg-white'
               : 'border-transparent text-neutral-500 hover:text-neutral-900'
@@ -141,162 +170,215 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('details')}
-          className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors ${
+          className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
             activeTab === 'details'
               ? 'border-neutral-900 text-neutral-900 bg-white'
               : 'border-transparent text-neutral-500 hover:text-neutral-900'
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          Property & Tenancy Header
+          WA Form 1 Tenancy Details
         </button>
         <button
           onClick={() => setActiveTab('compliance')}
-          className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors ${
+          className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
             activeTab === 'compliance'
               ? 'border-neutral-900 text-neutral-900 bg-white'
               : 'border-transparent text-neutral-500 hover:text-neutral-900'
           }`}
         >
-          <CheckSquare className="w-3.5 h-3.5" />
-          Water, Keys & Signatures
+          <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+          WA Work Dates, Signatures & Disclaimer
         </button>
       </div>
 
-      <div className="p-4 md:p-6 overflow-y-auto flex-1 space-y-6">
+      {/* Tab Contents */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-neutral-50/50">
         {/* ================= CONDITION COMMENTARY TAB ================= */}
         {activeTab === 'areas' && (
           <div className="space-y-4">
-            <div className="flex justify-between items-center pb-2 border-b border-neutral-100">
+            <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-neutral-200 shadow-2xs">
               <div>
-                <h3 className="font-bold text-neutral-900 text-sm">Room / Area Checklist & Comments</h3>
-                <p className="text-xs text-neutral-500">Edit commentary directly or load via Google Sheet / CSV above</p>
+                <h3 className="font-bold text-neutral-900 text-sm">
+                  Property Room & Area Commentary (WA Form 1)
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  Mark Clean (Cln), Undamaged (Udg), Working (Wkg) with Y/N and record detailed item observations.
+                </p>
               </div>
               <button
                 onClick={handleAddArea}
-                className="px-3 py-1.5 bg-neutral-900 text-white rounded-lg text-xs font-semibold hover:bg-neutral-800 flex items-center gap-1.5 transition-all shadow-xs"
+                className="px-3 py-1.5 bg-[#0a2540] hover:bg-[#07192c] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" /> Add Room / Area
+                <Plus className="w-3.5 h-3.5" />
+                Add Room / Area
               </button>
             </div>
 
             <div className="space-y-3">
               {areas.map((area) => {
                 const isExpanded = expandedAreaId === area.id;
+
                 return (
                   <div
                     key={area.id}
-                    className="border border-neutral-200 rounded-lg overflow-hidden bg-neutral-50/50 transition-shadow hover:shadow-xs"
+                    className="border border-neutral-300 rounded-xl bg-white shadow-2xs overflow-hidden transition-all"
                   >
-                    {/* Header */}
+                    {/* Area Accordion Header */}
                     <div
                       onClick={() => setExpandedAreaId(isExpanded ? null : area.id)}
-                      className="flex items-center justify-between p-3 bg-white cursor-pointer select-none hover:bg-neutral-50 border-b border-neutral-200"
+                      className="p-3 bg-neutral-100 hover:bg-neutral-200/70 cursor-pointer flex items-center justify-between border-b border-neutral-200 transition-colors"
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-sm text-neutral-900">{area.name}</span>
-                        <span className="text-[11px] px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded-full font-medium">
+                      <div className="flex items-center gap-2">
+                        {isExpanded ? (
+                          <ChevronDown className="w-4 h-4 text-neutral-500" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-neutral-500" />
+                        )}
+                        <span className="font-black text-xs md:text-sm text-neutral-900 tracking-wide">
+                          {area.name}
+                        </span>
+                        <span className="text-[11px] font-semibold text-neutral-600 bg-neutral-200 px-2 py-0.5 rounded-full">
                           {area.items.length} items
                         </span>
                         {area.overallPhotoCount ? (
-                          <span className="text-[11px] text-blue-600 font-medium">
-                            • {area.overallPhotoCount} photos referenced
+                          <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                            {area.overallPhotoCount} photos
                           </span>
                         ) : null}
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteArea(area.id);
-                          }}
-                          className="text-neutral-400 hover:text-red-600 p-1 rounded"
+                          onClick={() => handleAddItem(area.id)}
+                          className="px-2.5 py-1 text-xs font-semibold bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-700 rounded-lg flex items-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" /> Add Item
+                        </button>
+                        <button
+                          onClick={() => handleDeleteArea(area.id)}
+                          className="p-1 text-neutral-400 hover:text-red-600 rounded"
                           title="Delete Area"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
-                        {isExpanded ? <ChevronUp className="w-4 h-4 text-neutral-500" /> : <ChevronDown className="w-4 h-4 text-neutral-500" />}
                       </div>
                     </div>
 
-                    {/* Area Items Table */}
+                    {/* Area Item List */}
                     {isExpanded && (
-                      <div className="p-3 bg-white space-y-3">
-                        <div className="space-y-2">
-                          {area.items.map((item) => (
-                            <div
-                              key={item.id}
-                              className="border border-neutral-200 rounded-md p-2.5 bg-white text-xs space-y-2"
-                            >
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                <input
-                                  type="text"
-                                  value={item.name}
-                                  onChange={(e) => handleUpdateItem(area.id, item.id, 'name', e.target.value)}
-                                  className="font-semibold text-neutral-900 bg-neutral-50 px-2 py-1 rounded border border-neutral-200 text-xs w-full sm:w-1/3"
-                                />
+                      <div className="divide-y divide-neutral-200">
+                        {area.items.map((item) => (
+                          <div key={item.id} className="p-3 flex flex-col md:flex-row gap-3 items-start text-xs">
+                            {/* Left: Item name and Y/N toggles */}
+                            <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
+                              <span className="font-bold text-neutral-800 text-[11px]">{item.name}</span>
 
-                                {/* Cln, Udg, Wkg Toggles */}
-                                <div className="flex items-center gap-4">
-                                  <label className="flex items-center gap-1.5 cursor-pointer font-medium text-neutral-700">
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(item.clean)}
-                                      onChange={(e) => handleUpdateItem(area.id, item.id, 'clean', e.target.checked)}
-                                      className="rounded text-neutral-900 h-3.5 w-3.5 focus:ring-0"
-                                    />
-                                    <span>Clean</span>
-                                  </label>
-                                  <label className="flex items-center gap-1.5 cursor-pointer font-medium text-neutral-700">
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(item.undamaged)}
-                                      onChange={(e) => handleUpdateItem(area.id, item.id, 'undamaged', e.target.checked)}
-                                      className="rounded text-neutral-900 h-3.5 w-3.5 focus:ring-0"
-                                    />
-                                    <span>Undamaged</span>
-                                  </label>
-                                  <label className="flex items-center gap-1.5 cursor-pointer font-medium text-neutral-700">
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(item.working)}
-                                      onChange={(e) => handleUpdateItem(area.id, item.id, 'working', e.target.checked)}
-                                      className="rounded text-neutral-900 h-3.5 w-3.5 focus:ring-0"
-                                    />
-                                    <span>Working</span>
-                                  </label>
-
+                              {/* Clean / Undamaged / Working Y/N buttons matching WA Form 1 */}
+                              <div className="flex items-center gap-2">
+                                {/* Clean */}
+                                <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
+                                  <span className="text-[10px] font-bold text-neutral-600 px-1">Cln</span>
                                   <button
-                                    onClick={() => handleDeleteItem(area.id, item.id)}
-                                    className="text-neutral-400 hover:text-red-500 p-1"
-                                    title="Remove Item"
+                                    onClick={() =>
+                                      handleUpdateItem(area.id, item.id, 'clean', item.clean === true ? null : true)
+                                    }
+                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                      item.clean === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                    }`}
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Y
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleUpdateItem(area.id, item.id, 'clean', item.clean === false ? null : false)
+                                    }
+                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                      item.clean === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                    }`}
+                                  >
+                                    N
+                                  </button>
+                                </div>
+
+                                {/* Undamaged */}
+                                <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
+                                  <span className="text-[10px] font-bold text-neutral-600 px-1">Udg</span>
+                                  <button
+                                    onClick={() =>
+                                      handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === true ? null : true)
+                                    }
+                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                      item.undamaged === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                    }`}
+                                  >
+                                    Y
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === false ? null : false)
+                                    }
+                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                      item.undamaged === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                    }`}
+                                  >
+                                    N
+                                  </button>
+                                </div>
+
+                                {/* Working */}
+                                <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
+                                  <span className="text-[10px] font-bold text-neutral-600 px-1">Wkg</span>
+                                  <button
+                                    onClick={() =>
+                                      handleUpdateItem(area.id, item.id, 'working', item.working === true ? null : true)
+                                    }
+                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                      item.working === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                    }`}
+                                  >
+                                    Y
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleUpdateItem(area.id, item.id, 'working', item.working === false ? null : false)
+                                    }
+                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                      item.working === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                    }`}
+                                  >
+                                    N
                                   </button>
                                 </div>
                               </div>
-
-                              <div>
-                                <textarea
-                                  value={item.agentComments}
-                                  onChange={(e) => handleUpdateItem(area.id, item.id, 'agentComments', e.target.value)}
-                                  placeholder="Agent condition notes and commentary..."
-                                  rows={2}
-                                  className="w-full text-xs p-2 border border-neutral-200 rounded bg-neutral-50/50 focus:bg-white focus:border-neutral-400 focus:outline-hidden"
-                                />
-                              </div>
                             </div>
-                          ))}
-                        </div>
 
-                        <button
-                          onClick={() => handleAddItem(area.id)}
-                          className="w-full py-2 border border-dashed border-neutral-300 rounded-md text-xs font-semibold text-neutral-600 hover:border-neutral-400 hover:text-neutral-900 flex items-center justify-center gap-1"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Add Item to {area.name}
-                        </button>
+                            {/* Middle: Agent Detailed Commentary */}
+                            <div className="flex-1 w-full">
+                              <label className="block text-[10px] font-bold text-neutral-600 uppercase mb-0.5">
+                                Agent Comments:
+                              </label>
+                              <textarea
+                                value={item.agentComments}
+                                onChange={(e) => handleUpdateItem(area.id, item.id, 'agentComments', e.target.value)}
+                                rows={2}
+                                className="w-full border border-neutral-300 rounded-lg p-2 font-mono text-[11px] focus:outline-hidden focus:border-neutral-900 bg-white"
+                                placeholder="Describe condition, chips, marks, tested status..."
+                              />
+                            </div>
+
+                            {/* Right: Actions */}
+                            <div className="pt-4 shrink-0">
+                              <button
+                                onClick={() => handleDeleteItem(area.id, item.id)}
+                                className="text-neutral-300 hover:text-red-600 p-1"
+                                title="Delete condition row"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -306,40 +388,34 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
           </div>
         )}
 
-        {/* ================= PROPERTY & TENANCY DETAILS TAB ================= */}
+        {/* ================= WA FORM 1 TENANCY DETAILS TAB ================= */}
         {activeTab === 'details' && (
-          <div className="space-y-4">
-            <h3 className="font-bold text-neutral-900 text-sm pb-2 border-b border-neutral-100">
-              Tenancy Details & Header Information
-            </h3>
+          <div className="space-y-4 text-xs">
+            <div className="border-b border-neutral-200 pb-2">
+              <h3 className="font-bold text-neutral-900 text-sm">
+                Western Australia Form 1 Tenancy Header & Property Details
+              </h3>
+              <p className="text-neutral-500 text-[11px]">
+                Governed under the <span className="font-semibold">Residential Tenancies Act 1987 (WA) Section 27C(6)</span>.
+              </p>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Report Type</label>
-                <select
-                  value={details.reportType}
-                  onChange={(e) => handleUpdateDetail('reportType', e.target.value as ReportType)}
-                  className="w-full border border-neutral-300 rounded-lg p-2 bg-white font-medium"
-                >
-                  <option value="Entry">Entry Condition Report (Form 1a)</option>
-                  <option value="Routine">Routine Inspection Report</option>
-                  <option value="Exit">Exit Condition Report (Form 14a)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Property Address</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block font-semibold text-neutral-700 mb-1">
+                  Property Address (WA Location)
+                </label>
                 <input
                   type="text"
                   value={details.propertyAddress}
                   onChange={(e) => handleUpdateDetail('propertyAddress', e.target.value)}
-                  className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. Unit 302, 32 Warleigh Grove, Brighton VIC"
+                  className="w-full border border-neutral-300 rounded-lg p-2 font-semibold text-neutral-900"
+                  placeholder="e.g. 1/4 Pusey St, Bentley, WA 6102"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Inspecting Agent / Agency Name</label>
+                <label className="block font-semibold text-neutral-700 mb-1">Inspecting Agent / Team</label>
                 <input
                   type="text"
                   value={details.inspectingAgent}
@@ -356,7 +432,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                   value={details.inspectionDate}
                   onChange={(e) => handleUpdateDetail('inspectionDate', e.target.value)}
                   className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. Wednesday 10/04/2024"
+                  placeholder="e.g. Monday 19/05/2025"
                 />
               </div>
 
@@ -367,7 +443,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                   value={details.tenancyStartDate}
                   onChange={(e) => handleUpdateDetail('tenancyStartDate', e.target.value)}
                   className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. Friday 12/04/2024"
+                  placeholder="e.g. Monday 19/05/2025 or leave blank for entry handover"
                 />
               </div>
 
@@ -378,7 +454,29 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                   value={details.tenants}
                   onChange={(e) => handleUpdateDetail('tenants', e.target.value)}
                   className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. John Doe & Jane Smith"
+                  placeholder="e.g. Tenant 1, Tenant 2"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-neutral-700 mb-1">Tenant Received Date</label>
+                <input
+                  type="text"
+                  value={details.tenantReceivedDate || ''}
+                  onChange={(e) => handleUpdateDetail('tenantReceivedDate', e.target.value)}
+                  className="w-full border border-neutral-300 rounded-lg p-2"
+                  placeholder="Date tenant received report"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-neutral-700 mb-1">Report Return Date (Within 7 Days)</label>
+                <input
+                  type="text"
+                  value={details.reportReturnDate}
+                  onChange={(e) => handleUpdateDetail('reportReturnDate', e.target.value)}
+                  className="w-full border border-neutral-300 rounded-lg p-2"
+                  placeholder="e.g. Monday 26/05/2025"
                 />
               </div>
 
@@ -389,40 +487,18 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                   value={details.companyName}
                   onChange={(e) => handleUpdateDetail('companyName', e.target.value)}
                   className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. ProInspect"
+                  placeholder="e.g. ProInspect Systems"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Company Email</label>
-                <input
-                  type="email"
-                  value={details.companyEmail || ''}
-                  onChange={(e) => handleUpdateDetail('companyEmail', e.target.value)}
-                  className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. info@proinspect.systems"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Company Website</label>
-                <input
-                  type="text"
-                  value={details.companyWebsite || ''}
-                  onChange={(e) => handleUpdateDetail('companyWebsite', e.target.value)}
-                  className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. https://proinspect.systems"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Agency Phone & Contact (Optional)</label>
+                <label className="block font-semibold text-neutral-700 mb-1">Agency Phone & Contact</label>
                 <input
                   type="text"
                   value={details.companyPhone}
                   onChange={(e) => handleUpdateDetail('companyPhone', e.target.value)}
                   className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. T: 1300 000 000"
+                  placeholder="e.g. T: 1300 995 690"
                 />
               </div>
 
@@ -433,99 +509,112 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                   value={details.companyAddress}
                   onChange={(e) => handleUpdateDetail('companyAddress', e.target.value)}
                   className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. 19 Bonnard Crescent Ashby WA 6065"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block font-semibold text-neutral-700 mb-1">Cover Hero Image URL (Optional)</label>
-                <input
-                  type="text"
-                  value={details.coverPhotoUrl || ''}
-                  onChange={(e) => handleUpdateDetail('coverPhotoUrl', e.target.value)}
-                  className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="Paste direct URL or will use first Google Drive photo"
+                  placeholder="e.g. 302/32 Warleigh Grove Brighton VIC 3186"
                 />
               </div>
             </div>
           </div>
         )}
 
-        {/* ================= COMPLIANCE & WATER TAB ================= */}
+        {/* ================= COMPLIANCE, WORK DATES & SIGNATURES TAB ================= */}
         {activeTab === 'compliance' && (
           <div className="space-y-4 text-xs">
-            <h3 className="font-bold text-neutral-900 text-sm pb-2 border-b border-neutral-100">
-              Statutory Compliance, Water Metering & Keys
+            <h3 className="font-bold text-neutral-900 text-sm pb-2 border-b border-neutral-200">
+              WA Form 1 Statutory Work Dates, Additional Comments & Signatures
             </h3>
 
-            {/* Water charging */}
-            <div className="p-3 border border-neutral-200 rounded-lg bg-neutral-50/50 space-y-3">
-              <h4 className="font-bold text-neutral-900 text-xs">Water Charging Regulations</h4>
+            {/* WA Statutory Work Dates */}
+            <div className="p-3 border border-neutral-200 rounded-lg bg-white space-y-3 shadow-2xs">
+              <h4 className="font-bold text-neutral-900 text-xs uppercase tracking-wider">
+                Approximate dates when work last done on residential premises
+              </h4>
+              <p className="text-neutral-500 text-[11px]">
+                Statutory requirement under the Western Australia Residential Tenancies Form 1.
+              </p>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="flex items-center gap-2 cursor-pointer font-medium">
+                <div>
+                  <label className="block font-semibold text-neutral-700 mb-1">Painting of premises (external):</label>
                   <input
-                    type="checkbox"
-                    checked={details.waterIndividuallyMetered}
-                    onChange={(e) => handleUpdateDetail('waterIndividuallyMetered', e.target.checked)}
-                    className="rounded text-neutral-900 h-4 w-4"
+                    type="text"
+                    value={details.paintingPremisesExternalDate || ''}
+                    onChange={(e) => handleUpdateDetail('paintingPremisesExternalDate', e.target.value)}
+                    className="w-full border border-neutral-300 rounded p-1.5 bg-neutral-50 font-mono"
+                    placeholder="DD / MM / YYYY"
                   />
-                  <span>Are premises individually metered?</span>
-                </label>
+                </div>
 
-                <label className="flex items-center gap-2 cursor-pointer font-medium">
+                <div>
+                  <label className="block font-semibold text-neutral-700 mb-1">Painting of premises (internal):</label>
                   <input
-                    type="checkbox"
-                    checked={details.waterEfficient}
-                    onChange={(e) => handleUpdateDetail('waterEfficient', e.target.checked)}
-                    className="rounded text-neutral-900 h-4 w-4"
+                    type="text"
+                    value={details.paintingPremisesInternalDate || ''}
+                    onChange={(e) => handleUpdateDetail('paintingPremisesInternalDate', e.target.value)}
+                    className="w-full border border-neutral-300 rounded p-1.5 bg-neutral-50 font-mono"
+                    placeholder="DD / MM / YYYY"
                   />
-                  <span>Are premises water efficient (3-star WELS)?</span>
-                </label>
-              </div>
+                </div>
 
-              <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Water Meter Reading at Start:</label>
-                <input
-                  type="text"
-                  value={details.waterMeterReading}
-                  onChange={(e) => handleUpdateDetail('waterMeterReading', e.target.value)}
-                  className="w-full border border-neutral-300 rounded p-1.5 bg-white"
-                  placeholder="e.g. 0428.5 kL"
-                />
+                <div>
+                  <label className="block font-semibold text-neutral-700 mb-1">Floorcoverings laid:</label>
+                  <input
+                    type="text"
+                    value={details.floorcoveringsLaidDate || ''}
+                    onChange={(e) => handleUpdateDetail('floorcoveringsLaidDate', e.target.value)}
+                    className="w-full border border-neutral-300 rounded p-1.5 bg-neutral-50 font-mono"
+                    placeholder="DD / MM / YYYY"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-neutral-700 mb-1">Floorcoverings professionally cleaned:</label>
+                  <input
+                    type="text"
+                    value={details.floorcoveringsCleanedDate || ''}
+                    onChange={(e) => handleUpdateDetail('floorcoveringsCleanedDate', e.target.value)}
+                    className="w-full border border-neutral-300 rounded p-1.5 bg-neutral-50 font-mono"
+                    placeholder="DD / MM / YYYY"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Keys Handover */}
-            <div className="p-3 border border-neutral-200 rounded-lg bg-neutral-50/50 space-y-2">
-              <h4 className="font-bold text-neutral-900 text-xs">Keys Supplied to Tenants Inventory</h4>
-              <textarea
-                value={details.keysSuppliedSummary}
-                onChange={(e) => handleUpdateDetail('keysSuppliedSummary', e.target.value)}
-                rows={3}
-                className="w-full border border-neutral-300 rounded p-2 bg-white"
-                placeholder="e.g. Front door keys x2, key/elevator fobs x2, post office box key x1"
-              />
-            </div>
-
-            {/* Additional comments & Disclaimers */}
+            {/* Additional comments */}
             <div className="space-y-3">
               <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Additional Agent Comments</label>
+                <label className="block font-semibold text-neutral-700 mb-1">
+                  Entry Report Additional Comments
+                </label>
                 <textarea
                   value={details.additionalComments}
                   onChange={(e) => handleUpdateDetail('additionalComments', e.target.value)}
                   rows={3}
-                  className="w-full border border-neutral-300 rounded p-2 bg-white"
+                  className="w-full border border-neutral-300 rounded-lg p-2 bg-white"
+                  placeholder="Enter any additional general tenancy notes, conditions, or instructions..."
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Legal Inspection Disclaimer</label>
+                <label className="block font-semibold text-neutral-700 mb-1">
+                  Agent Signatory Name at START of Tenancy
+                </label>
+                <input
+                  type="text"
+                  value={details.agentSignName}
+                  onChange={(e) => handleUpdateDetail('agentSignName', e.target.value)}
+                  className="w-full border border-neutral-300 rounded-lg p-2 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-neutral-700 mb-1">
+                  Western Australia Tenancy Inspection Legal Disclaimer
+                </label>
                 <textarea
                   value={details.disclaimerText}
                   onChange={(e) => handleUpdateDetail('disclaimerText', e.target.value)}
                   rows={4}
-                  className="w-full border border-neutral-300 rounded p-2 bg-neutral-50 font-sans text-[11px]"
+                  className="w-full border border-neutral-300 rounded-lg p-2 bg-neutral-50 font-sans text-[11px]"
                 />
               </div>
             </div>

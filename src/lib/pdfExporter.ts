@@ -1,34 +1,29 @@
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 
 /**
- * Modern browsers and Tailwind CSS v4 compute colors using the CSS `oklch(...)` format
+ * Modern browsers and Tailwind CSS v4 compute colors using CSS `oklab(...)` and `oklch(...)` formats
  * (e.g., in color, backgroundColor, borderColor, outlineColor, textDecorationColor).
  *
- * html2canvas (v1.4.x) throws an exception:
- * "Attempting to parse an unsupported color function 'oklch'"
- * whenever it encounters any computed style containing `oklch`.
+ * Using `html2canvas-pro` provides native support for modern CSS color spaces including `oklab`,
+ * `oklch`, `color(display-p3 ...)`, etc.
  *
- * To guarantee 100% reliability:
- * 1. We sanitize style tags inside the cloned document.
- * 2. In `onclone`, we iterate over all rendered elements in the cloned document and
- *    explicitly override computed colors with standard hex / rgb values on their inline style.
- *    Because inline styles take highest priority and contain standard hex/rgb, html2canvas
- *    never attempts to parse an oklch color string.
+ * Additionally, we sanitize the cloned DOM to ensure 100% consistent rendering across all
+ * browser environments and headless PDF engines.
  */
 function sanitizeClonedDocumentColors(clonedDoc: Document, clonedTarget: HTMLElement) {
-  // 1. Sanitize text in all style elements
+  // 1. Sanitize text in all style elements to standard hex/rgb fallbacks if present
   clonedDoc.querySelectorAll('style').forEach((styleTag) => {
-    if (styleTag.textContent && styleTag.textContent.includes('oklch')) {
-      styleTag.textContent = styleTag.textContent.replace(
-        /oklch\([^)]+\)/g,
-        '#334155'
-      );
+    if (styleTag.textContent) {
+      if (styleTag.textContent.includes('oklch') || styleTag.textContent.includes('oklab')) {
+        styleTag.textContent = styleTag.textContent
+          .replace(/oklch\([^)]+\)/g, '#334155')
+          .replace(/oklab\([^)]+\)/g, '#334155');
+      }
     }
   });
 
-  // 2. Also remove any external style link tags from the cloned document if they might have oklch
-  // and inject a rock-solid PDF-specific style sheet
+  // 2. Inject explicit PDF-specific safe CSS rules into the cloned document
   const safeStyles = clonedDoc.createElement('style');
   safeStyles.textContent = `
     * {
@@ -50,7 +45,7 @@ function sanitizeClonedDocumentColors(clonedDoc: Document, clonedTarget: HTMLEle
   `;
   clonedDoc.head.appendChild(safeStyles);
 
-  // 3. Walk all elements in the cloned target and override any computed style that outputs oklch
+  // 3. Walk all elements in the cloned target and replace any inline or computed oklab/oklch strings
   const elements = [clonedTarget, ...Array.from(clonedTarget.querySelectorAll<HTMLElement>('*'))];
   const win = clonedDoc.defaultView || window;
 
@@ -71,15 +66,20 @@ function sanitizeClonedDocumentColors(clonedDoc: Document, clonedTarget: HTMLEle
 
     // Check inline style first
     const inline = el.getAttribute('style');
-    if (inline && inline.includes('oklch')) {
-      el.setAttribute('style', inline.replace(/oklch\([^)]+\)/g, '#1e293b'));
+    if (inline && (inline.includes('oklch') || inline.includes('oklab'))) {
+      el.setAttribute(
+        'style',
+        inline
+          .replace(/oklch\([^)]+\)/g, '#1e293b')
+          .replace(/oklab\([^)]+\)/g, '#1e293b')
+      );
     }
 
     try {
       const computed = win.getComputedStyle(el);
       for (const prop of colorProperties) {
         const val = computed[prop] as string;
-        if (val && typeof val === 'string' && val.includes('oklch')) {
+        if (val && typeof val === 'string' && (val.includes('oklch') || val.includes('oklab'))) {
           if (prop === 'backgroundColor') {
             el.style.backgroundColor = '#ffffff';
           } else if (prop.toString().includes('border') || prop.toString().includes('Border')) {
@@ -126,7 +126,7 @@ export async function exportElementToPdf(
       onProgress(`Rendering page ${i + 1} of ${pageElements.length}...`);
     }
 
-    // Capture using html2canvas with onclone hook
+    // Capture using html2canvas-pro with onclone hook
     const canvas = await html2canvas(pageEl, {
       scale: 2,
       useCORS: true,

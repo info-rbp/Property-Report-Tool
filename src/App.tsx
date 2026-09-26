@@ -29,7 +29,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 
-const STORAGE_KEY = 'proinspect_report_draft_v1';
+const STORAGE_KEY = 'proinspect_report_draft_wa_v2';
 
 export default function App() {
   // Load initial report from localStorage if available, otherwise default to INITIAL_SAMPLE_REPORT
@@ -441,7 +441,7 @@ export default function App() {
         {viewMode === 'preview' && (
           <div className="py-6">
             <div className="max-w-[210mm] mx-auto mb-4 px-4 flex justify-between items-center text-xs text-neutral-500">
-              <span>Layout standard: Form 1a (Queensland RTA / Australian Tenancy Standard)</span>
+              <span>Layout standard: Western Australia Form 1 (Residential Tenancies Act 1987 Section 27C(6))</span>
               <span>A4 Portrait • Print & PDF Ready</span>
             </div>
             <ReportDocument report={report} />
@@ -463,6 +463,7 @@ export default function App() {
           <div className="max-w-6xl mx-auto p-4 md:p-6 h-[calc(100vh-125px)]">
             <PhotoManager
               photos={report.photos}
+              areas={report.areas}
               onUpdatePhotos={(photos) => setReport((prev) => ({ ...prev, photos }))}
               onOpenDriveModal={() => {
                 if (!hasGoogleAuth) {
