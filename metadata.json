@@ -1,0 +1,6 @@
+{
+  "name": "Property Condition Report Generator",
+  "description": "Generate residential tenancy entry, routine, and exit condition reports with spreadsheet commentary, Google Drive photos, and PDF export matching Australian tenancy standards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
