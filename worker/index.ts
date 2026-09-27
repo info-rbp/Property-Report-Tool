@@ -39,16 +39,53 @@ class HttpError extends Error {
   }
 }
 
+function securityHeaders(initial?: HeadersInit): Headers {
+  const headers = new Headers(initial);
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('X-Frame-Options', 'DENY');
+  headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  headers.set('X-Robots-Tag', 'noindex, nofollow');
+  return headers;
+}
+
+function unexpectedErrorResponse(error: unknown): Response {
+  console.error('Unhandled Worker error:', error);
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (/no such table/i.test(message)) {
+    return json(
+      { error: 'Database schema is not initialized. Apply the D1 migrations before using the application.' },
+      503
+    );
+  }
+
+  if (/D1_ERROR|database/i.test(message)) {
+    return json(
+      { error: 'Database operation failed. Check Cloudflare Worker/D1 logs for the underlying error.' },
+      500
+    );
+  }
+
+  if (/R2|object storage|bucket/i.test(message)) {
+    return json(
+      { error: 'File storage operation failed. Check Cloudflare Worker/R2 logs for the underlying error.' },
+      500
+    );
+  }
+
+  return json({ error: 'Unexpected server error.' }, 500);
+}
+
 let cachedJwksDomain = '';
 let cachedJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
 function json(data: unknown, status = 200): Response {
   return Response.json(data, {
     status,
-    headers: {
+    headers: securityHeaders({
       'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-    },
+    }),
   });
 }
 
@@ -391,7 +428,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         object.writeHttpMetadata(headers);
         headers.set('ETag', object.httpEtag);
         headers.set('Cache-Control', 'private, max-age=3600');
-        return new Response(object.body, { headers });
+        return new Response(object.body, { headers: securityHeaders(headers) });
       }
 
       if (request.method === 'DELETE') {
@@ -437,7 +474,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       object.writeHttpMetadata(headers);
       headers.set('Content-Disposition', `attachment; filename="${filename}"`);
       headers.set('Cache-Control', 'private, no-store');
-      return new Response(object.body, { headers });
+      return new Response(object.body, { headers: securityHeaders(headers) });
     }
   }
 
@@ -449,13 +486,12 @@ export default {
     try {
       const url = new URL(request.url);
       if (!url.pathname.startsWith('/api/')) {
-        return new Response('Not found', { status: 404 });
+        return new Response('Not found', { status: 404, headers: securityHeaders() });
       }
       return await handleApi(request, env);
     } catch (error) {
       if (error instanceof HttpError) return json({ error: error.message }, error.status);
-      console.error(error);
-      return json({ error: 'Unexpected server error.' }, 500);
+      return unexpectedErrorResponse(error);
     }
   },
 } satisfies ExportedHandler<Env>;

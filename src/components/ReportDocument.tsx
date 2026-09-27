@@ -1,4 +1,5 @@
 import React from 'react';
+import { PROINSPECT_COMPANY } from '../config/company';
 import { ReportData, InspectionArea } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
 import { SimpleReportDocument } from './SimpleReportDocument';
@@ -93,16 +94,24 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
             <ProInspectLogo size="md" showTagline={true} />
 
             <div className="text-right text-xs text-neutral-700 leading-snug space-y-0.5 font-medium">
-              <p className="font-bold text-[#0a2540] text-sm">{details.companyName || 'ProInspect Systems'}</p>
-              <p>{details.companyAddress || '302/32 Warleigh Grove Brighton VIC 3186'}</p>
-              {details.companyPhone && <p className="font-semibold text-neutral-800">{details.companyPhone}</p>}
-              {details.companyEmail && (
+              <p className="font-bold text-[#0a2540] text-sm">{details.companyName || PROINSPECT_COMPANY.name}</p>
+              {details.companyAddress && <p>{details.companyAddress}</p>}
+              {(details.companyPhone || PROINSPECT_COMPANY.phone) && (
+                <p className="font-semibold text-neutral-800">{details.companyPhone || PROINSPECT_COMPANY.phone}</p>
+              )}
+              {(details.companyEmail || PROINSPECT_COMPANY.email) && (
                 <p>
                   <span className="text-neutral-500 font-normal">Email: </span>
-                  <a href={`mailto:${details.companyEmail}`} className="text-[#0891b2] hover:underline font-semibold">
-                    {details.companyEmail}
+                  <a
+                    href={`mailto:${details.companyEmail || PROINSPECT_COMPANY.email}`}
+                    className="text-[#0891b2] hover:underline font-semibold"
+                  >
+                    {details.companyEmail || PROINSPECT_COMPANY.email}
                   </a>
                 </p>
+              )}
+              {(details.companyWebsite || PROINSPECT_COMPANY.website) && (
+                <p>{(details.companyWebsite || PROINSPECT_COMPANY.website).replace(/^https?:\/\//, '')}</p>
               )}
             </div>
           </div>
@@ -113,7 +122,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
               Residential Tenancy {details.reportType} Condition Report
             </h2>
             <div className="mt-4 inline-block bg-neutral-900 text-white font-bold text-lg md:text-xl px-6 py-2.5 rounded-lg shadow-xs">
-              {details.propertyAddress || '1/4 Pusey St, Bentley, WA 6102'}
+              {details.propertyAddress || 'Property address not recorded'}
             </div>
           </div>
 
@@ -139,21 +148,21 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
         {/* Bottom Details */}
         <div className="text-center space-y-2 mb-6">
           <p className="text-sm font-semibold text-neutral-800">
-            Report completed on {details.inspectionDate || 'Monday 19/05/2025'}
+            Report completed on {details.inspectionDate || 'Not recorded'}
           </p>
           <p className="text-sm text-neutral-600 font-medium">
-            Prepared by {details.inspectingAgent || 'Admin Team'}
+            Prepared by {details.inspectingAgent || 'Not recorded'}
           </p>
         </div>
 
         {/* Footer */}
         <div className="flex justify-between items-center text-[10px] text-neutral-500 border-t border-neutral-200 pt-3">
           <div className="flex items-center gap-1.5 font-medium">
-            <span className="font-bold text-[#0a2540]">ProInspect Systems</span>
+            <span className="font-bold text-[#0a2540]">{details.companyName || PROINSPECT_COMPANY.name}</span>
             <span className="text-neutral-300">•</span>
             <span>INSPECT. REPORT. PROTECT.</span>
           </div>
-          <span className="font-semibold text-neutral-700">{details.companyName || 'ProInspect'}</span>
+          <span className="font-semibold text-neutral-700">{details.companyName || PROINSPECT_COMPANY.name}</span>
         </div>
       </div>
 
@@ -170,7 +179,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                   <div className="border border-neutral-700 px-2 py-1 rounded bg-neutral-50 text-[9px] font-bold leading-tight">
                     <div className="text-neutral-800 font-black">Government of Western Australia</div>
                     <div className="text-[8px] text-neutral-600 font-medium">
-                      Department of Energy, Mines, Industry Regulation and Safety
+                      Department of Local Government, Industry Regulation and Safety
                     </div>
                     <div className="text-[8px] text-neutral-700 font-semibold">Consumer Protection</div>
                   </div>
@@ -200,8 +209,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                     </li>
                     <li>
                       Two copies of the report, which has been filled out and signed by the lessor or the property
-                      manager, must be given to the tenant within 7 days of the start of the tenancy as specified in the
-                      residential tenancy agreement.
+                      manager, must be given to the tenant within 7 days of the tenant moving into the premises.
                     </li>
                     <li>
                       As soon as possible after the tenant receives the property condition report, the tenant should inspect
@@ -259,8 +267,8 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                     </li>
                     <li>
                       Information about the rights and responsibilities of lessors and tenants may be obtained by contacting
-                      the Department of Energy, Mines, Industry Regulation and Safety on 1300 30 40 54 or visiting{' '}
-                      <span className="font-semibold underline">www.demirs.wa.gov.au/ConsumerProtection</span>.
+                      the Department of Local Government, Industry Regulation and Safety on 1300 30 40 54 or visiting{' '}
+                      <span className="font-semibold underline">www.consumerprotection.wa.gov.au</span>.
                     </li>
                   </ol>
                 </div>
@@ -269,18 +277,18 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                   <p>
                     <span className="font-bold">For further information about tenancy rights:</span> refer to the{' '}
                     <span className="font-semibold italic">Residential Tenancies Act 1987</span> or contact the
-                    Department of Energy, Mines, Industry Regulation and Safety on 1300 304 054 or{' '}
-                    <span className="font-semibold">www.demirs.wa.gov.au/ConsumerProtection</span>.
+                    Department of Local Government, Industry Regulation and Safety on 1300 304 054 or{' '}
+                    <span className="font-semibold">www.consumerprotection.wa.gov.au</span>.
                   </p>
                   <p>
                     <span className="font-bold">Translating and Interpreting Services:</span> please telephone TIS on 13 14 50
-                    and ask to speak to the Department of Energy, Mines, Industry Regulation and Safety (1300 304 054) for
+                    and ask to speak to the Department of Local Government, Industry Regulation and Safety (1300 304 054) for
                     assistance.
                   </p>
                 </div>
               </div>
 
-              {/* Tenancy Details card matching WA Form 1 exactly */}
+              {/* Additional tenancy details */}
               <div className="mt-2.5">
                 <div className="bg-neutral-200 border border-neutral-400 px-2 py-1 font-extrabold text-[10.5px] uppercase tracking-wider text-neutral-900">
                   Tenancy Details
@@ -356,7 +364,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
             className="pdf-page w-[210mm] min-h-[297mm] h-[297mm] bg-white text-neutral-900 p-[12mm] flex flex-col justify-between shadow-2xl relative box-border overflow-hidden select-text text-[10px]"
           >
             <div>
-              {/* Running header matching sample exactly */}
+              {/* Running report header */}
               <div className="flex justify-between items-center border-b-2 border-neutral-900 pb-1 mb-2 font-bold text-[11px]">
                 <span className="text-neutral-900">{details.propertyAddress}</span>
                 <span className="text-neutral-900">{details.reportType} Condition Report</span>
@@ -364,7 +372,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
 
               {/* Main Table Structure */}
               <table className="w-full border-collapse border border-neutral-400 text-left">
-                {/* Column Headers matching WA Form 1 exactly */}
+                {/* Condition report column headers */}
                 <thead>
                   <tr className="bg-neutral-100 text-neutral-900 font-bold border-b border-neutral-400">
                     <th colSpan={4} className="border-r border-neutral-400 p-1 text-center text-[10.5px]">
@@ -536,13 +544,18 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
 
                       {/* Photo Image Aspect */}
                       <div className="w-full h-[47mm] bg-neutral-200 overflow-hidden rounded-xs flex items-center justify-center">
-                        <img
-                          src={photo.dataUrl || photo.url || 'https://via.placeholder.com/300x200'}
-                          alt={photo.name}
-                          className="w-full h-full object-cover"
-                          crossOrigin="anonymous"
-                          loading="lazy"
-                        />
+                        {photo.dataUrl || photo.url ? (
+                          <img
+                            src={photo.dataUrl || photo.url}
+                            alt={photo.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[8px] text-neutral-500">
+                            Photo unavailable
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -613,22 +626,26 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                     </div>
                   </div>
                 </div>
+                <p className="mt-1 text-[8.5px] text-neutral-600 leading-tight">
+                  Note: Further items and comments may be recorded on a separate sheet, signed by the
+                  lessor/property manager and the tenant, and attached to this report.
+                </p>
               </div>
 
-              {/* Agent Signature at the START of the Tenancy */}
+              {/* Lessor/property manager's signature */}
               <div className="mb-3">
                 <div className="bg-neutral-100 border border-neutral-400 px-2 py-1 font-bold text-neutral-900 text-[10px]">
-                  Agent Signature at the START of the Tenancy
+                  Lessor/property manager's signature
                 </div>
                 <div className="grid grid-cols-3 border border-neutral-400 border-t-0 text-[10px]">
                   <div className="p-2 border-r border-neutral-300">
                     <span className="font-semibold text-neutral-700">Print Name: </span>
-                    <span className="font-bold text-neutral-900">{details.agentSignName || 'Admin Team'}</span>
+                    <span className="font-bold text-neutral-900">{details.agentSignName || details.inspectingAgent}</span>
                   </div>
                   <div className="p-2 border-r border-neutral-300">
                     <span className="font-semibold text-neutral-700">Signature: </span>
                     <span className="font-serif italic font-bold text-neutral-800 text-sm ml-1">
-                      {details.agentSignName || 'Admin Team'}
+                      {details.agentSignName || details.inspectingAgent}
                     </span>
                   </div>
                   <div className="p-2">
