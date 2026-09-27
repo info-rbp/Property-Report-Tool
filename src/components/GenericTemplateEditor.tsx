@@ -78,6 +78,15 @@ export const GenericTemplateEditor: React.FC<Props> = ({ details, onChangeDetail
         <p className="text-[11px] text-neutral-500 mt-1">{template.description}</p>
       </div>
 
+      {details.reportType === 'Key Safe Installation' && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950">
+          <div className="font-bold">Security requirement</div>
+          <div className="mt-1 text-[11px]">
+            Do not enter the key-safe access code anywhere in this report. Record only the approved secure access-record reference; the code must remain in the separate secure access-management system.
+          </div>
+        </div>
+      )}
+
       {detailFields.length > 0 && (
         <section className="bg-white border border-neutral-200 rounded-xl p-4 space-y-3">
           <h4 className="font-bold text-neutral-900 uppercase tracking-wide text-[11px]">
