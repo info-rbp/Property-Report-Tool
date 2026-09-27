@@ -28,7 +28,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   onChangeDetails,
   onChangeAreas,
 }) => {
-  const [activeTab, setActiveTab] = useState<'areas' | 'details' | 'compliance'>('areas');
+  const [activeTab, setActiveTab] = useState<'areas' | 'details' | 'compliance' | 'notes'>('areas');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
 
   const handleUpdateDetail = (key: keyof TenancyDetails, value: any) => {
@@ -179,7 +179,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
           <Building2 className="w-3.5 h-3.5" />
           {details.reportType === 'Entry' ? 'WA Form 1 Tenancy Details' : 'Report Details'}
         </button>
-        {details.reportType === 'Entry' && (
+        {details.reportType === 'Entry' ? (
           <button
             onClick={() => setActiveTab('compliance')}
             className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
@@ -190,6 +190,18 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
           >
             <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
             WA Work Dates, Signatures & Disclaimer
+          </button>
+        ) : (
+          <button
+            onClick={() => setActiveTab('notes')}
+            className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
+              activeTab === 'notes'
+                ? 'border-neutral-900 text-neutral-900 bg-white'
+                : 'border-transparent text-neutral-500 hover:text-neutral-900'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-700" />
+            {details.reportType === 'Routine' ? 'Summary, Maintenance & Sign-off' : 'Exit Notes, Work Dates & Sign-off'}
           </button>
         )}
       </div>
@@ -205,7 +217,9 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                   {details.reportType === 'Entry' ? 'Property Room & Area Commentary (WA Form 1)' : 'Property Room & Area Commentary'}
                 </h3>
                 <p className="text-xs text-neutral-500">
-                  Mark Clean (Cln), Undamaged (Udg), Working (Wkg) with Y/N and record detailed item observations.
+                  {details.reportType === 'Routine'
+                    ? 'Record the inspection finding for each room or area. Routine reports present these as concise findings without condition-rating columns.'
+                    : 'Mark Clean (Cln), Undamaged (Udg), Working (Wkg) with Y/N and record detailed item observations.'}
                 </p>
               </div>
               <button
@@ -276,89 +290,87 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                             <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
                               <span className="font-bold text-neutral-800 text-[11px]">{item.name}</span>
 
-                              {/* Clean / Undamaged / Working Y/N buttons matching WA Form 1 */}
-                              <div className="flex items-center gap-2">
-                                {/* Clean */}
-                                <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
-                                  <span className="text-[10px] font-bold text-neutral-600 px-1">Cln</span>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'clean', item.clean === true ? null : true)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.clean === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    Y
-                                  </button>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'clean', item.clean === false ? null : false)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.clean === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    N
-                                  </button>
-                                </div>
+                              {details.reportType !== 'Routine' && (
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
+                                    <span className="text-[10px] font-bold text-neutral-600 px-1">Cln</span>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'clean', item.clean === true ? null : true)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.clean === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      Y
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'clean', item.clean === false ? null : false)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.clean === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      N
+                                    </button>
+                                  </div>
 
-                                {/* Undamaged */}
-                                <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
-                                  <span className="text-[10px] font-bold text-neutral-600 px-1">Udg</span>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === true ? null : true)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.undamaged === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    Y
-                                  </button>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === false ? null : false)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.undamaged === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    N
-                                  </button>
-                                </div>
+                                  <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
+                                    <span className="text-[10px] font-bold text-neutral-600 px-1">Udg</span>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === true ? null : true)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.undamaged === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      Y
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === false ? null : false)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.undamaged === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      N
+                                    </button>
+                                  </div>
 
-                                {/* Working */}
-                                <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
-                                  <span className="text-[10px] font-bold text-neutral-600 px-1">Wkg</span>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'working', item.working === true ? null : true)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.working === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    Y
-                                  </button>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'working', item.working === false ? null : false)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.working === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    N
-                                  </button>
+                                  <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
+                                    <span className="text-[10px] font-bold text-neutral-600 px-1">Wkg</span>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'working', item.working === true ? null : true)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.working === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      Y
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'working', item.working === false ? null : false)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.working === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      N
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
 
                             {/* Middle: Agent Detailed Commentary */}
                             <div className="flex-1 w-full">
                               <label className="block text-[10px] font-bold text-neutral-600 uppercase mb-0.5">
-                                Agent Comments:
+                                {details.reportType === 'Routine' ? 'Inspection Finding:' : 'Agent Comments:'}
                               </label>
                               <textarea
                                 value={item.agentComments}
@@ -443,7 +455,9 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
               </div>
 
               <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Tenancy Start Date</label>
+                <label className="block font-semibold text-neutral-700 mb-1">
+                  {details.reportType === 'Routine' ? 'Lease Start Date' : 'Tenancy Start Date'}
+                </label>
                 <input
                   type="text"
                   value={details.tenancyStartDate}
@@ -452,6 +466,43 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                   placeholder="e.g. Monday 19/05/2025 or leave blank for entry handover"
                 />
               </div>
+
+              {details.reportType === 'Routine' && (
+                <>
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">Lease Expiry Date</label>
+                    <input
+                      type="text"
+                      value={details.leaseExpiryDate || ''}
+                      onChange={(e) => handleUpdateDetail('leaseExpiryDate', e.target.value)}
+                      className="w-full border border-neutral-300 rounded-lg p-2"
+                      placeholder="DD/MM/YYYY"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">Rent Review Date</label>
+                    <input
+                      type="text"
+                      value={details.rentReviewDate || ''}
+                      onChange={(e) => handleUpdateDetail('rentReviewDate', e.target.value)}
+                      className="w-full border border-neutral-300 rounded-lg p-2"
+                      placeholder="DD/MM/YYYY"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">Current Rental Amount</label>
+                    <input
+                      type="text"
+                      value={details.currentRentalAmount || ''}
+                      onChange={(e) => handleUpdateDetail('currentRentalAmount', e.target.value)}
+                      className="w-full border border-neutral-300 rounded-lg p-2"
+                      placeholder="e.g. $560 per week"
+                    />
+                  </div>
+                </>
+              )}
 
               <div>
                 <label className="block font-semibold text-neutral-700 mb-1">Tenant Name(s)</label>
@@ -464,27 +515,31 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Tenant Received Date</label>
-                <input
-                  type="text"
-                  value={details.tenantReceivedDate || ''}
-                  onChange={(e) => handleUpdateDetail('tenantReceivedDate', e.target.value)}
-                  className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="Date tenant received report"
-                />
-              </div>
+              {details.reportType === 'Entry' && (
+                <>
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">Tenant Received Date</label>
+                    <input
+                      type="text"
+                      value={details.tenantReceivedDate || ''}
+                      onChange={(e) => handleUpdateDetail('tenantReceivedDate', e.target.value)}
+                      className="w-full border border-neutral-300 rounded-lg p-2"
+                      placeholder="Date tenant received report"
+                    />
+                  </div>
 
-              <div>
-                <label className="block font-semibold text-neutral-700 mb-1">Report Return Date (Within 7 Days)</label>
-                <input
-                  type="text"
-                  value={details.reportReturnDate}
-                  onChange={(e) => handleUpdateDetail('reportReturnDate', e.target.value)}
-                  className="w-full border border-neutral-300 rounded-lg p-2"
-                  placeholder="e.g. Monday 26/05/2025"
-                />
-              </div>
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">Report Return Date (Within 7 Days)</label>
+                    <input
+                      type="text"
+                      value={details.reportReturnDate}
+                      onChange={(e) => handleUpdateDetail('reportReturnDate', e.target.value)}
+                      className="w-full border border-neutral-300 rounded-lg p-2"
+                      placeholder="e.g. Monday 26/05/2025"
+                    />
+                  </div>
+                </>
+              )}
 
               <div>
                 <label className="block font-semibold text-neutral-700 mb-1">Company / Agency Name</label>
@@ -518,6 +573,129 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                   placeholder="e.g. 302/32 Warleigh Grove Brighton VIC 3186"
                 />
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= ROUTINE / EXIT NOTES & SIGN-OFF TAB ================= */}
+        {activeTab === 'notes' && details.reportType !== 'Entry' && (
+          <div className="space-y-4 text-xs">
+            <h3 className="font-bold text-neutral-900 text-sm pb-2 border-b border-neutral-200">
+              {details.reportType === 'Routine'
+                ? 'Routine Inspection Summary, Maintenance & Sign-off'
+                : 'Exit Condition Report Notes, Work Dates & Sign-off'}
+            </h3>
+
+            {details.reportType === 'Exit' && (
+              <div className="p-3 border border-neutral-200 rounded-lg bg-white space-y-3 shadow-2xs">
+                <h4 className="font-bold text-neutral-900 text-xs uppercase tracking-wider">
+                  Approximate dates when work last done on residential premises
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">Painting of premises (external)</label>
+                    <input
+                      type="text"
+                      value={details.paintingPremisesExternalDate || ''}
+                      onChange={(e) => handleUpdateDetail('paintingPremisesExternalDate', e.target.value)}
+                      className="w-full border border-neutral-300 rounded p-1.5 bg-neutral-50 font-mono"
+                      placeholder="DD/MM/YYYY"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">Painting of premises (internal)</label>
+                    <input
+                      type="text"
+                      value={details.paintingPremisesInternalDate || ''}
+                      onChange={(e) => handleUpdateDetail('paintingPremisesInternalDate', e.target.value)}
+                      className="w-full border border-neutral-300 rounded p-1.5 bg-neutral-50 font-mono"
+                      placeholder="DD/MM/YYYY"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">Floorcoverings laid</label>
+                    <input
+                      type="text"
+                      value={details.floorcoveringsLaidDate || ''}
+                      onChange={(e) => handleUpdateDetail('floorcoveringsLaidDate', e.target.value)}
+                      className="w-full border border-neutral-300 rounded p-1.5 bg-neutral-50 font-mono"
+                      placeholder="DD/MM/YYYY"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">Floorcoverings professionally cleaned</label>
+                    <input
+                      type="text"
+                      value={details.floorcoveringsCleanedDate || ''}
+                      onChange={(e) => handleUpdateDetail('floorcoveringsCleanedDate', e.target.value)}
+                      className="w-full border border-neutral-300 rounded p-1.5 bg-neutral-50 font-mono"
+                      placeholder="DD/MM/YYYY"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block font-semibold text-neutral-700 mb-1">
+                {details.reportType === 'Routine' ? 'Agent Comments' : 'Exit Report Additional Comments'}
+              </label>
+              <textarea
+                value={details.additionalComments}
+                onChange={(e) => handleUpdateDetail('additionalComments', e.target.value)}
+                rows={4}
+                className="w-full border border-neutral-300 rounded-lg p-2 bg-white"
+                placeholder={details.reportType === 'Routine'
+                  ? 'Overall inspection summary, presentation and observations...'
+                  : 'Additional end-of-tenancy comments...'}
+              />
+            </div>
+
+            {details.reportType === 'Routine' && (
+              <div>
+                <label className="block font-semibold text-neutral-700 mb-1">Maintenance Comments</label>
+                <textarea
+                  value={details.maintenanceComments || ''}
+                  onChange={(e) => handleUpdateDetail('maintenanceComments', e.target.value)}
+                  rows={5}
+                  className="w-full border border-neutral-300 rounded-lg p-2 bg-white"
+                  placeholder="List maintenance items identified during the routine inspection..."
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-neutral-700 mb-1">
+                  {details.reportType === 'Exit' ? 'Agent Signatory at END of Tenancy' : 'Prepared / Signed by'}
+                </label>
+                <input
+                  type="text"
+                  value={details.agentSignName}
+                  onChange={(e) => handleUpdateDetail('agentSignName', e.target.value)}
+                  className="w-full border border-neutral-300 rounded-lg p-2 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-neutral-700 mb-1">Sign-off Date</label>
+                <input
+                  type="text"
+                  value={details.agentSignDate}
+                  onChange={(e) => handleUpdateDetail('agentSignDate', e.target.value)}
+                  className="w-full border border-neutral-300 rounded-lg p-2 bg-white"
+                  placeholder="DD/MM/YYYY"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-neutral-700 mb-1">Inspection Disclaimer</label>
+              <textarea
+                value={details.disclaimerText}
+                onChange={(e) => handleUpdateDetail('disclaimerText', e.target.value)}
+                rows={5}
+                className="w-full border border-neutral-300 rounded-lg p-2 bg-neutral-50 font-sans text-[11px]"
+              />
             </div>
           </div>
         )}

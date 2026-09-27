@@ -9,6 +9,16 @@ const COMPANY = {
   companyWebsite: PROINSPECT_COMPANY.website,
 };
 
+function defaultDisclaimer(reportType: ReportType): string {
+  if (reportType === 'Routine') {
+    return 'This routine inspection report records visible conditions observed at the property at the time of inspection. It is a visual inspection only and is not a building, structural, electrical, plumbing, gas, pest, pool barrier, asbestos or statutory compliance inspection. Furniture, floor coverings and stored goods are not moved unless expressly noted. The report should be read together with the photographs and commentary, and specialist assessment should be obtained where required.';
+  }
+  if (reportType === 'Exit') {
+    return 'This exit condition report records visible conditions observed at the property at the end-of-tenancy inspection. It is a visual inspection only and is not a building, structural, electrical, plumbing, gas, pest, pool barrier, asbestos or statutory compliance inspection. Furniture, floor coverings and stored goods are not moved unless expressly noted. The report should be read together with the photographs and commentary, and specialist assessment should be obtained where required.';
+  }
+  return 'This report records the condition observed at the time of inspection. It should be read together with the photographs and commentary contained in the report.';
+}
+
 export function createBlankReport(
   reportType: ReportType,
   property?: { id: string; address: string }
@@ -24,7 +34,12 @@ export function createBlankReport(
     updatedAt: now.toISOString(),
     details: {
       reportType,
-      formName: reportType === 'Entry' ? 'Property Condition Report' : `${reportType} Inspection Report`,
+      formName:
+        reportType === 'Entry'
+          ? 'Property Condition Report'
+          : reportType === 'Exit'
+          ? 'Exit Condition Report'
+          : 'Routine Inspection Report',
       actNotice: reportType === 'Entry' ? 'RESIDENTIAL TENANCIES ACT 1987 (WA) Section 27C(6)' : '',
       formNumber: reportType === 'Entry' ? 'FORM 1' : undefined,
       governingBody: reportType === 'Entry' ? 'Consumer Protection, Western Australia' : undefined,
@@ -33,14 +48,17 @@ export function createBlankReport(
       inspectingAgent: '',
       inspectionDate: date,
       tenancyStartDate: '',
+      leaseExpiryDate: '',
+      rentReviewDate: '',
+      currentRentalAmount: '',
       tenants: '',
       tenantReceivedDate: '',
       reportReturnDate: '',
       additionalComments: '',
+      maintenanceComments: '',
       agentSignName: '',
       agentSignDate: date,
-      disclaimerText:
-        'This report records the condition observed at the time of inspection. It should be read together with the photographs and commentary contained in the report.',
+      disclaimerText: defaultDisclaimer(reportType),
     },
     areas: [],
     photos: [],

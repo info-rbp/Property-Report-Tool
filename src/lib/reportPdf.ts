@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { formatAustralianDate, splitTenantNames } from './reportFormatting';
-import { InspectionArea, InspectionItem, ReportData, ReportPhoto } from '../types/report';
+import { InspectionArea, InspectionItem, ReportData, ReportPhoto, ReportType } from '../types/report';
 
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
@@ -24,6 +24,7 @@ const RED: [number, number, number] = [185, 28, 28];
 const BLUE: [number, number, number] = [29, 78, 216];
 
 const ENTRY_COLUMN_WIDTHS = [34, 7, 7, 7, 78, 14, 47] as const;
+const EXIT_COLUMN_WIDTHS = [42, 8, 8, 8, 128] as const;
 const ROW_FONT_SIZE = 6.4;
 const ROW_LINE_HEIGHT = 2.55;
 const CELL_PAD = 1.15;
@@ -111,11 +112,23 @@ function drawBrand(pdf: jsPDF, x: number, y: number, scale = 1) {
   pdf.text('INSPECT. REPORT. PROTECT.', x + (16 * scale), y + (11.4 * scale));
 }
 
+function reportDisplayTitle(reportType: ReportType): string {
+  if (reportType === 'Entry') return 'Residential Tenancy Entry Condition Report';
+  if (reportType === 'Exit') return 'Residential Tenancy Exit Condition Report';
+  return 'Routine Inspection Report';
+}
+
+function reportRunningTitle(reportType: ReportType): string {
+  if (reportType === 'Entry') return 'Entry Condition Report';
+  if (reportType === 'Exit') return 'Exit Condition Report';
+  return 'Routine Inspection Report';
+}
+
 function drawRunningHeader(pdf: jsPDF, report: ReportData, rightTitle?: string) {
   setFont(pdf, 6.8, 'bold');
   setTextColor(pdf, TEXT);
   pdf.text(value(report.details.propertyAddress) || 'Property address not recorded', MARGIN_X, HEADER_Y);
-  pdf.text(rightTitle || `${report.details.reportType} Condition Report`, PAGE_WIDTH - MARGIN_X, HEADER_Y, { align: 'right' });
+  pdf.text(rightTitle || reportRunningTitle(report.details.reportType), PAGE_WIDTH - MARGIN_X, HEADER_Y, { align: 'right' });
   pdf.setDrawColor(...LIGHT_BORDER);
   pdf.setLineWidth(0.2);
   pdf.line(MARGIN_X, 9.2, PAGE_WIDTH - MARGIN_X, 9.2);
@@ -281,9 +294,7 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
   setFont(pdf, 18, 'bold');
   setTextColor(pdf, TEXT);
   pdf.text(
-    details.reportType === 'Entry'
-      ? 'Residential Tenancy Entry Condition Report'
-      : `${details.reportType} Inspection Report`,
+    reportDisplayTitle(details.reportType),
     PAGE_WIDTH / 2,
     62,
     { align: 'center' }
@@ -654,60 +665,413 @@ function drawEntryConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (m
   });
 }
 
-function drawSimpleConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
-  let y = addContentPage(pdf, report, `${report.details.reportType} Inspection Report`);
-  const itemWidth = 47;
+function drawRoutineDetailRow(pdf: jsPDF, y: number, label: string, content: string): number {
+  const h = 7.2;
+  const labelWidth = 52;
+  drawBox(pdf, MARGIN_X, y, labelWidth, h, SECTION_FILL, LIGHT_BORDER);
+  drawBox(pdf, MARGIN_X + labelWidth, y, CONTENT_WIDTH - labelWidth, h, undefined, LIGHT_BORDER);
+  setFont(pdf, 6.4, 'bold');
+  setTextColor(pdf, TEXT);
+  pdf.text(label, MARGIN_X + 1.6, y + 4.7);
+  setFont(pdf, 6.4, 'normal');
+  pdf.text(content || 'Not recorded', MARGIN_X + labelWidth + 1.8, y + 4.7);
+  return y + h;
+}
+
+function drawRoutinePageHeading(pdf: jsPDF, y: number, title: string): number {
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
+  setFont(pdf, 7.5, 'bold');
+  setTextColor(pdf, NAVY);
+  pdf.text(title, MARGIN_X + 1.8, y + 5.1);
+  return y + 10;
+}
+
+function drawRoutineAreaHeader(pdf: jsPDF, y: number, area: InspectionArea, photoCount: number, continuation: boolean): number {
+  const h = 7.2;
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, SECTION_FILL, BORDER);
+  setFont(pdf, 6.8, 'bold');
+  setTextColor(pdf, TEXT);
+  const title = continuation ? `${area.name.toUpperCase()} (CONTINUED)` : area.name.toUpperCase();
+  pdf.text(title, MARGIN_X + 1.6, y + 4.6);
+  if (photoCount > 0) {
+    setFont(pdf, 5.9, 'bold');
+    setTextColor(pdf, TEAL);
+    pdf.text(
+      `${photoCount} ${photoCount === 1 ? 'photo' : 'photos'} - see photo gallery`,
+      PAGE_WIDTH - MARGIN_X - 1.6,
+      y + 4.6,
+      { align: 'right' }
+    );
+  }
+  return y + h;
+}
+
+function drawRoutineColumnHeader(pdf: jsPDF, y: number): number {
+  const itemWidth = 42;
+  const h = 6.2;
+  drawBox(pdf, MARGIN_X, y, itemWidth, h, LIGHT_FILL, BORDER);
+  drawBox(pdf, MARGIN_X + itemWidth, y, CONTENT_WIDTH - itemWidth, h, LIGHT_FILL, BORDER);
+  setFont(pdf, 6.2, 'bold');
+  setTextColor(pdf, TEXT);
+  pdf.text('Item', MARGIN_X + 1.6, y + 4.1);
+  pdf.text('Inspection findings', MARGIN_X + itemWidth + 1.6, y + 4.1);
+  return y + h;
+}
+
+function drawRoutineFindingRow(pdf: jsPDF, y: number, item: InspectionItem): number {
+  const itemWidth = 42;
   const commentWidth = CONTENT_WIDTH - itemWidth;
+  setFont(pdf, 6.7, 'normal');
+  const itemLines = wrapText(pdf, value(item.name) || 'Overall', itemWidth - 3.2);
+  const commentLines = wrapText(pdf, value(item.agentComments) || 'No finding recorded.', commentWidth - 3.2);
+  const lineHeight = 2.7;
+  const h = Math.max(7, Math.max(itemLines.length, commentLines.length) * lineHeight + 3);
+
+  drawBox(pdf, MARGIN_X, y, itemWidth, h, undefined, LIGHT_BORDER);
+  drawBox(pdf, MARGIN_X + itemWidth, y, commentWidth, h, undefined, LIGHT_BORDER);
+  setFont(pdf, 6.6, 'bold');
+  setTextColor(pdf, TEXT);
+  drawWrappedLines(pdf, itemLines, MARGIN_X + 1.6, y + 3.8, lineHeight);
+  setFont(pdf, 6.7, 'normal');
+  drawWrappedLines(pdf, commentLines, MARGIN_X + itemWidth + 1.6, y + 3.8, lineHeight);
+  return y + h;
+}
+
+function drawRoutineFindingsPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
+  let y = addContentPage(pdf, report, 'Routine Inspection Report');
+  const details = report.details;
+
+  y = drawRoutinePageHeading(pdf, y, 'Inspection Summary');
+  const rows: Array<[string, string]> = [
+    ['Inspection Completed On', formatAustralianDate(details.inspectionDate)],
+    ['Property Manager / Inspector', value(details.inspectingAgent)],
+    ['Lease Start Date', formatAustralianDate(details.tenancyStartDate)],
+    ['Lease Expiry Date', formatAustralianDate(details.leaseExpiryDate)],
+    ['Rent Review', formatAustralianDate(details.rentReviewDate)],
+    ['Current Rental Amount', value(details.currentRentalAmount)],
+    ['Tenant/s', value(details.tenants)],
+  ];
+  rows.forEach(([label, content]) => {
+    y = drawRoutineDetailRow(pdf, y, label, content);
+  });
+
+  y += 4;
+  y = drawRoutinePageHeading(pdf, y, 'Inspection Findings');
 
   report.areas.forEach((area, areaIndex) => {
-    onProgress?.(`Laying out inspection area ${areaIndex + 1} of ${report.areas.length}...`);
-
-    const headerHeight = 7.5;
-    if (y + headerHeight + 8 > BODY_BOTTOM) {
-      y = addContentPage(pdf, report, `${report.details.reportType} Inspection Report`);
+    onProgress?.(`Laying out routine inspection area ${areaIndex + 1} of ${report.areas.length}...`);
+    const count = areaPhotoCount(report, area);
+    const firstItem = area.items[0];
+    let firstHeight = 7;
+    if (firstItem) {
+      setFont(pdf, 6.7, 'normal');
+      const itemLines = wrapText(pdf, value(firstItem.name) || 'Overall', 38.8);
+      const commentLines = wrapText(pdf, value(firstItem.agentComments) || 'No finding recorded.', 148.8);
+      firstHeight = Math.max(7, Math.max(itemLines.length, commentLines.length) * 2.7 + 3);
     }
 
-    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, headerHeight, SECTION_FILL, BORDER);
-    setFont(pdf, 7.1, 'bold');
-    setTextColor(pdf, TEXT);
-    pdf.text(area.name.toUpperCase(), MARGIN_X + 1.5, y + 4.8);
-    y += headerHeight;
+    if (y + 7.2 + 6.2 + firstHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, 'Routine Inspection Report');
+      y = drawRoutinePageHeading(pdf, y, 'Inspection Findings (continued)');
+    }
 
-    drawBox(pdf, MARGIN_X, y, itemWidth, 6, LIGHT_FILL, BORDER);
-    drawBox(pdf, MARGIN_X + itemWidth, y, commentWidth, 6, LIGHT_FILL, BORDER);
-    setFont(pdf, 6.2, 'bold');
-    pdf.text('Item', MARGIN_X + 1.5, y + 4);
-    pdf.text('Inspection comments', MARGIN_X + itemWidth + 1.5, y + 4);
-    y += 6;
+    y = drawRoutineAreaHeader(pdf, y, area, count, false);
+    y = drawRoutineColumnHeader(pdf, y);
 
-    area.items.forEach((item) => {
-      setFont(pdf, 6.6, 'normal');
-      const itemText = wrapText(pdf, value(item.name), itemWidth - 3);
-      const comments = wrapText(pdf, value(item.agentComments), commentWidth - 3);
-      const h = Math.max(5.5, Math.max(itemText.length, comments.length) * 2.65 + 2.2);
+    const items = area.items.length
+      ? area.items
+      : [{ id: `${area.id}-empty`, name: 'Overall', agentComments: 'No inspection finding recorded.' } as InspectionItem];
+
+    items.forEach((item) => {
+      setFont(pdf, 6.7, 'normal');
+      const itemLines = wrapText(pdf, value(item.name) || 'Overall', 38.8);
+      const commentLines = wrapText(pdf, value(item.agentComments) || 'No finding recorded.', 148.8);
+      const h = Math.max(7, Math.max(itemLines.length, commentLines.length) * 2.7 + 3);
 
       if (y + h > BODY_BOTTOM) {
-        y = addContentPage(pdf, report, `${report.details.reportType} Inspection Report`);
-        drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, headerHeight, SECTION_FILL, BORDER);
-        setFont(pdf, 7.1, 'bold');
-        pdf.text(`${area.name.toUpperCase()} (CONTINUED)`, MARGIN_X + 1.5, y + 4.8);
-        y += headerHeight;
-        drawBox(pdf, MARGIN_X, y, itemWidth, 6, LIGHT_FILL, BORDER);
-        drawBox(pdf, MARGIN_X + itemWidth, y, commentWidth, 6, LIGHT_FILL, BORDER);
-        setFont(pdf, 6.2, 'bold');
-        pdf.text('Item', MARGIN_X + 1.5, y + 4);
-        pdf.text('Inspection comments', MARGIN_X + itemWidth + 1.5, y + 4);
-        y += 6;
+        y = addContentPage(pdf, report, 'Routine Inspection Report');
+        y = drawRoutinePageHeading(pdf, y, 'Inspection Findings (continued)');
+        y = drawRoutineAreaHeader(pdf, y, area, count, true);
+        y = drawRoutineColumnHeader(pdf, y);
       }
 
-      drawBox(pdf, MARGIN_X, y, itemWidth, h, undefined, LIGHT_BORDER);
-      drawBox(pdf, MARGIN_X + itemWidth, y, commentWidth, h, undefined, LIGHT_BORDER);
-      setFont(pdf, 6.6, 'bold');
-      drawWrappedLines(pdf, itemText, MARGIN_X + 1.5, y + 3.4, 2.65);
-      setFont(pdf, 6.6, 'normal');
-      drawWrappedLines(pdf, comments, MARGIN_X + itemWidth + 1.5, y + 3.4, 2.65);
-      y += h;
+      y = drawRoutineFindingRow(pdf, y, item);
     });
+
+    y += 2.5;
+  });
+}
+
+function drawNarrativeSection(
+  pdf: jsPDF,
+  report: ReportData,
+  y: number,
+  title: string,
+  text: string,
+  accent: [number, number, number] = NAVY
+): number {
+  setFont(pdf, 6.8, 'normal');
+  const allLines = wrapText(pdf, value(text) || 'No comments recorded.', CONTENT_WIDTH - 4);
+  const lineHeight = 2.8;
+  let offset = 0;
+  let continuation = false;
+
+  while (offset < allLines.length) {
+    const minimumBlock = 22;
+    if (y + minimumBlock > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+    }
+
+    const available = BODY_BOTTOM - y;
+    const maxLines = Math.max(1, Math.floor((available - 12) / lineHeight));
+    const chunk = allLines.slice(offset, offset + maxLines);
+    const boxHeight = Math.max(14, (chunk.length * lineHeight) + 5);
+
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 7.2, SECTION_FILL, BORDER);
+    setFont(pdf, 6.8, 'bold');
+    setTextColor(pdf, accent);
+    pdf.text(continuation ? `${title} (continued)` : title, MARGIN_X + 1.7, y + 4.7);
+    y += 7.2;
+
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, boxHeight, undefined, LIGHT_BORDER);
+    setFont(pdf, 6.8, 'normal');
+    setTextColor(pdf, TEXT);
+    drawWrappedLines(pdf, chunk, MARGIN_X + 2, y + 4, lineHeight);
+    y += boxHeight + 3;
+
+    offset += chunk.length;
+    continuation = true;
+    if (offset < allLines.length) {
+      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+    }
+  }
+
+  return y;
+}
+
+function drawAgentSignoff(pdf: jsPDF, y: number, report: ReportData, heading: string): number {
+  const details = report.details;
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
+  setFont(pdf, 7, 'bold');
+  setTextColor(pdf, NAVY);
+  pdf.text(heading, MARGIN_X + 1.8, y + 5.1);
+  y += 8;
+
+  const widths = [65, 75, CONTENT_WIDTH - 140];
+  let x = MARGIN_X;
+  widths.forEach((width) => {
+    drawBox(pdf, x, y, width, 18, undefined, LIGHT_BORDER);
+    x += width;
+  });
+  setFont(pdf, 6, 'bold');
+  setTextColor(pdf, TEXT);
+  pdf.text('Print Name:', MARGIN_X + 1.8, y + 4);
+  setFont(pdf, 7, 'normal');
+  pdf.text(value(details.agentSignName) || value(details.inspectingAgent) || 'Not recorded', MARGIN_X + 1.8, y + 11);
+  setFont(pdf, 6, 'bold');
+  pdf.text('Signature:', MARGIN_X + 66.8, y + 4);
+  setFont(pdf, 8, 'italic');
+  pdf.text(value(details.agentSignName) || value(details.inspectingAgent) || '', MARGIN_X + 66.8, y + 11.2);
+  setFont(pdf, 6, 'bold');
+  pdf.text('Date:', MARGIN_X + 141.8, y + 4);
+  setFont(pdf, 7, 'normal');
+  pdf.text(formatAustralianDate(details.agentSignDate || details.inspectionDate) || 'Not recorded', MARGIN_X + 141.8, y + 11);
+
+  return y + 22;
+}
+
+function drawDisclaimerSection(pdf: jsPDF, report: ReportData, y: number): number {
+  setFont(pdf, 6, 'italic');
+  const lines = wrapText(pdf, value(report.details.disclaimerText) || 'No disclaimer recorded.', CONTENT_WIDTH);
+  const lineHeight = 2.5;
+  const height = (lines.length * lineHeight) + 8;
+  if (y + height > BODY_BOTTOM) {
+    y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+  }
+
+  setFont(pdf, 6.2, 'bold');
+  setTextColor(pdf, TEXT);
+  pdf.text('DISCLAIMER:', MARGIN_X, y + 1.5);
+  setFont(pdf, 6, 'italic');
+  setTextColor(pdf, MUTED);
+  drawWrappedLines(pdf, lines, MARGIN_X, y + 5.2, lineHeight);
+  return y + height;
+}
+
+function drawRoutineClosingPages(pdf: jsPDF, report: ReportData) {
+  let y = addContentPage(pdf, report, 'Routine Inspection Report');
+  y = drawRoutinePageHeading(pdf, y, 'Inspection Summary & Actions');
+  y = drawNarrativeSection(pdf, report, y, 'Agent Comments', report.details.additionalComments);
+  y = drawNarrativeSection(pdf, report, y, 'Maintenance Comments', report.details.maintenanceComments || '', RED);
+
+  if (y + 48 > BODY_BOTTOM) {
+    y = addContentPage(pdf, report, 'Routine Inspection Report');
+  }
+  y = drawAgentSignoff(pdf, y, report, 'Prepared by / Report sign-off');
+  y += 3;
+  drawDisclaimerSection(pdf, report, y);
+}
+
+interface ExitItemFragment {
+  nameLines: string[];
+  agentLines: string[];
+  first: boolean;
+}
+
+function exitColumnPositions(): number[] {
+  const positions: number[] = [MARGIN_X];
+  EXIT_COLUMN_WIDTHS.forEach((width) => positions.push(positions[positions.length - 1] + width));
+  return positions;
+}
+
+function drawExitAgentHeader(pdf: jsPDF, y: number): number {
+  const h = 10.5;
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, LIGHT_FILL, BORDER);
+  setFont(pdf, 6.7, 'bold');
+  setTextColor(pdf, NAVY);
+  pdf.text('Agent section', PAGE_WIDTH / 2, y + 3.2, { align: 'center' });
+  setFont(pdf, 5.1, 'normal');
+  setTextColor(pdf, TEXT);
+  const lines = wrapText(
+    pdf,
+    "Each item records whether it was clean, undamaged and working at the exit inspection. Y = yes, N = no. Detailed observations are recorded in Agent comments.",
+    CONTENT_WIDTH - 5
+  );
+  drawWrappedLines(pdf, lines, PAGE_WIDTH / 2, y + 6.1, 1.9, { align: 'center', maxLines: 2 });
+  return y + h;
+}
+
+function drawExitAreaHeader(pdf: jsPDF, y: number, areaName: string, continuation: boolean): number {
+  const x = exitColumnPositions();
+  const h = 7.8;
+  EXIT_COLUMN_WIDTHS.forEach((width, index) => drawBox(pdf, x[index], y, width, h, SECTION_FILL, BORDER));
+
+  setFont(pdf, 6.2, 'bold');
+  setTextColor(pdf, TEXT);
+  const label = continuation ? `${areaName.toUpperCase()} (CONTINUED)` : areaName.toUpperCase();
+  const areaLines = wrapText(pdf, label, EXIT_COLUMN_WIDTHS[0] - 2.2);
+  drawWrappedLines(pdf, areaLines, x[0] + 1.2, y + 2.9, 2.2, { maxLines: 2 });
+
+  ['Cln', 'Udg', 'Wkg'].forEach((heading, index) => {
+    pdf.text(heading, x[index + 1] + (EXIT_COLUMN_WIDTHS[index + 1] / 2), y + 4.8, { align: 'center' });
+  });
+  pdf.text('Agent comments', x[4] + (EXIT_COLUMN_WIDTHS[4] / 2), y + 3.1, { align: 'center' });
+  setFont(pdf, 4.6, 'normal');
+  pdf.text('Cln = Clean, Udg = Undamaged, Wkg = Working', x[4] + (EXIT_COLUMN_WIDTHS[4] / 2), y + 6, { align: 'center' });
+
+  return y + h;
+}
+
+function drawExitOverallRow(pdf: jsPDF, y: number, count: number): number {
+  const x = exitColumnPositions();
+  const h = 5.8;
+  EXIT_COLUMN_WIDTHS.forEach((width, index) => drawBox(pdf, x[index], y, width, h, undefined, LIGHT_BORDER));
+  setFont(pdf, 5.9, 'bold');
+  setTextColor(pdf, TEXT);
+  pdf.text('Overall', x[0] + 1.2, y + 3.8);
+  if (count > 0) {
+    setFont(pdf, 5.5, 'normal');
+    setTextColor(pdf, TEAL);
+    pdf.text(`(${count} ${count === 1 ? 'photo' : 'photos'}, see photo gallery)`, x[4] + 1.2, y + 3.8);
+  }
+  return y + h;
+}
+
+function exitItemFragments(pdf: jsPDF, item: InspectionItem): ExitItemFragment[] {
+  setFont(pdf, 6.4, 'normal');
+  const nameLines = wrapText(pdf, value(item.name), EXIT_COLUMN_WIDTHS[0] - 2.4);
+  const agentLines = wrapText(pdf, value(item.agentComments), EXIT_COLUMN_WIDTHS[4] - 2.4);
+  const maxLinesPerFragment = 86;
+  const count = Math.max(nameLines.length, agentLines.length, 1);
+  const fragments: ExitItemFragment[] = [];
+
+  for (let start = 0; start < count; start += maxLinesPerFragment) {
+    const first = start === 0;
+    fragments.push({
+      nameLines: first ? nameLines.slice(start, start + maxLinesPerFragment) : [`${value(item.name)} (continued)`],
+      agentLines: agentLines.slice(start, start + maxLinesPerFragment),
+      first,
+    });
+  }
+
+  return fragments;
+}
+
+function exitFragmentHeight(fragment: ExitItemFragment): number {
+  const lineCount = Math.max(fragment.nameLines.length, fragment.agentLines.length, 1);
+  return Math.max(5.6, (lineCount * 2.6) + 2.5);
+}
+
+function drawExitItemRow(pdf: jsPDF, y: number, item: InspectionItem, fragment: ExitItemFragment): number {
+  const x = exitColumnPositions();
+  const h = exitFragmentHeight(fragment);
+  EXIT_COLUMN_WIDTHS.forEach((width, index) => drawBox(pdf, x[index], y, width, h, undefined, LIGHT_BORDER));
+
+  setFont(pdf, 6.4, 'bold');
+  setTextColor(pdf, TEXT);
+  drawWrappedLines(pdf, fragment.nameLines, x[0] + 1.2, y + 3.1, 2.6);
+  setFont(pdf, 6.4, 'normal');
+  drawWrappedLines(pdf, fragment.agentLines, x[4] + 1.2, y + 3.1, 2.6);
+
+  if (fragment.first) {
+    const midY = y + (h / 2) + 0.9;
+    drawBoolean(pdf, item.clean, x[1] + (EXIT_COLUMN_WIDTHS[1] / 2), midY);
+    drawBoolean(pdf, item.undamaged, x[2] + (EXIT_COLUMN_WIDTHS[2] / 2), midY);
+    drawBoolean(pdf, item.working, x[3] + (EXIT_COLUMN_WIDTHS[3] / 2), midY);
+  }
+
+  return y + h;
+}
+
+function startExitConditionPage(pdf: jsPDF, report: ReportData): number {
+  let y = addContentPage(pdf, report, 'Exit Condition Report');
+  y = drawExitAgentHeader(pdf, y);
+  return y;
+}
+
+function drawExitConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
+  if (!report.areas.length) return;
+
+  let y = startExitConditionPage(pdf, report);
+
+  report.areas.forEach((area, areaIndex) => {
+    onProgress?.(`Laying out exit inspection area ${areaIndex + 1} of ${report.areas.length}...`);
+    const count = areaPhotoCount(report, area);
+    const fragments = area.items.flatMap((item) =>
+      exitItemFragments(pdf, item).map((fragment) => ({ item, fragment }))
+    );
+    const firstHeight = fragments.length ? exitFragmentHeight(fragments[0].fragment) : 0;
+    const initialNeed = 7.8 + (count > 0 ? 5.8 : 0) + firstHeight;
+
+    if (y + initialNeed > BODY_BOTTOM) {
+      y = startExitConditionPage(pdf, report);
+    }
+
+    y = drawExitAreaHeader(pdf, y, area.name, false);
+    if (count > 0) y = drawExitOverallRow(pdf, y, count);
+
+    fragments.forEach(({ item, fragment }) => {
+      const h = exitFragmentHeight(fragment);
+      if (y + h > BODY_BOTTOM) {
+        y = startExitConditionPage(pdf, report);
+        y = drawExitAreaHeader(pdf, y, area.name, true);
+      }
+      y = drawExitItemRow(pdf, y, item, fragment);
+    });
+
+    if (!fragments.length) {
+      const placeholder: InspectionItem = {
+        id: `${area.id}-empty`,
+        name: 'Overall',
+        agentComments: 'No condition commentary recorded.',
+      };
+      const fragment = exitItemFragments(pdf, placeholder)[0];
+      if (y + exitFragmentHeight(fragment) > BODY_BOTTOM) {
+        y = startExitConditionPage(pdf, report);
+        y = drawExitAreaHeader(pdf, y, area.name, true);
+      }
+      y = drawExitItemRow(pdf, y, placeholder, fragment);
+    }
   });
 }
 
@@ -850,9 +1214,37 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
   let y = addContentPage(pdf, report);
   const details = report.details;
 
+  if (details.reportType === 'Exit') {
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
+    setFont(pdf, 7.4, 'bold');
+    setTextColor(pdf, NAVY);
+    pdf.text('Special Reporting at Exit Condition Report', MARGIN_X + 1.8, y + 5.1);
+    y += 12;
+
+    setFont(pdf, 7.5, 'bold');
+    setTextColor(pdf, TEXT);
+    pdf.text('Approximate dates when work last done on residential premises', MARGIN_X, y);
+    y += 3.5;
+    y = drawDateRow(pdf, y, 'Painting of premises (external):', value(details.paintingPremisesExternalDate));
+    y = drawDateRow(pdf, y, 'Painting of premises (internal):', value(details.paintingPremisesInternalDate));
+    y = drawDateRow(pdf, y, 'Floorcoverings laid:', value(details.floorcoveringsLaidDate));
+    y = drawDateRow(pdf, y, 'Floorcoverings professionally cleaned:', value(details.floorcoveringsCleanedDate));
+    y += 4;
+
+    y = drawNarrativeSection(pdf, report, y, 'Exit Report Additional Comments', details.additionalComments);
+
+    if (y + 48 > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, 'Exit Condition Report');
+    }
+    y = drawAgentSignoff(pdf, y, report, 'Agent Signature at the END of the Tenancy');
+    y += 3;
+    drawDisclaimerSection(pdf, report, y);
+    return;
+  }
+
   setFont(pdf, 8, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text(`${details.reportType} Report Additional comments`, MARGIN_X, y + 3.5);
+  pdf.text('Entry Report Additional comments', MARGIN_X, y + 3.5);
   y += 6;
   drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 32, LIGHT_FILL, BORDER);
   setFont(pdf, 7, 'normal');
@@ -860,86 +1252,59 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
   drawWrappedLines(pdf, comments, MARGIN_X + 2, y + 4.6, 2.8, { maxLines: 9 });
   y += 36;
 
-  if (details.reportType === 'Entry') {
-    setFont(pdf, 7.5, 'bold');
-    pdf.text('Approximate dates when work last done on residential premises', MARGIN_X, y);
-    y += 3.2;
-    y = drawDateRow(pdf, y, 'Painting of premises (external):', value(details.paintingPremisesExternalDate));
-    y = drawDateRow(pdf, y, 'Painting of premises (internal):', value(details.paintingPremisesInternalDate));
-    y = drawDateRow(pdf, y, 'Floorcoverings laid:', value(details.floorcoveringsLaidDate));
-    y = drawDateRow(pdf, y, 'Floorcoverings professionally cleaned:', value(details.floorcoveringsCleanedDate));
-    setFont(pdf, 5.8, 'italic');
-    setTextColor(pdf, MUTED);
-    pdf.text('Further items and comments may be recorded on a separate sheet signed by the lessor/property manager and tenant.', MARGIN_X, y + 3.5);
-    y += 7.5;
-  }
+  setFont(pdf, 7.5, 'bold');
+  pdf.text('Approximate dates when work last done on residential premises', MARGIN_X, y);
+  y += 3.2;
+  y = drawDateRow(pdf, y, 'Painting of premises (external):', value(details.paintingPremisesExternalDate));
+  y = drawDateRow(pdf, y, 'Painting of premises (internal):', value(details.paintingPremisesInternalDate));
+  y = drawDateRow(pdf, y, 'Floorcoverings laid:', value(details.floorcoveringsLaidDate));
+  y = drawDateRow(pdf, y, 'Floorcoverings professionally cleaned:', value(details.floorcoveringsCleanedDate));
+  setFont(pdf, 5.8, 'italic');
+  setTextColor(pdf, MUTED);
+  pdf.text('Further items and comments may be recorded on a separate sheet signed by the lessor/property manager and tenant.', MARGIN_X, y + 3.5);
+  y += 7.5;
+
+  y = drawAgentSignoff(pdf, y, report, "Lessor/property manager's signature");
 
   drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
   setFont(pdf, 7.2, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text("Lessor/property manager's signature", MARGIN_X + 1.8, y + 5.1);
+  pdf.text("Tenant's Acknowledgement & Signature", MARGIN_X + 1.8, y + 5.1);
   y += 8;
+  setFont(pdf, 6.2, 'normal');
+  const statement = wrapText(
+    pdf,
+    'I/we have received and read the Condition Report for the above property and understand that it must be returned within 7 days.',
+    CONTENT_WIDTH - 3
+  );
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 11, undefined, LIGHT_BORDER);
+  drawWrappedLines(pdf, statement, MARGIN_X + 1.8, y + 3.8, 2.6, { maxLines: 3 });
+  y += 11;
 
-  const thirds = [65, 75, CONTENT_WIDTH - 140];
-  let x = MARGIN_X;
-  thirds.forEach((width) => {
-    drawBox(pdf, x, y, width, 18, undefined, LIGHT_BORDER);
-    x += width;
-  });
-  setFont(pdf, 6.1, 'bold');
-  pdf.text('Print Name:', MARGIN_X + 1.8, y + 4);
-  setFont(pdf, 7, 'normal');
-  pdf.text(value(details.agentSignName) || value(details.inspectingAgent), MARGIN_X + 1.8, y + 10.8);
-  setFont(pdf, 6.1, 'bold');
-  pdf.text('Signature:', MARGIN_X + 66.8, y + 4);
-  setFont(pdf, 8, 'italic');
-  pdf.text(value(details.agentSignName) || value(details.inspectingAgent), MARGIN_X + 66.8, y + 11.2);
-  setFont(pdf, 6.1, 'bold');
-  pdf.text('Date:', MARGIN_X + 141.8, y + 4);
-  setFont(pdf, 7, 'normal');
-  pdf.text(formatAustralianDate(details.agentSignDate || details.inspectionDate), MARGIN_X + 141.8, y + 10.8);
-  y += 22;
+  const parsedTenantNames = splitTenantNames(details.tenants, 3);
+  const tenantNames = [
+    value(details.tenant1SignName) || parsedTenantNames[0] || '',
+    value(details.tenant2SignName) || parsedTenantNames[1] || '',
+    value(details.tenant3SignName) || parsedTenantNames[2] || '',
+  ];
 
-  if (details.reportType === 'Entry') {
-    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
+  tenantNames.forEach((name, index) => {
+    drawBox(pdf, MARGIN_X, y, 62, 18, undefined, LIGHT_BORDER);
+    drawBox(pdf, MARGIN_X + 62, y, 82, 18, undefined, LIGHT_BORDER);
+    drawBox(pdf, MARGIN_X + 144, y, CONTENT_WIDTH - 144, 18, undefined, LIGHT_BORDER);
+    setFont(pdf, 6.2, 'bold');
+    pdf.text(`Tenant ${index + 1}`, MARGIN_X + 1.8, y + 4);
+    setFont(pdf, 5.8, 'normal');
+    pdf.text('Print Name:', MARGIN_X + 1.8, y + 7.3);
     setFont(pdf, 7.2, 'bold');
-    pdf.text("Tenant's Acknowledgement & Signature", MARGIN_X + 1.8, y + 5.1);
-    y += 8;
-    setFont(pdf, 6.2, 'normal');
-    const statement = wrapText(
-      pdf,
-      'I/we have received and read the Condition Report for the above property and understand that it must be returned within 7 days.',
-      CONTENT_WIDTH - 3
-    );
-    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 11, undefined, LIGHT_BORDER);
-    drawWrappedLines(pdf, statement, MARGIN_X + 1.8, y + 3.8, 2.6, { maxLines: 3 });
-    y += 11;
-
-    const parsedTenantNames = splitTenantNames(details.tenants, 3);
-    const tenantNames = [
-      value(details.tenant1SignName) || parsedTenantNames[0] || '',
-      value(details.tenant2SignName) || parsedTenantNames[1] || '',
-      value(details.tenant3SignName) || parsedTenantNames[2] || '',
-    ];
-
-    tenantNames.forEach((name, index) => {
-      drawBox(pdf, MARGIN_X, y, 62, 18, undefined, LIGHT_BORDER);
-      drawBox(pdf, MARGIN_X + 62, y, 82, 18, undefined, LIGHT_BORDER);
-      drawBox(pdf, MARGIN_X + 144, y, CONTENT_WIDTH - 144, 18, undefined, LIGHT_BORDER);
-      setFont(pdf, 6.2, 'bold');
-      pdf.text(`Tenant ${index + 1}`, MARGIN_X + 1.8, y + 4);
-      setFont(pdf, 5.8, 'normal');
-      pdf.text('Print Name:', MARGIN_X + 1.8, y + 7.3);
-      setFont(pdf, 7.2, 'bold');
-      pdf.text(name, MARGIN_X + 1.8, y + 13.2);
-      setFont(pdf, 5.8, 'normal');
-      pdf.text('Signature:', MARGIN_X + 63.8, y + 4);
-      pdf.text('Date:', MARGIN_X + 145.8, y + 4);
-      pdf.text('____ / ____ / ________', MARGIN_X + 145.8, y + 13.2);
-      y += 18;
-    });
-    y += 5;
-  }
+    pdf.text(name, MARGIN_X + 1.8, y + 13.2);
+    setFont(pdf, 5.8, 'normal');
+    pdf.text('Signature:', MARGIN_X + 63.8, y + 4);
+    pdf.text('Date:', MARGIN_X + 145.8, y + 4);
+    pdf.text('____ / ____ / ________', MARGIN_X + 145.8, y + 13.2);
+    y += 18;
+  });
+  y += 5;
 
   if (y > BODY_BOTTOM - 16) {
     throw new Error('Final report signature page content exceeds the available A4 page height.');
@@ -988,22 +1353,32 @@ export async function generateReportPdf(
     onProgress?.('Building statutory Form 1 page...');
     drawStatutoryPage(pdf, report);
     drawEntryConditionPages(pdf, report, onProgress);
+    await drawPhotoPages(pdf, report, onProgress);
+    onProgress?.('Building signatures and final page...');
+    drawFinalPage(pdf, report);
+  } else if (report.details.reportType === 'Routine') {
+    onProgress?.('Building routine inspection summary and findings...');
+    drawRoutineFindingsPages(pdf, report, onProgress);
+    onProgress?.('Building routine inspection summary and maintenance actions...');
+    drawRoutineClosingPages(pdf, report);
+    await drawPhotoPages(pdf, report, onProgress);
   } else {
-    drawSimpleConditionPages(pdf, report, onProgress);
+    onProgress?.('Building exit condition tables...');
+    drawExitConditionPages(pdf, report, onProgress);
+    await drawPhotoPages(pdf, report, onProgress);
+    onProgress?.('Building exit special reporting and sign-off...');
+    drawFinalPage(pdf, report);
   }
 
-  await drawPhotoPages(pdf, report, onProgress);
-
-  onProgress?.('Building signatures and final page...');
-  drawFinalPage(pdf, report);
   addFooters(pdf, report);
 
+  const photoPageMinimum = report.photos.length ? Math.ceil(report.photos.length / 12) : 0;
   const expectedMinimumPages =
-    1 +
-    (report.details.reportType === 'Entry' ? 1 : 0) +
-    (report.areas.length ? 1 : 0) +
-    (report.photos.length ? Math.ceil(report.photos.length / 12) : 0) +
-    1;
+    report.details.reportType === 'Entry'
+      ? 3 + (report.areas.length ? 1 : 0) + photoPageMinimum
+      : report.details.reportType === 'Routine'
+      ? 3 + photoPageMinimum
+      : 2 + (report.areas.length ? 1 : 0) + photoPageMinimum;
 
   if (pdf.getNumberOfPages() < expectedMinimumPages) {
     throw new Error('PDF validation failed because the generated page count was lower than expected.');

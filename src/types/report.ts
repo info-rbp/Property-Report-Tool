@@ -47,6 +47,9 @@ export interface TenancyDetails {
   inspectingAgent: string;
   inspectionDate: string;
   tenancyStartDate: string;
+  leaseExpiryDate?: string;
+  rentReviewDate?: string;
+  currentRentalAmount?: string;
   tenants: string;
   tenantReceivedDate?: string;
   reportReturnDate: string;
@@ -56,6 +59,7 @@ export interface TenancyDetails {
   floorcoveringsLaidDate?: string;
   floorcoveringsCleanedDate?: string;
   additionalComments: string;
+  maintenanceComments?: string;
   agentSignName: string;
   agentSignDate: string;
   tenant1SignName?: string;
