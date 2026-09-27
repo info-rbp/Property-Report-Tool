@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Download, Mail } from 'lucide-react';
+import { getReportTypeLabel } from '../data/reportCatalogue';
 import { ReportData } from '../types/report';
 
 interface Props {
@@ -29,8 +30,9 @@ export const ReportActions: React.FC<Props> = ({
   ].filter(Boolean) as string[];
 
   const prepareEmail = () => {
-    const subject = `${details.reportType} Report - ${details.propertyAddress || 'Property'}`;
-    const body = `Please find attached the completed ${details.reportType.toLowerCase()} report for ${details.propertyAddress || 'the property'}, inspected on ${details.inspectionDate || 'the recorded inspection date'}.
+    const reportLabel = getReportTypeLabel(details.reportType);
+    const subject = `${reportLabel} - ${details.propertyAddress || 'Property'}`;
+    const body = `Please find attached the completed ${reportLabel.toLowerCase()} for ${details.propertyAddress || 'the property'}, dated ${details.inspectionDate || 'the recorded report date'}.
 
 Regards,
 ProInspect`;
