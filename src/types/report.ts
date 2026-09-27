@@ -20,11 +20,11 @@ export interface InspectionArea {
   items: InspectionItem[];
 }
 
-export interface DrivePhoto {
+export interface ReportPhoto {
   id: string;
   name: string;
-  thumbnailLink?: string;
-  webContentLink?: string;
+  url?: string;
+  storageKey?: string;
   dataUrl?: string;
   areaName?: string;
   photoIndex?: number;
@@ -66,10 +66,36 @@ export interface TenancyDetails {
 
 export interface ReportData {
   id?: string;
+  propertyId?: string;
   status?: ReportStatus;
+  completedPdfKey?: string;
   createdAt?: string;
   updatedAt?: string;
   details: TenancyDetails;
   areas: InspectionArea[];
-  photos: DrivePhoto[];
+  photos: ReportPhoto[];
+}
+
+export interface PropertyRecord {
+  id: string;
+  address: string;
+  reference?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface ReportSummary {
+  id: string;
+  propertyId: string;
+  reportType: ReportType;
+  status: ReportStatus;
+  inspectionDate?: string;
+  completedPdfKey?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
 }
