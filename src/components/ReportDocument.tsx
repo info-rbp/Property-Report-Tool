@@ -3,6 +3,7 @@ import { PROINSPECT_COMPANY } from '../config/company';
 import { ReportData, InspectionArea, InspectionItem } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
 import { SimpleReportDocument } from './SimpleReportDocument';
+import { GenericReportDocument } from './GenericReportDocument';
 
 interface ReportPreviewProps {
   report: ReportData;
@@ -77,8 +78,11 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
     photos[0]?.dataUrl ||
     photos[0]?.url;
 
-  if (details.reportType !== 'Entry') {
+  if (details.reportType === 'Routine' || details.reportType === 'Exit') {
     return <SimpleReportDocument report={report} />;
+  }
+  if (details.reportType !== 'Entry') {
+    return <GenericReportDocument report={report} />;
   }
 
   // Total inspection photos
