@@ -8,7 +8,7 @@ V1 is deployed as a single Cloudflare Workers application containing:
 - Cloudflare R2 for inspection photos and completed PDFs.
 - Cloudflare Access for staff authentication.
 
-PDF rendering remains browser-side. Cloudflare stores the final issued PDF after the browser generates it.
+PDF generation remains browser-side, but the production renderer now builds the PDF directly from report data using jsPDF. It does not rasterise the React/Tailwind preview with html2canvas. Cloudflare stores the final issued PDF after generation.
 
 ## Production resources
 
@@ -190,7 +190,7 @@ Included:
 - CSV commentary import.
 - Device photo upload with browser resize/compression.
 - Cross-device cloud drafts.
-- Browser PDF generation.
+- Deterministic browser PDF generation from report data.
 - Stored final PDFs.
 - Prepared email workflow.
 - Cloudflare Access staff authentication.
