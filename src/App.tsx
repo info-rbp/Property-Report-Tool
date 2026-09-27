@@ -38,19 +38,6 @@ function pdfFilename(report: ReportData): string {
   return `ProInspect_${report.details.reportType}_Report_${safeAddress}_${safeDate}.pdf`;
 }
 
-async function waitForReportImages(container: HTMLElement): Promise<void> {
-  const images = Array.from(container.querySelectorAll<HTMLImageElement>('img'));
-  await Promise.all(images.map((image) => {
-    if (image.complete) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      const done = () => resolve();
-      image.addEventListener('load', done, { once: true });
-      image.addEventListener('error', done, { once: true });
-      window.setTimeout(done, 8000);
-    });
-  }));
-}
-
 export default function App() {
   const [properties, setProperties] = useState<PropertyRecord[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<PropertyRecord | null>(null);
@@ -307,7 +294,6 @@ export default function App() {
     const container = document.getElementById('report-print-container');
     if (!container) throw new Error('Report preview is not ready.');
     if (document.fonts?.ready) await document.fonts.ready;
-    await waitForReportImages(container);
     return generateElementPdf(container, (message) => setExportProgressText(message));
   };
 

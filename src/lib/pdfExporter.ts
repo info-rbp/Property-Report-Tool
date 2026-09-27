@@ -1,6 +1,8 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas-pro';
 
+const IMAGE_READY_TIMEOUT_MS = 20000;
+
 function sanitizeClonedDocumentColors(clonedDoc: Document, clonedTarget: HTMLElement) {
   clonedDoc.querySelectorAll('style').forEach((styleTag) => {
     if (styleTag.textContent && (styleTag.textContent.includes('oklch') || styleTag.textContent.includes('oklab'))) {
@@ -21,15 +23,31 @@ function sanitizeClonedDocumentColors(clonedDoc: Document, clonedTarget: HTMLEle
       background-color: #ffffff !important;
       color: #0f172a !important;
       box-shadow: none !important;
+      overflow: hidden !important;
     }
     .pdf-page table {
       border-color: #94a3b8 !important;
+      table-layout: fixed !important;
     }
     .pdf-page th, .pdf-page td {
       border-color: #cbd5e1 !important;
+      overflow-wrap: anywhere !important;
+      word-break: normal !important;
+    }
+    .pdf-photo-page img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      object-fit: cover !important;
     }
   `;
   clonedDoc.head.appendChild(safeStyles);
+
+  clonedTarget.querySelectorAll<HTMLImageElement>('img').forEach((image) => {
+    image.loading = 'eager';
+    image.decoding = 'sync';
+  });
 
   const elements = [clonedTarget, ...Array.from(clonedTarget.querySelectorAll<HTMLElement>('*'))];
   const win = clonedDoc.defaultView || window;
@@ -71,6 +89,61 @@ function sanitizeClonedDocumentColors(clonedDoc: Document, clonedTarget: HTMLEle
   }
 }
 
+function timeout(ms: number): Promise<never> {
+  return new Promise((_, reject) => {
+    window.setTimeout(() => reject(new Error('Image loading timed out while preparing the PDF.')), ms);
+  });
+}
+
+async function ensureImageReady(image: HTMLImageElement): Promise<void> {
+  image.loading = 'eager';
+
+  if (!image.complete) {
+    await Promise.race([
+      new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          image.removeEventListener('load', onLoad);
+          image.removeEventListener('error', onError);
+        };
+        const onLoad = () => {
+          cleanup();
+          resolve();
+        };
+        const onError = () => {
+          cleanup();
+          reject(new Error(`Unable to load report image: ${image.alt || 'inspection photo'}`));
+        };
+        image.addEventListener('load', onLoad, { once: true });
+        image.addEventListener('error', onError, { once: true });
+      }),
+      timeout(IMAGE_READY_TIMEOUT_MS),
+    ]);
+  }
+
+  if (!image.naturalWidth || !image.naturalHeight) {
+    throw new Error(`Unable to load report image: ${image.alt || 'inspection photo'}`);
+  }
+
+  if (typeof image.decode === 'function') {
+    await Promise.race([
+      image.decode().catch(() => undefined),
+      timeout(IMAGE_READY_TIMEOUT_MS),
+    ]);
+  }
+}
+
+async function ensurePageImagesReady(page: HTMLElement): Promise<void> {
+  const images = Array.from(page.querySelectorAll<HTMLImageElement>('img'));
+  if (!images.length) return;
+  await Promise.all(images.map(ensureImageReady));
+}
+
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
 export async function generateElementPdf(
   containerElement: HTMLElement,
   onProgress?: (message: string) => void
@@ -89,20 +162,53 @@ export async function generateElementPdf(
 
   for (let index = 0; index < pageElements.length; index++) {
     const page = pageElements[index];
-    onProgress?.(`Rendering page ${index + 1} of ${pageElements.length}...`);
+    const pageNumber = index + 1;
+    const isPhotoPage = page.classList.contains('pdf-photo-page');
+
+    onProgress?.(`Preparing page ${pageNumber} of ${pageElements.length}...`);
+    await ensurePageImagesReady(page);
+    await nextPaint();
+
+    const rect = page.getBoundingClientRect();
+    const captureWidth = Math.max(1, Math.ceil(rect.width));
+    const captureHeight = Math.max(1, Math.ceil(rect.height));
+
+    onProgress?.(`Rendering page ${pageNumber} of ${pageElements.length}...`);
 
     const canvas = await html2canvas(page, {
-      scale: 2,
+      // Photo-heavy reports can contain hundreds of source images. A lower scale on gallery
+      // pages materially reduces browser canvas/GPU memory without reducing visible A4 quality.
+      scale: isPhotoPage ? 1.5 : 2,
       useCORS: true,
       allowTaint: false,
       logging: false,
       backgroundColor: '#ffffff',
-      windowWidth: page.scrollWidth || 794,
+      width: captureWidth,
+      height: captureHeight,
+      windowWidth: captureWidth,
+      windowHeight: captureHeight,
+      scrollX: 0,
+      scrollY: -window.scrollY,
+      imageTimeout: IMAGE_READY_TIMEOUT_MS,
+      removeContainer: true,
       onclone: (clonedDoc, clonedElement) => sanitizeClonedDocumentColors(clonedDoc, clonedElement),
     });
 
+    const jpegQuality = isPhotoPage ? 0.84 : 0.92;
+    const jpeg = canvas.toDataURL('image/jpeg', jpegQuality);
+
     if (index > 0) pdf.addPage('a4', 'portrait');
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    pdf.addImage(jpeg, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+
+    // Release the large backing canvas before moving to the next page. This is important for
+    // reports with several hundred images where decoded-image and canvas memory can otherwise
+    // accumulate and produce corrupted gallery captures.
+    canvas.width = 1;
+    canvas.height = 1;
+
+    if (isPhotoPage || index % 4 === 3) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    }
   }
 
   onProgress?.('Finalising PDF...');
