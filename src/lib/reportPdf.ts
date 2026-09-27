@@ -1076,6 +1076,228 @@ function drawExitConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (me
   });
 }
 
+function templateFieldValue(report: ReportData, key: string, isDate = false): string {
+  const raw = value(report.details.templateFields?.[key]);
+  return isDate ? formatAustralianDate(raw) : raw;
+}
+
+function genericDetailRowHeight(pdf: jsPDF, content: string): number {
+  setFont(pdf, 6.4, 'normal');
+  const lines = wrapText(pdf, content || 'Not recorded', CONTENT_WIDTH - 58);
+  return Math.max(7.2, (lines.length * 2.5) + 3.2);
+}
+
+function drawGenericDetailRow(pdf: jsPDF, y: number, label: string, content: string): number {
+  const labelWidth = 52;
+  const lines = wrapText(pdf, content || 'Not recorded', CONTENT_WIDTH - labelWidth - 4);
+  const h = Math.max(7.2, (lines.length * 2.5) + 3.2);
+  drawBox(pdf, MARGIN_X, y, labelWidth, h, SECTION_FILL, LIGHT_BORDER);
+  drawBox(pdf, MARGIN_X + labelWidth, y, CONTENT_WIDTH - labelWidth, h, undefined, LIGHT_BORDER);
+  setFont(pdf, 6.4, 'bold');
+  setTextColor(pdf, TEXT);
+  pdf.text(label, MARGIN_X + 1.6, y + 4.5);
+  setFont(pdf, 6.4, 'normal');
+  drawWrappedLines(pdf, lines, MARGIN_X + labelWidth + 1.8, y + 4.5, 2.5);
+  return y + h;
+}
+
+function drawGenericSummaryPages(pdf: jsPDF, report: ReportData, definition: ReportTemplateDefinition) {
+  let y = addContentPage(pdf, report, definition.shortLabel);
+  y = drawRoutinePageHeading(pdf, y, definition.summaryTitle);
+
+  const generalRows: Array<[string, string]> = [
+    ['Property Address', value(report.details.propertyAddress)],
+    ['Inspection / Report Date', formatAustralianDate(report.details.inspectionDate)],
+    ['Inspector / Prepared By', value(report.details.inspectingAgent)],
+  ];
+
+  for (const [label, content] of generalRows) {
+    const h = genericDetailRowHeight(pdf, content);
+    if (y + h > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, definition.shortLabel);
+      y = drawRoutinePageHeading(pdf, y, `${definition.summaryTitle} (continued)`);
+    }
+    y = drawGenericDetailRow(pdf, y, label, content);
+  }
+
+  for (const field of (definition.fields || []).filter((field) => field.section === 'details')) {
+    const content = templateFieldValue(report, field.key, field.kind === 'date');
+    if (field.kind === 'textarea') {
+      y += 3;
+      y = drawNarrativeSection(pdf, report, y, field.label, content);
+      continue;
+    }
+
+    const h = genericDetailRowHeight(pdf, content);
+    if (y + h > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, definition.shortLabel);
+      y = drawRoutinePageHeading(pdf, y, `${definition.summaryTitle} (continued)`);
+    }
+    y = drawGenericDetailRow(pdf, y, field.label, content);
+  }
+}
+
+function drawGenericFindingsPages(
+  pdf: jsPDF,
+  report: ReportData,
+  definition: ReportTemplateDefinition,
+  onProgress?: (message: string) => void
+) {
+  if (!report.areas.length) return;
+
+  let y = addContentPage(pdf, report, definition.shortLabel);
+  y = drawRoutinePageHeading(pdf, y, definition.findingsTitle);
+
+  report.areas.forEach((area, areaIndex) => {
+    onProgress?.(`Laying out ${definition.shortLabel} area ${areaIndex + 1} of ${report.areas.length}...`);
+    const count = areaPhotoCount(report, area);
+    const items = area.items.length
+      ? area.items
+      : [{ id: `${area.id}-empty`, name: 'Overall', agentComments: 'No finding recorded.' } as InspectionItem];
+
+    const firstItem = items[0];
+    setFont(pdf, 6.7, 'normal');
+    const firstItemLines = wrapText(pdf, value(firstItem.name) || 'Overall', 38.8);
+    const firstCommentLines = wrapText(pdf, value(firstItem.agentComments) || 'No finding recorded.', 148.8);
+    const firstHeight = Math.max(7, Math.max(firstItemLines.length, firstCommentLines.length) * 2.7 + 3);
+
+    if (y + 7.2 + 6.2 + firstHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, definition.shortLabel);
+      y = drawRoutinePageHeading(pdf, y, `${definition.findingsTitle} (continued)`);
+    }
+
+    y = drawRoutineAreaHeader(pdf, y, area, count, false);
+    y = drawRoutineColumnHeader(pdf, y);
+
+    items.forEach((item) => {
+      setFont(pdf, 6.7, 'normal');
+      const itemLines = wrapText(pdf, value(item.name) || 'Overall', 38.8);
+      const commentLines = wrapText(pdf, value(item.agentComments) || 'No finding recorded.', 148.8);
+      const h = Math.max(7, Math.max(itemLines.length, commentLines.length) * 2.7 + 3);
+
+      if (y + h > BODY_BOTTOM) {
+        y = addContentPage(pdf, report, definition.shortLabel);
+        y = drawRoutinePageHeading(pdf, y, `${definition.findingsTitle} (continued)`);
+        y = drawRoutineAreaHeader(pdf, y, area, count, true);
+        y = drawRoutineColumnHeader(pdf, y);
+      }
+
+      y = drawRoutineFindingRow(pdf, y, item);
+    });
+
+    y += 2.5;
+  });
+}
+
+function drawGenericConditionHeader(pdf: jsPDF, y: number): number {
+  const h = 10.5;
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, LIGHT_FILL, BORDER);
+  setFont(pdf, 6.7, 'bold');
+  setTextColor(pdf, NAVY);
+  pdf.text('Condition assessment', PAGE_WIDTH / 2, y + 3.2, { align: 'center' });
+  setFont(pdf, 5.1, 'normal');
+  setTextColor(pdf, TEXT);
+  const lines = wrapText(
+    pdf,
+    "Each item can record whether it is clean, undamaged and working. Y = yes, N = no. Detailed observations are recorded in Agent comments.",
+    CONTENT_WIDTH - 5
+  );
+  drawWrappedLines(pdf, lines, PAGE_WIDTH / 2, y + 6.1, 1.9, { align: 'center', maxLines: 2 });
+  return y + h;
+}
+
+function startGenericConditionPage(pdf: jsPDF, report: ReportData, definition: ReportTemplateDefinition): number {
+  let y = addContentPage(pdf, report, definition.shortLabel);
+  y = drawGenericConditionHeader(pdf, y);
+  return y;
+}
+
+function drawGenericConditionPages(
+  pdf: jsPDF,
+  report: ReportData,
+  definition: ReportTemplateDefinition,
+  onProgress?: (message: string) => void
+) {
+  if (!report.areas.length) return;
+
+  let y = startGenericConditionPage(pdf, report, definition);
+
+  report.areas.forEach((area, areaIndex) => {
+    onProgress?.(`Laying out ${definition.shortLabel} condition area ${areaIndex + 1} of ${report.areas.length}...`);
+    const count = areaPhotoCount(report, area);
+    const items = area.items.length
+      ? area.items
+      : [{ id: `${area.id}-empty`, name: 'Overall', agentComments: 'No condition commentary recorded.' } as InspectionItem];
+    const fragments = items.flatMap((item) =>
+      exitItemFragments(pdf, item).map((fragment) => ({ item, fragment }))
+    );
+    const firstHeight = fragments.length ? exitFragmentHeight(fragments[0].fragment) : 0;
+    const initialNeed = 7.8 + (count > 0 ? 5.8 : 0) + firstHeight;
+
+    if (y + initialNeed > BODY_BOTTOM) {
+      y = startGenericConditionPage(pdf, report, definition);
+    }
+
+    y = drawExitAreaHeader(pdf, y, area.name, false);
+    if (count > 0) y = drawExitOverallRow(pdf, y, count);
+
+    fragments.forEach(({ item, fragment }) => {
+      const h = exitFragmentHeight(fragment);
+      if (y + h > BODY_BOTTOM) {
+        y = startGenericConditionPage(pdf, report, definition);
+        y = drawExitAreaHeader(pdf, y, area.name, true);
+      }
+      y = drawExitItemRow(pdf, y, item, fragment);
+    });
+  });
+}
+
+function drawGenericClosingPages(pdf: jsPDF, report: ReportData, definition: ReportTemplateDefinition) {
+  let y = addContentPage(pdf, report, definition.shortLabel);
+  y = drawRoutinePageHeading(pdf, y, 'Report Summary & Outcomes');
+
+  y = drawNarrativeSection(
+    pdf,
+    report,
+    y,
+    definition.additionalCommentsLabel,
+    report.details.additionalComments
+  );
+
+  if (definition.maintenanceCommentsLabel) {
+    y = drawNarrativeSection(
+      pdf,
+      report,
+      y,
+      definition.maintenanceCommentsLabel,
+      report.details.maintenanceComments || '',
+      RED
+    );
+  }
+
+  for (const field of (definition.fields || []).filter((field) => field.section === 'outcome')) {
+    const content = templateFieldValue(report, field.key, field.kind === 'date');
+    if (field.kind === 'textarea') {
+      y = drawNarrativeSection(pdf, report, y, field.label, content);
+      continue;
+    }
+
+    const h = genericDetailRowHeight(pdf, content);
+    if (y + h > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, definition.shortLabel);
+      y = drawRoutinePageHeading(pdf, y, 'Report Outcomes (continued)');
+    }
+    y = drawGenericDetailRow(pdf, y, field.label, content);
+  }
+
+  if (y + 48 > BODY_BOTTOM) {
+    y = addContentPage(pdf, report, definition.shortLabel);
+  }
+  y = drawAgentSignoff(pdf, y, report, definition.signoffTitle);
+  y += 3;
+  drawDisclaimerSection(pdf, report, y);
+}
+
 function photoCaption(photo: ReportPhoto, total: number, ordinal: number): string {
   const area = value(photo.areaName) || 'General';
   return `${area}: Overall (photo ${ordinal} of ${total})`;
