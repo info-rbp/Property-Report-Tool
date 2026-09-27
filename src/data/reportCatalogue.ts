@@ -168,7 +168,7 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     additionalCommentsLabel: 'Assessment Summary',
     maintenanceCommentsLabel: 'Recommended Scope / Actions',
     signoffTitle: 'Assessed by / Report sign-off',
-    starterAreas: ['Affected Area'],
+    starterAreas: ['Issue / Affected Area'],
     fields: [
       { key: 'reportedIssue', label: 'Reported Issue', section: 'details', kind: 'textarea' },
       { key: 'reportedBy', label: 'Reported By', section: 'details' },
@@ -192,7 +192,7 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     findingsTitle: 'Completion Verification',
     additionalCommentsLabel: 'Completion Summary',
     signoffTitle: 'Verified by / Report sign-off',
-    starterAreas: ['Completed Works'],
+    starterAreas: ['Before / Original Condition', 'Completed Works'],
     fields: [
       { key: 'workOrderReference', label: 'Work Order / Job Reference', section: 'details' },
       { key: 'contractorName', label: 'Contractor', section: 'details' },
@@ -216,7 +216,7 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     findingsTitle: 'Rectification Verification',
     additionalCommentsLabel: 'Reinspection Summary',
     signoffTitle: 'Verified by / Report sign-off',
-    starterAreas: ['Rectification Items'],
+    starterAreas: ['Items for Reinspection'],
     fields: [
       { key: 'originalReportReference', label: 'Original Report / Inspection Reference', section: 'details' },
       { key: 'rectificationParty', label: 'Rectification Party', section: 'details' },
@@ -377,7 +377,7 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     findingsTitle: 'Works Inspection Findings',
     additionalCommentsLabel: 'Works Inspection Summary',
     signoffTitle: 'Inspected by / Report sign-off',
-    starterAreas: ['Works Area'],
+    starterAreas: ['Pre-Works / Existing Condition', 'Works / Completion'],
     fields: [
       { key: 'contractorName', label: 'Contractor', section: 'details' },
       { key: 'workOrderReference', label: 'Work Order / Job Reference', section: 'details' },
