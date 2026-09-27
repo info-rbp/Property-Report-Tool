@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "proinspect-property-reports",
+  "name": "proinspect-property-report-creation-tool",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-09-27",
   "assets": {
@@ -11,14 +11,14 @@
     {
       "binding": "DB",
       "database_name": "proinspect-property-reports",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "777186a0-e6ca-43f5-8f50-448bd4454046",
       "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [
     {
       "binding": "REPORT_STORAGE",
-      "bucket_name": "proinspect-property-reports"
+      "bucket_name": "proinspect-property-reports-data"
     }
   ],
   "observability": {
