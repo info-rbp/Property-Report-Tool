@@ -45,6 +45,7 @@ export interface ReportTemplateDefinition {
   signoffTitle: string;
   conditionMatrix?: boolean;
   starterAreas?: string[];
+  starterItems?: Record<string, string[]>;
   fields?: ReportTemplateField[];
   defaultDisclaimer: string;
 }
@@ -169,6 +170,15 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     maintenanceCommentsLabel: 'Recommended Scope / Actions',
     signoffTitle: 'Assessed by / Report sign-off',
     starterAreas: ['Issue / Affected Area'],
+    starterItems: {
+      'Issue / Affected Area': [
+        'Reported Issue',
+        'Visible Condition',
+        'Likely Source / Cause Indicators',
+        'Access / Safety Constraints',
+        'Temporary Make-Safe / Immediate Measures',
+      ],
+    },
     fields: [
       { key: 'reportedIssue', label: 'Reported Issue', section: 'details', kind: 'textarea' },
       { key: 'reportedBy', label: 'Reported By', section: 'details' },
@@ -193,6 +203,10 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     additionalCommentsLabel: 'Completion Summary',
     signoffTitle: 'Verified by / Report sign-off',
     starterAreas: ['Before / Original Condition', 'Completed Works'],
+    starterItems: {
+      'Before / Original Condition': ['Original Issue / Condition', 'Pre-Works Evidence'],
+      'Completed Works': ['Scope Completed', 'Workmanship / Finish', 'Operation / Function Test', 'Site Clean / Handover Condition'],
+    },
     fields: [
       { key: 'workOrderReference', label: 'Work Order / Job Reference', section: 'details' },
       { key: 'contractorName', label: 'Contractor', section: 'details' },
@@ -217,6 +231,9 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     additionalCommentsLabel: 'Reinspection Summary',
     signoffTitle: 'Verified by / Report sign-off',
     starterAreas: ['Items for Reinspection'],
+    starterItems: {
+      'Items for Reinspection': ['Original Rectification Item', 'Reinspection Finding', 'Completion / Cleaning Standard'],
+    },
     fields: [
       { key: 'originalReportReference', label: 'Original Report / Inspection Reference', section: 'details' },
       { key: 'rectificationParty', label: 'Rectification Party', section: 'details' },
@@ -353,6 +370,9 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     additionalCommentsLabel: 'Incident Summary',
     signoffTitle: 'Reported / Prepared by',
     starterAreas: ['Incident Scene / Evidence'],
+    starterItems: {
+      'Incident Scene / Evidence': ['Scene Condition', 'Damage / Impact', 'Safety Hazards', 'Immediate Controls / Make-Safe', 'Supporting Evidence'],
+    },
     fields: [
       { key: 'incidentDateTime', label: 'Incident Date / Time', section: 'details' },
       { key: 'incidentType', label: 'Incident Type', section: 'details' },
@@ -378,6 +398,10 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     additionalCommentsLabel: 'Works Inspection Summary',
     signoffTitle: 'Inspected by / Report sign-off',
     starterAreas: ['Pre-Works / Existing Condition', 'Works / Completion'],
+    starterItems: {
+      'Pre-Works / Existing Condition': ['Existing Condition', 'Access / Protection', 'Pre-Works Evidence'],
+      'Works / Completion': ['Scope Completed', 'Workmanship', 'Defects / Omissions', 'Testing / Commissioning', 'Site Clean / Handover'],
+    },
     fields: [
       { key: 'contractorName', label: 'Contractor', section: 'details' },
       { key: 'workOrderReference', label: 'Work Order / Job Reference', section: 'details' },
@@ -402,6 +426,9 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     additionalCommentsLabel: 'Handover Summary',
     signoffTitle: 'Handover verified by',
     starterAreas: ['Handover Condition'],
+    starterItems: {
+      'Handover Condition': ['Visible Property Condition', 'Keys / Access Devices', 'Meters / Services', 'Documents / Records', 'Outstanding Works / Matters'],
+    },
     fields: [
       { key: 'handoverFrom', label: 'Handover From', section: 'details' },
       { key: 'handoverTo', label: 'Handover To', section: 'details' },
@@ -449,6 +476,15 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     additionalCommentsLabel: 'Quality Assurance Summary',
     signoffTitle: 'Inspected by / Report sign-off',
     starterAreas: ['Entry', 'Living Areas', 'Kitchen', 'Bedrooms', 'Bathrooms', 'Laundry', 'External / Common Areas'],
+    starterItems: {
+      Entry: ['Surfaces / Dust', 'Doors / Glass', 'Floor / Edges'],
+      'Living Areas': ['Surfaces / Dust', 'Flooring', 'Windows / Tracks'],
+      Kitchen: ['Benches / Splashbacks', 'Cupboards / Drawers', 'Appliances', 'Sink / Tapware', 'Flooring'],
+      Bedrooms: ['Surfaces / Dust', 'Wardrobes', 'Windows / Tracks', 'Flooring'],
+      Bathrooms: ['Shower / Bath', 'Vanity / Basin', 'Toilet', 'Mirrors / Glass', 'Flooring'],
+      Laundry: ['Sink / Cabinetry', 'Appliance Space', 'Flooring'],
+      'External / Common Areas': ['Surfaces', 'Debris / Waste', 'General Presentation'],
+    },
     fields: [
       { key: 'cleanerContractor', label: 'Cleaner / Contractor', section: 'details' },
       { key: 'serviceDate', label: 'Cleaning Service Date', section: 'details', kind: 'date' },
@@ -495,6 +531,17 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
     additionalCommentsLabel: 'Installation Summary',
     signoffTitle: 'Installed / Verified by',
     starterAreas: ['Key Safe Installation'],
+    starterItems: {
+      'Key Safe Installation': [
+        'Installation Location / Clearance',
+        'Mounting / Fixings',
+        'Key Safe Condition',
+        'Keys / Access Items Placed',
+        'Locking Mechanism / Operation Test',
+        'Weather Protection / Visibility',
+        'Final Installation Verification',
+      ],
+    },
     fields: [
       { key: 'installationDate', label: 'Installation Date', section: 'details', kind: 'date' },
       { key: 'installedBy', label: 'Installed By', section: 'details' },
@@ -527,22 +574,24 @@ export function usesConditionMatrix(type: ReportType): boolean {
 }
 
 export function starterAreasFor(type: ReportType): InspectionArea[] {
-  return (getReportTemplate(type).starterAreas || []).map((name) => ({
-    id: crypto.randomUUID(),
-    name,
-    items: [
-      {
+  const definition = getReportTemplate(type);
+  return (definition.starterAreas || []).map((name) => {
+    const itemNames = definition.starterItems?.[name] || ['Overall'];
+    return {
+      id: crypto.randomUUID(),
+      name,
+      items: itemNames.map((itemName) => ({
         id: crypto.randomUUID(),
-        name: 'Overall',
+        name: itemName,
         clean: null,
         undamaged: null,
         working: null,
         agentComments: '',
         tenantAgrees: null,
         tenantComments: '',
-      },
-    ],
-  }));
+      })),
+    };
+  });
 }
 
 export const REPORT_CATEGORIES: ReportCategory[] = [
