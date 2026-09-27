@@ -21,6 +21,7 @@ export const SimpleReportDocument: React.FC<Props> = ({ report }) => {
             <ProInspectLogo size="md" showTagline={true} />
             <div className="text-right text-xs text-neutral-600">
               <p className="font-bold text-[#0a2540]">{details.companyName || PROINSPECT_COMPANY.name}</p>
+              {(details.companyAddress || PROINSPECT_COMPANY.address) && <p>{details.companyAddress || PROINSPECT_COMPANY.address}</p>}
               {(details.companyPhone || PROINSPECT_COMPANY.phone) && <p>{details.companyPhone || PROINSPECT_COMPANY.phone}</p>}
               {(details.companyEmail || PROINSPECT_COMPANY.email) && <p>{details.companyEmail || PROINSPECT_COMPANY.email}</p>}
             </div>
