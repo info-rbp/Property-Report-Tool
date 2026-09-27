@@ -75,10 +75,10 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
       const newItem: InspectionItem = {
         id: `custom-item-${Date.now()}`,
         name: newItemName.trim(),
-        clean: true,
-        undamaged: true,
-        working: true,
-        agentComments: 'Clean, intact and in working order.',
+        clean: showConditionMatrix ? true : null,
+        undamaged: showConditionMatrix ? true : null,
+        working: showConditionMatrix ? true : null,
+        agentComments: showConditionMatrix ? 'Clean, intact and in working order.' : '',
         isCustom: true,
       };
       return {
@@ -101,53 +101,63 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   };
 
   const handleAddArea = () => {
-    const newAreaName = prompt('Enter new Area / Room name (e.g. Master Bedroom, Garage, Ensuite):');
+    const newAreaName = prompt(
+      showConditionMatrix
+        ? 'Enter new Area / Room name (e.g. Master Bedroom, Garage, Ensuite):'
+        : 'Enter new Area / Section name (e.g. Exterior, Works Area, Safety / Security):'
+    );
     if (!newAreaName) return;
+
+    const defaultItems: InspectionItem[] = showConditionMatrix
+      ? [
+          {
+            id: `item-${Date.now()}-1`,
+            name: 'Doors/Doorway Frames',
+            clean: true,
+            undamaged: true,
+            working: true,
+            agentComments: 'Painted, clean and intact.',
+          },
+          {
+            id: `item-${Date.now()}-2`,
+            name: 'Ceiling/Cornices',
+            clean: true,
+            undamaged: true,
+            working: true,
+            agentComments: 'Clean and intact.',
+          },
+          {
+            id: `item-${Date.now()}-3`,
+            name: 'Walls',
+            clean: true,
+            undamaged: true,
+            working: true,
+            agentComments: 'Clean and intact.',
+          },
+          {
+            id: `item-${Date.now()}-4`,
+            name: 'Floor / Surface',
+            clean: true,
+            undamaged: true,
+            working: null,
+            agentComments: 'Clean and in good condition.',
+          },
+        ]
+      : [
+          {
+            id: `item-${Date.now()}-1`,
+            name: 'Overall',
+            clean: null,
+            undamaged: null,
+            working: null,
+            agentComments: '',
+          },
+        ];
+
     const newArea: InspectionArea = {
       id: `area-${Date.now()}`,
-      name: newAreaName.trim().toUpperCase(),
-      items: [
-        {
-          id: `item-${Date.now()}-1`,
-          name: 'Doors/Doorway Frames',
-          clean: true,
-          undamaged: true,
-          working: true,
-          agentComments: 'Painted white, intact.',
-        },
-        {
-          id: `item-${Date.now()}-2`,
-          name: 'Ceiling/Cornices',
-          clean: true,
-          undamaged: true,
-          working: true,
-          agentComments: 'Painted white, intact.',
-        },
-        {
-          id: `item-${Date.now()}-3`,
-          name: 'Walls',
-          clean: true,
-          undamaged: true,
-          working: true,
-          agentComments: 'Clean, intact.',
-        },
-        {
-          id: `item-${Date.now()}-4`,
-          name: 'Floor',
-          clean: true,
-          undamaged: true,
-          working: true,
-          agentComments: 'Clean and good condition.',
-        },
-        {
-          id: `item-${Date.now()}-5`,
-          name: 'Light Fittings',
-          clean: true,
-          undamaged: true,
-          working: true,
-          agentComments: 'Globe provided, working.',
-        },
-      ],
+      name: newAreaName.trim(),
+      items: defaultItems,
     };
     onChangeAreas([...areas, newArea]);
     setExpandedAreaId(newArea.id);
