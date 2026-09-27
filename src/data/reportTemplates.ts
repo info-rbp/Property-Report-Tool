@@ -7,11 +7,16 @@ const COMPANY = {
   companyEmail: '',
 };
 
-export function createBlankReport(reportType: ReportType): ReportData {
+export function createBlankReport(
+  reportType: ReportType,
+  property?: { id: string; address: string }
+): ReportData {
   const now = new Date();
   const date = now.toISOString().slice(0, 10);
+
   return {
     id: crypto.randomUUID(),
+    propertyId: property?.id,
     status: 'draft',
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -20,11 +25,9 @@ export function createBlankReport(reportType: ReportType): ReportData {
       formName: reportType === 'Entry' ? 'Property Condition Report' : `${reportType} Inspection Report`,
       actNotice: reportType === 'Entry' ? 'RESIDENTIAL TENANCIES ACT 1987 (WA) Section 27C(6)' : '',
       formNumber: reportType === 'Entry' ? 'FORM 1' : undefined,
-      governingBody: reportType === 'Entry'
-        ? 'Consumer Protection, Western Australia'
-        : undefined,
+      governingBody: reportType === 'Entry' ? 'Consumer Protection, Western Australia' : undefined,
       ...COMPANY,
-      propertyAddress: '',
+      propertyAddress: property?.address || '',
       inspectingAgent: '',
       inspectionDate: date,
       tenancyStartDate: '',
