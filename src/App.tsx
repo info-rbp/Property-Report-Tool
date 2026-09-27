@@ -1,576 +1,603 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { createBlankReport, normalizeReport } from './data/reportTemplates';
-import { ReportData, ReportType } from './types/report';
-import { ReportDocument } from './components/ReportDocument';
-import { ProInspectLogo } from './components/ProInspectLogo';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  Edit3,
+  Eye,
+  FileDown,
+  FileSpreadsheet,
+  Image as ImageIcon,
+  RefreshCw,
+} from 'lucide-react';
 import { CommentaryEditor } from './components/CommentaryEditor';
 import { PhotoManager } from './components/PhotoManager';
-import { GoogleWorkspaceModal } from './components/GoogleWorkspaceModal';
-import { MfaVerificationModal } from './components/MfaVerificationModal';
-import { ReportDashboard } from './components/ReportDashboard';
+import { ProInspectLogo } from './components/ProInspectLogo';
+import { PropertiesDashboard } from './components/PropertiesDashboard';
 import { ReportActions } from './components/ReportActions';
-import { exportElementToPdf } from './lib/pdfExporter';
-import { parseLocalSpreadsheetFile, downloadStarterCsv } from './lib/spreadsheetParser';
-import { initAuth, googleSignIn, logout } from './lib/auth';
-import { User, MultiFactorResolver } from 'firebase/auth';
-import {
-  FileSpreadsheet,
-  Folder,
-  Download,
-  Eye,
-  Edit3,
-  Image as ImageIcon,
-  CheckCircle2,
-  FileDown,
-  RefreshCw,
-  LogOut,
-  RotateCcw,
-  FileText,
-  AlertCircle
-} from 'lucide-react';
+import { ReportDashboard } from './components/ReportDashboard';
+import { ReportDocument } from './components/ReportDocument';
+import { createBlankReport, normalizeReport } from './data/reportTemplates';
+import { api } from './lib/api';
+import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
+import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
+import { processInspectionImage } from './lib/imageProcessor';
+import { downloadPdfBlob, generateElementPdf } from './lib/pdfExporter';
+import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
 
-const STORAGE_KEY = 'proinspect_reports_v1';
-const LEGACY_STORAGE_KEY = 'proinspect_report_draft_wa_v2';
+type ViewMode = 'preview' | 'commentary' | 'photos' | 'actions';
+type StatusMessage = { text: string; type: 'success' | 'info' | 'error' };
+
+function pdfFilename(report: ReportData): string {
+  const safeAddress = (report.details.propertyAddress || 'Property')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const safeDate = (report.details.inspectionDate || new Date().toISOString().slice(0, 10))
+    .replace(/[^0-9-]/g, '');
+  return `ProInspect_${report.details.reportType}_Report_${safeAddress}_${safeDate}.pdf`;
+}
+
+async function waitForReportImages(container: HTMLElement): Promise<void> {
+  const images = Array.from(container.querySelectorAll<HTMLImageElement>('img'));
+  await Promise.all(images.map((image) => {
+    if (image.complete) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const done = () => resolve();
+      image.addEventListener('load', done, { once: true });
+      image.addEventListener('error', done, { once: true });
+      window.setTimeout(done, 8000);
+    });
+  }));
+}
 
 export default function App() {
-  const [reports, setReports] = useState<ReportData[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed.map(normalizeReport);
-      }
-      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (legacy) {
-        const parsedLegacy = JSON.parse(legacy);
-        if (parsedLegacy?.details && Array.isArray(parsedLegacy.areas)) {
-          return [normalizeReport(parsedLegacy)];
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load draft reports from localStorage:', e);
-    }
-    return [];
-  });
-  const [activeReportId, setActiveReportId] = useState<string | null>(null);
-  const [report, setReport] = useState<ReportData>(() => createBlankReport('Entry'));
-  const [viewMode, setViewMode] = useState<'preview' | 'commentary' | 'photos' | 'actions'>('preview');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [hasGoogleAuth, setHasGoogleAuth] = useState(false);
-  const [isSigningIn, setIsSigningIn] = useState(false);
-  const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [exportProgressText, setExportProgressText] = useState<string | null>(null);
-  const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [properties, setProperties] = useState<PropertyRecord[]>([]);
+  const [selectedProperty, setSelectedProperty] = useState<PropertyRecord | null>(null);
+  const [reportSummaries, setReportSummaries] = useState<ReportSummary[]>([]);
+  const [report, setReport] = useState<ReportData | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('preview');
+  const [userEmail, setUserEmail] = useState('');
+  const [statusMessage, setStatusMessage] = useState<StatusMessage | null>(null);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
-  const [mfaResolver, setMfaResolver] = useState<MultiFactorResolver | null>(null);
-  const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [exportProgressText, setExportProgressText] = useState<string | null>(null);
+
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const saveTimerRef = useRef<number | null>(null);
+
+  const loadProperties = async () => {
+    const list = await api.listProperties();
+    setProperties(list);
+    return list;
+  };
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
-    } catch (e) {
+    let active = true;
+    (async () => {
       try {
-        const lightweight = reports.map((item) => ({
-          ...item,
-          photos: item.photos.map((photo) => ({ ...photo, dataUrl: undefined })),
-        }));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweight));
-      } catch (inner) {
-        console.warn('Failed to save draft report list:', inner);
+        const [me, list] = await Promise.all([api.me(), api.listProperties()]);
+        if (!active) return;
+        setUserEmail(me.email);
+        setProperties(list);
+      } catch (error: any) {
+        if (!active) return;
+        setStatusMessage({
+          text: error.message || 'Unable to connect to ProInspect cloud storage.',
+          type: 'error',
+        });
+      } finally {
+        if (active) setIsLoading(false);
       }
-    }
-  }, [reports]);
-
-  useEffect(() => {
-    if (!activeReportId) return;
-    const updated = { ...report, id: activeReportId, updatedAt: new Date().toISOString() };
-    setReports((current) => current.map((item) => item.id === activeReportId ? updated : item));
-    setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-  }, [report, activeReportId]);
-
-  const handleCreateReport = (type: ReportType) => {
-    const created = createBlankReport(type);
-    setReports((current) => [created, ...current]);
-    setReport(created);
-    setActiveReportId(created.id!);
-    setViewMode('commentary');
-  };
-
-  const handleOpenReport = (id: string) => {
-    const selected = reports.find((item) => item.id === id);
-    if (!selected) return;
-    setReport(normalizeReport(selected));
-    setActiveReportId(id);
-    setViewMode('preview');
-  };
-
-  const handleDeleteReport = (id: string) => {
-    if (!confirm('Delete this draft report? This cannot be undone.')) return;
-    setReports((current) => current.filter((item) => item.id !== id));
-    if (activeReportId === id) setActiveReportId(null);
-  };
-
-  const handleBackToDashboard = () => {
-    setActiveReportId(null);
-    setStatusMessage(null);
-  };
-
-  const handleResetToDefault = () => {
-    if (!activeReportId) return;
-    if (confirm('Reset this report to a blank template? All current edits will be replaced.')) {
-      const blank = createBlankReport(report.details.reportType);
-      blank.id = activeReportId;
-      blank.createdAt = report.createdAt || blank.createdAt;
-      setReport(blank);
-      setStatusMessage({ text: 'Report reset to a blank template', type: 'info' });
-    }
-  };
-
-  // Initialize Auth State Listener
-  useEffect(() => {
-    const unsubscribe = initAuth(
-      (user, token) => {
-        setCurrentUser(user);
-        setHasGoogleAuth(Boolean(token));
-      },
-      () => {
-        setCurrentUser(null);
-        setHasGoogleAuth(false);
-      }
-    );
-    return () => unsubscribe();
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const handleGoogleSignIn = async () => {
-    setIsSigningIn(true);
-    setStatusMessage(null);
-    try {
-      const res = await googleSignIn();
-      if (!res) return;
+  useEffect(() => {
+    if (!report?.id || report.status === 'completed') return;
 
-      if ('mfaRequired' in res && res.mfaRequired) {
-        setMfaResolver(res.resolver);
-        setIsMfaModalOpen(true);
+    cacheReport(report).catch(() => undefined);
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+
+    saveTimerRef.current = window.setTimeout(async () => {
+      setIsSaving(true);
+      try {
+        await api.saveReport(report);
+        setLastSavedTime(
+          new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        );
+      } catch (error: any) {
         setStatusMessage({
-          text: 'Multi-factor authentication required. Please enter your verification code.',
+          text: `${error.message || 'Cloud save failed.'} The latest draft remains cached on this device.`,
+          type: 'error',
+        });
+      } finally {
+        setIsSaving(false);
+      }
+    }, 700);
+
+    return () => {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    };
+  }, [report]);
+
+  const handleCreateProperty = async (input: {
+    address: string;
+    reference?: string;
+    notes?: string;
+  }) => {
+    try {
+      const created = await api.createProperty(input);
+      await loadProperties();
+      await handleOpenProperty(created);
+      setStatusMessage({ text: 'Property created.', type: 'success' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to create property.', type: 'error' });
+    }
+  };
+
+  const handleOpenProperty = async (property: PropertyRecord) => {
+    try {
+      setIsLoading(true);
+      const result = await api.getProperty(property.id);
+      setSelectedProperty(result.property);
+      setReportSummaries(result.reports);
+      setReport(null);
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to open property.', type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshSelectedProperty = async () => {
+    if (!selectedProperty) return;
+    const result = await api.getProperty(selectedProperty.id);
+    setSelectedProperty(result.property);
+    setReportSummaries(result.reports);
+    await loadProperties();
+  };
+
+  const handleCreateReport = async (type: ReportType) => {
+    if (!selectedProperty) return;
+    try {
+      const blank = createBlankReport(type, selectedProperty);
+      const created = await api.createReport(selectedProperty.id, type, blank);
+      setReport(normalizeReport(created));
+      setViewMode('commentary');
+      await cacheReport(created);
+      await refreshSelectedProperty();
+      setStatusMessage({ text: 'Report created and saved to the cloud.', type: 'success' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to create report.', type: 'error' });
+    }
+  };
+
+  const handleOpenReport = async (id: string) => {
+    try {
+      setIsLoading(true);
+      const cloudReport = normalizeReport(await api.getReport(id));
+      setReport(cloudReport);
+      await cacheReport(cloudReport);
+      setViewMode('preview');
+    } catch (error: any) {
+      const cached = await getCachedReport(id).catch(() => null);
+      if (cached) {
+        setReport(normalizeReport(cached));
+        setViewMode('preview');
+        setStatusMessage({
+          text: 'Cloud storage was unavailable. This device is showing the last cached draft.',
           type: 'info',
         });
-      } else if ('user' in res) {
-        setCurrentUser(res.user);
-        setHasGoogleAuth(true);
-        setStatusMessage({ text: 'Connected to Google Workspace successfully!', type: 'success' });
+      } else {
+        setStatusMessage({ text: error.message || 'Unable to open report.', type: 'error' });
       }
-    } catch (err: any) {
-      console.error('Sign in error:', err);
-      setStatusMessage({ text: err.message || 'Google Sign-in failed', type: 'error' });
     } finally {
-      setIsSigningIn(false);
+      setIsLoading(false);
     }
   };
 
-  const handleMfaSuccess = (user: User) => {
-    setCurrentUser(user);
-    setHasGoogleAuth(true);
-    setIsMfaModalOpen(false);
-    setMfaResolver(null);
-    setStatusMessage({
-      text: 'Multi-factor verification verified! Google Workspace connected.',
-      type: 'success',
-    });
+  const handleDeleteReport = async (id: string) => {
+    if (!confirm('Delete this draft report and its stored photos? This cannot be undone.')) return;
+    try {
+      await api.deleteReport(id);
+      await removeCachedReport(id).catch(() => undefined);
+      await refreshSelectedProperty();
+      setStatusMessage({ text: 'Draft report deleted.', type: 'info' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to delete report.', type: 'error' });
+    }
   };
 
-  const handleGoogleSignOut = async () => {
-    await logout();
-    setCurrentUser(null);
-    setHasGoogleAuth(false);
-    setMfaResolver(null);
-    setIsMfaModalOpen(false);
-    setStatusMessage({ text: 'Signed out from Google', type: 'info' });
+  const handleBackToProperties = async () => {
+    setSelectedProperty(null);
+    setReportSummaries([]);
+    setReport(null);
+    setViewMode('preview');
+    try {
+      await loadProperties();
+    } catch {
+      // Existing list remains visible.
+    }
   };
 
-  // Import local CSV/XLSX
-  const handleLocalSpreadsheetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleBackToReports = async () => {
+    setReport(null);
+    setViewMode('preview');
+    await refreshSelectedProperty().catch(() => undefined);
+  };
+
+  const handleCsvUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !report || report.status === 'completed') return;
 
     try {
-      const parsed = await parseLocalSpreadsheetFile(file);
-      setReport((prev) => ({
-        ...prev,
-        areas: parsed.areas,
-      }));
+      const parsed = await parseCsvFile(file);
+      setReport((current) => current ? { ...current, areas: parsed.areas } : current);
+      setViewMode('commentary');
       setStatusMessage({
-        text: `Loaded ${parsed.areas.length} inspection areas from "${file.name}"!`,
+        text: `Imported commentary for ${parsed.areas.length} areas from ${file.name}.`,
         type: 'success',
       });
-      setViewMode('commentary');
-    } catch (err: any) {
-      setStatusMessage({ text: err.message || 'Failed to read spreadsheet file', type: 'error' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to import CSV.', type: 'error' });
     }
   };
 
-  // Trigger PDF export
-  const handleExportPdf = async () => {
-    const container = document.getElementById('report-print-container');
-    if (!container) {
-      setStatusMessage({ text: 'Please switch to Report Preview tab first', type: 'error' });
-      return;
-    }
+  const handleUploadPhotos = async (files: File[], areaName: string) => {
+    if (!report?.id || report.status === 'completed') return;
+    setIsUploadingPhotos(true);
+    setStatusMessage(null);
 
-    setIsExportingPdf(true);
-    setExportProgressText('Preparing report document...');
     try {
-      const safeAddress = (report.details.propertyAddress || 'Property').trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-      const safeDate = (report.details.inspectionDate || new Date().toISOString().slice(0, 10)).replace(/[^0-9-]/g, '');
-      const safeFilename = `ProInspect_${report.details.reportType}_Report_${safeAddress}_${safeDate}.pdf`;
-      await exportElementToPdf(container, safeFilename, (msg) => {
-        setExportProgressText(msg);
+      let current = report;
+      let areaCount = current.photos.filter((photo) => photo.areaName === areaName).length;
+
+      for (const file of files) {
+        const processed = await processInspectionImage(file);
+        const photoIndex = ++areaCount;
+        const photoId = crypto.randomUUID();
+        const name = `${areaName}: Overall (photo ${photoIndex})`;
+        current = await api.uploadPhoto(current.id!, processed.blob, {
+          id: photoId,
+          name,
+          areaName,
+          photoIndex,
+          isCover: current.photos.length === 0,
+        });
+        setReport(normalizeReport(current));
+        await cacheReport(current).catch(() => undefined);
+      }
+
+      setStatusMessage({
+        text: `Uploaded ${files.length} photo${files.length === 1 ? '' : 's'} to cloud storage.`,
+        type: 'success',
       });
-      setStatusMessage({ text: 'PDF exported successfully!', type: 'success' });
-    } catch (err: any) {
-      console.error('PDF error:', err);
-      setStatusMessage({ text: err.message || 'Failed to export PDF', type: 'error' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to upload photos.', type: 'error' });
+    } finally {
+      setIsUploadingPhotos(false);
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: string) => {
+    if (!report?.id || report.status === 'completed') return;
+    try {
+      const updated = await api.deletePhoto(report.id, photoId);
+      setReport(normalizeReport(updated));
+      setStatusMessage({ text: 'Photo deleted.', type: 'info' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to delete photo.', type: 'error' });
+    }
+  };
+
+  const renderPdf = async (): Promise<Blob> => {
+    if (!report) throw new Error('No report is open.');
+    if (viewMode !== 'preview') {
+      setViewMode('preview');
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 180));
+    }
+    const container = document.getElementById('report-print-container');
+    if (!container) throw new Error('Report preview is not ready.');
+    if (document.fonts?.ready) await document.fonts.ready;
+    await waitForReportImages(container);
+    return generateElementPdf(container, (message) => setExportProgressText(message));
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!report) return;
+    setIsExportingPdf(true);
+    setExportProgressText('Preparing report...');
+    try {
+      const blob = await renderPdf();
+      downloadPdfBlob(blob, pdfFilename(report));
+      setStatusMessage({ text: 'PDF downloaded.', type: 'success' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to generate PDF.', type: 'error' });
     } finally {
       setIsExportingPdf(false);
       setExportProgressText(null);
     }
   };
 
-  if (!activeReportId) {
+  const handleCompleteReport = async () => {
+    if (!report?.id || report.status === 'completed') return;
+    setIsCompleting(true);
+    setExportProgressText('Saving final report data...');
+    try {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      await api.saveReport(report);
+      const blob = await renderPdf();
+      setExportProgressText('Storing completed PDF...');
+      const completed = normalizeReport(await api.completeReport(report.id, blob));
+      setReport(completed);
+      await cacheReport(completed);
+      downloadPdfBlob(blob, pdfFilename(completed));
+      await refreshSelectedProperty();
+      setViewMode('actions');
+      setStatusMessage({
+        text: 'Report finalised. The issued PDF is stored in cloud storage and has also been downloaded.',
+        type: 'success',
+      });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to finalise report.', type: 'error' });
+    } finally {
+      setIsCompleting(false);
+      setExportProgressText(null);
+    }
+  };
+
+  const handleDownloadCompleted = (id: string) => {
+    window.location.assign(api.completedPdfUrl(id));
+  };
+
+  if (!selectedProperty) {
     return (
       <div className="min-h-screen bg-neutral-100 flex flex-col text-neutral-900 font-sans">
         <header className="bg-white border-b border-neutral-200 px-4 lg:px-8 py-3 flex items-center justify-between shadow-xs">
           <ProInspectLogo size="sm" showTagline={false} />
           <span className="text-xs font-semibold text-neutral-500">Property Reports V1</span>
         </header>
-        <ReportDashboard reports={reports} onCreate={handleCreateReport} onOpen={handleOpenReport} onDelete={handleDeleteReport} />
+        {statusMessage && (
+          <div className={`px-4 py-2.5 text-xs border-b ${
+            statusMessage.type === 'error'
+              ? 'bg-red-50 text-red-800 border-red-200'
+              : statusMessage.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-blue-50 text-blue-800 border-blue-200'
+          }`}>
+            {statusMessage.text}
+          </div>
+        )}
+        <PropertiesDashboard
+          properties={properties}
+          userEmail={userEmail}
+          isLoading={isLoading}
+          onCreate={handleCreateProperty}
+          onOpen={handleOpenProperty}
+        />
       </div>
     );
   }
 
+  if (!report) {
+    return (
+      <div className="min-h-screen bg-neutral-100 flex flex-col text-neutral-900 font-sans">
+        <header className="bg-white border-b border-neutral-200 px-4 lg:px-8 py-3 flex items-center justify-between shadow-xs">
+          <ProInspectLogo size="sm" showTagline={false} />
+          <span className="text-xs font-semibold text-neutral-500">{userEmail}</span>
+        </header>
+        {statusMessage && (
+          <div className={`px-4 py-2.5 text-xs border-b ${
+            statusMessage.type === 'error'
+              ? 'bg-red-50 text-red-800 border-red-200'
+              : statusMessage.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-blue-50 text-blue-800 border-blue-200'
+          }`}>
+            {statusMessage.text}
+          </div>
+        )}
+        <ReportDashboard
+          property={selectedProperty}
+          reports={reportSummaries}
+          onBack={handleBackToProperties}
+          onCreate={handleCreateReport}
+          onOpen={handleOpenReport}
+          onDelete={handleDeleteReport}
+          onDownloadCompleted={handleDownloadCompleted}
+        />
+      </div>
+    );
+  }
+
+  const completed = report.status === 'completed';
+
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col text-neutral-900 font-sans">
-      {/* Top Navigation Bar */}
       <header className="bg-white border-b border-neutral-200 sticky top-0 z-40 px-4 lg:px-8 py-3 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 min-w-0">
           <ProInspectLogo size="sm" showTagline={false} />
-          <div className="hidden sm:block border-l border-neutral-300 pl-4">
-            <h1 className="text-sm font-bold tracking-tight text-neutral-800 leading-tight">
-              Property Condition Report Generator
-            </h1>
+          <div className="hidden sm:block border-l border-neutral-300 pl-4 min-w-0">
+            <h1 className="text-sm font-bold text-neutral-800 truncate">{report.details.propertyAddress}</h1>
             <p className="text-[11px] text-neutral-500 font-medium">
-              Entry, Routine & Exit Reports • Spreadsheet Commentary • Drive Photos • PDF Export
+              {report.details.reportType} Report • {completed ? 'Completed' : 'Draft'}
             </p>
           </div>
         </div>
 
-        {/* Action Controls & Google Account */}
-        <div className="flex items-center gap-2.5">
-          {/* Auto-save indicator */}
-          {lastSavedTime && (
-            <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-neutral-500 font-medium bg-neutral-50 border border-neutral-200 px-2.5 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>Saved locally ({lastSavedTime})</span>
-            </div>
+        <div className="flex items-center gap-2">
+          {!completed && (
+            <span className="hidden lg:inline text-[11px] text-neutral-500">
+              {isSaving ? 'Saving to cloud...' : lastSavedTime ? `Saved ${lastSavedTime}` : 'Cloud draft'}
+            </span>
           )}
-
-          {/* Reset Template Button */}
           <button
-            onClick={handleResetToDefault}
-            className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-xs text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg transition-colors"
-            title="Reset report to sample template"
+            onClick={handleBackToReports}
+            className="px-3 py-1.5 text-xs font-bold border border-neutral-300 bg-white rounded-lg flex items-center gap-1.5"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Draft</span>
+            <ArrowLeft className="w-3.5 h-3.5" /> Reports
           </button>
           <button
-            onClick={handleBackToDashboard}
-            className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-xs text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
-            title="Back to draft reports"
+            onClick={completed ? () => handleDownloadCompleted(report.id!) : handleDownloadPdf}
+            disabled={isExportingPdf || isCompleting}
+            className="px-4 py-2 bg-[#0a2540] text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center gap-2"
           >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Reports</span>
-          </button>
-
-          {/* Google Auth Status / Button */}
-          {currentUser && hasGoogleAuth ? (
-            <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-full px-3 py-1 text-xs">
-              {currentUser.photoURL ? (
-                <img src={currentUser.photoURL} alt="User" className="w-5 h-5 rounded-full" />
-              ) : (
-                <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold">
-                  {currentUser.displayName?.[0] || 'U'}
-                </div>
-              )}
-              <span className="font-medium text-neutral-700 max-w-[120px] truncate hidden md:inline">
-                {currentUser.displayName || currentUser.email}
-              </span>
-              <button
-                onClick={handleGoogleSignOut}
-                className="text-neutral-400 hover:text-neutral-700 ml-1"
-                title="Sign Out"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleGoogleSignIn}
-              disabled={isSigningIn}
-              className="gsi-material-button text-xs font-semibold py-1.5 px-3 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-700 flex items-center gap-2 shadow-xs transition-all cursor-pointer"
-            >
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 48 48">
-                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-              </svg>
-              <span>{isSigningIn ? 'Connecting...' : 'Connect Google Drive & Sheets'}</span>
-            </button>
-          )}
-
-          {/* Export PDF Button */}
-          <button
-            onClick={() => {
-              if (viewMode !== 'preview') setViewMode('preview');
-              setTimeout(handleExportPdf, 100);
-            }}
-            disabled={isExportingPdf}
-            className="px-4 py-2 bg-[#0a2540] hover:bg-[#07192c] text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center gap-2 shadow-xs transition-all"
-          >
-            {isExportingPdf ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <FileDown className="w-4 h-4 text-cyan-400" />
-            )}
-            <span>{isExportingPdf ? 'Exporting PDF...' : 'Export PDF'}</span>
+            <FileDown className="w-4 h-4" />
+            {completed ? 'Download Final PDF' : 'Download PDF'}
           </button>
         </div>
       </header>
 
-      {/* Sub Bar with Quick Inputs & View Switcher */}
       <div className="bg-white border-b border-neutral-200 px-4 lg:px-8 py-2.5 flex flex-wrap items-center justify-between gap-3">
-        {/* Navigation Tabs */}
         <div className="flex items-center gap-1 bg-neutral-100 p-1 rounded-lg">
           <button
             onClick={() => setViewMode('preview')}
-            className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all ${
-              viewMode === 'preview'
-                ? 'bg-white text-neutral-900 shadow-xs'
-                : 'text-neutral-600 hover:text-neutral-900'
+            className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
+              viewMode === 'preview' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
             }`}
           >
-            <Eye className="w-3.5 h-3.5" />
-            Report Document Preview
+            <Eye className="w-3.5 h-3.5" /> Preview
           </button>
 
-          <button
-            onClick={() => setViewMode('commentary')}
-            className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all ${
-              viewMode === 'commentary'
-                ? 'bg-white text-neutral-900 shadow-xs'
-                : 'text-neutral-600 hover:text-neutral-900'
-            }`}
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            Commentary & Checklist ({report.areas.length} Areas)
-          </button>
+          {!completed && (
+            <>
+              <button
+                onClick={() => setViewMode('commentary')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
+                  viewMode === 'commentary' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
+                }`}
+              >
+                <Edit3 className="w-3.5 h-3.5" /> Commentary ({report.areas.length})
+              </button>
+              <button
+                onClick={() => setViewMode('photos')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
+                  viewMode === 'photos' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
+                }`}
+              >
+                <ImageIcon className="w-3.5 h-3.5" /> Photos ({report.photos.length})
+              </button>
+            </>
+          )}
 
-          <button
-            onClick={() => setViewMode('photos')}
-            className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all ${
-              viewMode === 'photos'
-                ? 'bg-white text-neutral-900 shadow-xs'
-                : 'text-neutral-600 hover:text-neutral-900'
-            }`}
-          >
-            <ImageIcon className="w-3.5 h-3.5" />
-            Photos Gallery ({report.photos.length})
-          </button>
           <button
             onClick={() => setViewMode('actions')}
-            className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all ${
-              viewMode === 'actions' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+            className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
+              viewMode === 'actions' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
             }`}
           >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Review & Send
+            <CheckCircle2 className="w-3.5 h-3.5" /> Review & Send
           </button>
         </div>
 
-        {/* Quick Data Connectors */}
-        <div className="flex items-center gap-2 text-xs">
-          {/* Drive & Sheets Hub Modal Trigger */}
-          <button
-            onClick={() => {
-              if (!hasGoogleAuth) {
-                handleGoogleSignIn().then(() => setIsWorkspaceModalOpen(true));
-              } else {
-                setIsWorkspaceModalOpen(true);
-              }
-            }}
-            className="px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 font-semibold flex items-center gap-1.5 transition-colors"
-          >
-            <Folder className="w-3.5 h-3.5 text-blue-600" />
-            Google Drive & Sheets
-          </button>
-
-          {/* Local Spreadsheet Upload */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-1.5 bg-white border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 font-semibold flex items-center gap-1.5 transition-colors"
-            title="Upload local .csv or .xlsx file"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            Upload CSV / Excel
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-            onChange={handleLocalSpreadsheetUpload}
-            className="hidden"
-          />
-
-          {/* Download CSV Template */}
-          <button
-            onClick={downloadStarterCsv}
-            className="px-2.5 py-1.5 text-neutral-500 hover:text-neutral-800 text-xs font-medium flex items-center gap-1"
-            title="Download blank spreadsheet template"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Template CSV
-          </button>
-        </div>
+        {!completed && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => csvInputRef.current?.click()}
+              className="px-3 py-1.5 bg-white border border-neutral-300 text-neutral-700 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Import CSV
+            </button>
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleCsvUpload}
+              className="hidden"
+            />
+            <button
+              onClick={downloadStarterCsv}
+              className="px-2.5 py-1.5 text-neutral-600 text-xs font-medium flex items-center gap-1"
+            >
+              <Download className="w-3.5 h-3.5" /> CSV Template
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Status banner */}
       {statusMessage && (
-        <div
-          className={`px-4 py-2.5 text-xs flex items-center justify-between ${
-            statusMessage.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-b border-emerald-200'
-              : statusMessage.type === 'error'
-              ? 'bg-red-50 text-red-800 border-b border-red-200'
-              : 'bg-blue-50 text-blue-800 border-b border-blue-200'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {statusMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 shrink-0" />
-            )}
-            <span>{statusMessage.text}</span>
-          </div>
-          <button
-            onClick={() => setStatusMessage(null)}
-            className="font-bold opacity-60 hover:opacity-100"
-          >
-            ✕
-          </button>
+        <div className={`px-4 py-2.5 text-xs flex items-center justify-between border-b ${
+          statusMessage.type === 'error'
+            ? 'bg-red-50 text-red-800 border-red-200'
+            : statusMessage.type === 'success'
+            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            : 'bg-blue-50 text-blue-800 border-blue-200'
+        }`}>
+          <span>{statusMessage.text}</span>
+          <button onClick={() => setStatusMessage(null)} className="font-bold opacity-60">×</button>
         </div>
       )}
 
-      {/* PDF Export Progress Overlay */}
-      {isExportingPdf && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-white text-center">
-          <div className="bg-neutral-900 border border-neutral-700 p-6 rounded-2xl shadow-2xl max-w-sm w-full flex flex-col items-center gap-4">
-            <RefreshCw className="w-8 h-8 animate-spin text-red-500" />
-            <h3 className="font-bold text-base">Exporting High-Resolution PDF</h3>
-            <p className="text-xs text-neutral-400">{exportProgressText || 'Rendering pages...'}</p>
-            <div className="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-red-600 h-full w-2/3 animate-pulse rounded-full" />
-            </div>
+      {(isExportingPdf || isCompleting) && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-6 text-white">
+          <div className="bg-neutral-900 border border-neutral-700 p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center">
+            <RefreshCw className="w-8 h-8 animate-spin text-cyan-400 mx-auto mb-4" />
+            <h3 className="font-bold text-base">{isCompleting ? 'Finalising Report' : 'Generating PDF'}</h3>
+            <p className="text-xs text-neutral-400 mt-2">{exportProgressText || 'Preparing report...'}</p>
           </div>
         </div>
       )}
 
-      {/* Main Workspace Area */}
       <main className="flex-1 overflow-y-auto">
         {viewMode === 'preview' && (
           <div className="py-6">
             <div className="max-w-[210mm] mx-auto mb-4 px-4 flex justify-between items-center text-xs text-neutral-500">
-              <span>{report.details.reportType === 'Entry' ? 'Layout: Western Australia Form 1' : `Layout: ProInspect ${report.details.reportType} Report`}</span>
-              <span>A4 Portrait • Print & PDF Ready</span>
+              <span>
+                {report.details.reportType === 'Entry'
+                  ? 'Layout: Western Australia Form 1'
+                  : `Layout: ProInspect ${report.details.reportType} Report`}
+              </span>
+              <span>A4 Portrait • Browser PDF</span>
             </div>
             <ReportDocument report={report} />
           </div>
         )}
 
-        {viewMode === 'commentary' && (
+        {viewMode === 'commentary' && !completed && (
           <div className="max-w-6xl mx-auto p-4 md:p-6 h-[calc(100vh-125px)]">
             <CommentaryEditor
               details={report.details}
               areas={report.areas}
-              onChangeDetails={(details) => setReport((prev) => ({ ...prev, details }))}
-              onChangeAreas={(areas) => setReport((prev) => ({ ...prev, areas }))}
+              onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
+              onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
             />
           </div>
         )}
 
-        {viewMode === 'photos' && (
+        {viewMode === 'photos' && !completed && (
           <div className="max-w-6xl mx-auto p-4 md:p-6 h-[calc(100vh-125px)]">
             <PhotoManager
               photos={report.photos}
               areas={report.areas}
-              onUpdatePhotos={(photos) => setReport((prev) => ({ ...prev, photos }))}
-              onOpenDriveModal={() => {
-                if (!hasGoogleAuth) {
-                  handleGoogleSignIn().then(() => setIsWorkspaceModalOpen(true));
-                } else {
-                  setIsWorkspaceModalOpen(true);
-                }
-              }}
+              isUploading={isUploadingPhotos}
+              onUploadPhotos={handleUploadPhotos}
+              onUpdatePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
+              onDeletePhoto={handleDeletePhoto}
             />
           </div>
         )}
+
         {viewMode === 'actions' && (
           <div className="py-8 px-4">
             <ReportActions
               report={report}
-              onDownload={() => {
-                setViewMode('preview');
-                setTimeout(handleExportPdf, 100);
-              }}
+              onDownload={handleDownloadPdf}
+              onComplete={handleCompleteReport}
+              onDownloadCompleted={() => handleDownloadCompleted(report.id!)}
               isExporting={isExportingPdf}
+              isCompleting={isCompleting}
             />
           </div>
         )}
       </main>
-
-      {/* Google Drive & Sheets Integration Modal */}
-      <GoogleWorkspaceModal
-        isOpen={isWorkspaceModalOpen}
-        onClose={() => setIsWorkspaceModalOpen(false)}
-        onImportAreas={(importedAreas) => {
-          setReport((prev) => ({ ...prev, areas: importedAreas }));
-          setStatusMessage({
-            text: `Imported commentary for ${importedAreas.length} inspection areas from Google Sheets!`,
-            type: 'success',
-          });
-        }}
-        onImportPhotos={(importedPhotos) => {
-          setReport((prev) => ({ ...prev, photos: importedPhotos }));
-          setStatusMessage({
-            text: `Imported ${importedPhotos.length} photos from Google Drive folder!`,
-            type: 'success',
-          });
-        }}
-      />
-
-      {/* MFA Verification Modal */}
-      <MfaVerificationModal
-        isOpen={isMfaModalOpen}
-        resolver={mfaResolver}
-        onSuccess={handleMfaSuccess}
-        onCancel={() => {
-          setIsMfaModalOpen(false);
-          setMfaResolver(null);
-        }}
-      />
     </div>
   );
 }
