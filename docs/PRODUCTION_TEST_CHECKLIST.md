@@ -62,6 +62,21 @@ Run this checklist on `https://report.creation.proinspect.systems/` before V1 is
 - Confirm the application reports a cloud-save failure and retains the local cache.
 - Restore connectivity and confirm normal cloud saving resumes.
 
+## Expanded report library
+
+Before treating the expanded catalogue as production-accepted:
+
+- Apply `migrations/0002_expand_report_types.sql` to production D1.
+- Create at least one draft from each category: Residential, Commercial, Maintenance, Building / Strata and Property Operations.
+- Confirm starter areas appear where the template defines them.
+- Confirm template-specific fields persist after refresh and on a second browser/device.
+- Confirm condition-family reports show Cln / Udg / Wkg columns while findings-family reports do not.
+- Confirm long findings wrap and continue without clipping.
+- Confirm photographic evidence uses the deterministic 3 x 4 gallery.
+- Confirm the Key Safe Installation Report contains no field for an access code and only permits a secure access-record reference.
+- Generate and inspect one large photo-heavy report from a generic template in addition to the Entry stress test.
+- Confirm finalised PDFs re-download from R2 and remain immutable.
+
 ## Cleanup
 
 Delete test drafts that are no longer required. Completed reports are intentionally immutable in V1, so use clearly labelled test data for any finalisation tests.
