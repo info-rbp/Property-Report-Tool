@@ -22,6 +22,7 @@ import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
 import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
 import { processInspectionImage } from './lib/imageProcessor';
+import { normalizeAreaName } from './lib/reportFormatting';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
 
@@ -244,6 +245,12 @@ export default function App() {
     setStatusMessage(null);
 
     try {
+      if (report.areas.length > 0) {
+        const validAreas = new Set(report.areas.map((area) => normalizeAreaName(area.name)));
+        if (!validAreas.has(normalizeAreaName(areaName))) {
+          throw new Error('Select one of the current commentary areas before uploading photos.');
+        }
+      }
       let current = report;
       let nextAreaPhotoIndex = current.photos
         .filter((photo) => photo.areaName === areaName)
@@ -313,6 +320,19 @@ export default function App() {
     setIsCompleting(true);
     setExportProgressText('Saving final report data...');
     try {
+      if (report.areas.length > 0 && report.photos.length > 0) {
+        const validAreaKeys = new Set(report.areas.map((area) => normalizeAreaName(area.name)));
+        const unmappedPhotos = report.photos.filter(
+          (photo) => !validAreaKeys.has(normalizeAreaName(photo.areaName || 'General'))
+        );
+        if (unmappedPhotos.length > 0) {
+          setViewMode('photos');
+          throw new Error(
+            `${unmappedPhotos.length} photo${unmappedPhotos.length === 1 ? ' is' : 's are'} not assigned to a current report area. Review the red photo-area filter and reassign before finalising.`
+          );
+        }
+      }
+
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
       await api.saveReport(report);
       const blob = await renderPdf();
