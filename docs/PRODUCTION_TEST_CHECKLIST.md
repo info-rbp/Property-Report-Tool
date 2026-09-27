@@ -1,6 +1,6 @@
 # Production end-to-end test checklist
 
-**Status: Pending operator execution.** All other identified production-hardening items are marked actioned.
+**Status: Core workflow passed. PDF rendering regression test pending.** The initial end-to-end workflow completed successfully; the final acceptance gate is a large-report PDF test using the deterministic renderer.
 
 Run this checklist on `https://report.creation.proinspect.systems/` before V1 is considered fully accepted.
 
