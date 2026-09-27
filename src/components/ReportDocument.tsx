@@ -267,7 +267,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                     </li>
                     <li>
                       Information about the rights and responsibilities of lessors and tenants may be obtained by contacting
-                      the Department of Energy, Mines, Industry Regulation and Safety on 1300 30 40 54 or visiting{' '}
+                      the Department of Local Government, Industry Regulation and Safety on 1300 30 40 54 or visiting{' '}
                       <span className="font-semibold underline">www.consumerprotection.wa.gov.au</span>.
                     </li>
                   </ol>
@@ -277,12 +277,12 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                   <p>
                     <span className="font-bold">For further information about tenancy rights:</span> refer to the{' '}
                     <span className="font-semibold italic">Residential Tenancies Act 1987</span> or contact the
-                    Department of Energy, Mines, Industry Regulation and Safety on 1300 304 054 or{' '}
-                    <span className="font-semibold">www.demirs.wa.gov.au/ConsumerProtection</span>.
+                    Department of Local Government, Industry Regulation and Safety on 1300 304 054 or{' '}
+                    <span className="font-semibold">www.consumerprotection.wa.gov.au</span>.
                   </p>
                   <p>
                     <span className="font-bold">Translating and Interpreting Services:</span> please telephone TIS on 13 14 50
-                    and ask to speak to the Department of Energy, Mines, Industry Regulation and Safety (1300 304 054) for
+                    and ask to speak to the Department of Local Government, Industry Regulation and Safety (1300 304 054) for
                     assistance.
                   </p>
                 </div>
@@ -631,7 +631,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
               {/* Lessor/property manager's signature */}
               <div className="mb-3">
                 <div className="bg-neutral-100 border border-neutral-400 px-2 py-1 font-bold text-neutral-900 text-[10px]">
-                  Agent Signature at the START of the Tenancy
+                  Lessor/property manager's signature
                 </div>
                 <div className="grid grid-cols-3 border border-neutral-400 border-t-0 text-[10px]">
                   <div className="p-2 border-r border-neutral-300">
@@ -641,7 +641,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                   <div className="p-2 border-r border-neutral-300">
                     <span className="font-semibold text-neutral-700">Signature: </span>
                     <span className="font-serif italic font-bold text-neutral-800 text-sm ml-1">
-                      {details.agentSignName || 'Admin Team'}
+                      {details.agentSignName || details.inspectingAgent}
                     </span>
                   </div>
                   <div className="p-2">
