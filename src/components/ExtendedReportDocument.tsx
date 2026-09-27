@@ -43,6 +43,71 @@ function Footer() {
   );
 }
 
+function PhotoPreviewPages({ report }: { report: ReportData }) {
+  if (!report.photos.length) return null;
+
+  const areaOrder = new Map(report.areas.map((area, index) => [normalizeAreaName(area.name), index]));
+  const ordered = [...report.photos].sort((a, b) => {
+    const aArea = normalizeAreaName(a.areaName || 'General');
+    const bArea = normalizeAreaName(b.areaName || 'General');
+    const order = (areaOrder.get(aArea) ?? Number.MAX_SAFE_INTEGER) - (areaOrder.get(bArea) ?? Number.MAX_SAFE_INTEGER);
+    if (order) return order;
+    return (a.photoIndex || 0) - (b.photoIndex || 0);
+  });
+
+  const totals = new Map<string, number>();
+  ordered.forEach((photo) => {
+    const key = normalizeAreaName(photo.areaName || 'General');
+    totals.set(key, (totals.get(key) || 0) + 1);
+  });
+  const ordinals = new Map<string, number>();
+  const pages = Array.from({ length: Math.ceil(ordered.length / 12) }, (_, index) =>
+    ordered.slice(index * 12, (index + 1) * 12)
+  );
+
+  return (
+    <>
+      {pages.map((page, pageIndex) => (
+        <div key={pageIndex} className="pdf-page w-[210mm] min-h-[297mm] bg-white p-[12mm] flex flex-col shadow-2xl box-border">
+          <Header report={report} title="Inspection Photos" />
+          {pageIndex === 0 && (
+            <div className="bg-slate-100 border border-neutral-300 px-3 py-2 text-sm font-extrabold text-[#0a2540] mb-3">
+              Report Photos ({ordered.length} photos)
+            </div>
+          )}
+          <div className="grid grid-cols-3 grid-rows-4 gap-2 flex-1 min-h-0">
+            {page.map((photo) => {
+              const key = normalizeAreaName(photo.areaName || 'General');
+              const ordinal = (ordinals.get(key) || 0) + 1;
+              ordinals.set(key, ordinal);
+              return (
+                <div key={photo.id} className="border border-neutral-200 min-w-0 flex flex-col">
+                  <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
+                    {photo.areaName || 'General'}: Overall (photo {ordinal} of {totals.get(key) || 1})
+                  </div>
+                  <div className="bg-neutral-50 flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+                    {photo.dataUrl || photo.url ? (
+                      <img
+                        src={photo.dataUrl || photo.url}
+                        alt={photo.name}
+                        className="block max-w-full max-h-full object-contain"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="text-[8px] text-neutral-400">Image unavailable</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <Footer />
+        </div>
+      ))}
+    </>
+  );
+}
+
 export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
   const template = getReportTemplate(report.details.reportType);
   const cover = report.photos.find((photo) => photo.isCover) || report.photos[0];
@@ -173,6 +238,8 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
         </div>
         <Footer />
       </div>
+
+      <PhotoPreviewPages report={report} />
     </div>
   );
 };
