@@ -22,7 +22,7 @@ import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
 import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
 import { processInspectionImage } from './lib/imageProcessor';
-import { downloadPdfBlob, generateElementPdf } from './lib/pdfExporter';
+import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
 
 type ViewMode = 'preview' | 'commentary' | 'photos' | 'actions';
@@ -287,14 +287,7 @@ export default function App() {
 
   const renderPdf = async (): Promise<Blob> => {
     if (!report) throw new Error('No report is open.');
-    if (viewMode !== 'preview') {
-      setViewMode('preview');
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 180));
-    }
-    const container = document.getElementById('report-print-container');
-    if (!container) throw new Error('Report preview is not ready.');
-    if (document.fonts?.ready) await document.fonts.ready;
-    return generateElementPdf(container, (message) => setExportProgressText(message));
+    return generateReportPdf(report, (message) => setExportProgressText(message));
   };
 
   const handleDownloadPdf = async () => {
@@ -541,7 +534,7 @@ export default function App() {
                   ? 'Layout: Western Australia Form 1'
                   : `Layout: ProInspect ${report.details.reportType} Report`}
               </span>
-              <span>A4 Portrait • Browser PDF</span>
+              <span>A4 Portrait • Production PDF renderer</span>
             </div>
             <ReportDocument report={report} />
           </div>
