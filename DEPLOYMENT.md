@@ -80,6 +80,14 @@ bun run db:migrate:remote
 
 The initial production migration has already been applied.
 
+The expanded report-template library adds `migrations/0002_expand_report_types.sql`. This migration must be applied to production before any of the new report types can be created:
+
+```bash
+bun run db:migrate:remote
+```
+
+The migration preserves existing reports and expands the D1 `report_type` CHECK constraint.
+
 ## Cloudflare Access
 
 The Worker expects:
@@ -190,7 +198,9 @@ Cloudflare-specific files are ordinary repository files and do not change the Go
 
 Included:
 - Properties as report containers.
-- Entry, Routine and Exit reports.
+- Full ProInspect report-template catalogue across Residential, Commercial, Maintenance, Building / Strata and Property Operations.
+- Entry, Routine and Exit specialist tenancy templates.
+- Key Safe Installation Report with no access-code storage.
 - CSV commentary import.
 - Device photo upload with browser resize/compression.
 - Cross-device cloud drafts.
