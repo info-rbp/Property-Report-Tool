@@ -1,5 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Upload, Trash2, Tag, Filter, Plus, Star } from 'lucide-react';
+import { normalizeAreaName, renumberPhotosByArea } from '../lib/reportFormatting';
 import { InspectionArea, ReportPhoto } from '../types/report';
 
 interface PhotoManagerProps {
@@ -24,10 +25,31 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   const [selectedUploadArea, setSelectedUploadArea] = useState<string>(areas[0]?.name || 'General');
   const [targetUploadArea, setTargetUploadArea] = useState<string>(areas[0]?.name || 'General');
   const [activeAreaFilter, setActiveAreaFilter] = useState<string>('ALL');
+  const [bulkMoveArea, setBulkMoveArea] = useState<string>(areas[0]?.name || '');
 
-  const availableAreaNames = Array.from(
-    new Set([...areas.map((area) => area.name), 'General', 'Entry/Front', 'Exterior/Yard'])
+  const reportAreaNames = useMemo(
+    () => Array.from(new Set(areas.map((area) => area.name.trim()).filter(Boolean))),
+    [areas]
   );
+  const availableAreaNames = reportAreaNames.length ? reportAreaNames : ['General'];
+  const validAreaKeys = useMemo(
+    () => new Set(reportAreaNames.map((name) => normalizeAreaName(name))),
+    [reportAreaNames]
+  );
+  const existingAreaNames = useMemo(
+    () => Array.from(new Set(photos.map((photo) => (photo.areaName || 'General').trim() || 'General'))),
+    [photos]
+  );
+  const unmappedAreaNames = existingAreaNames.filter(
+    (name) => reportAreaNames.length > 0 && !validAreaKeys.has(normalizeAreaName(name))
+  );
+
+  useEffect(() => {
+    const fallback = availableAreaNames[0] || 'General';
+    if (!availableAreaNames.includes(selectedUploadArea)) setSelectedUploadArea(fallback);
+    if (!availableAreaNames.includes(targetUploadArea)) setTargetUploadArea(fallback);
+    if (!availableAreaNames.includes(bulkMoveArea)) setBulkMoveArea(fallback);
+  }, [availableAreaNames, selectedUploadArea, targetUploadArea, bulkMoveArea]);
 
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -53,23 +75,34 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   };
 
   const handleReassignPhotoArea = (id: string, areaName: string) => {
-    onUpdatePhotos(photos.map((photo) => {
+    const updated = photos.map((photo) => {
       if (photo.id !== id) return photo;
-      return {
-        ...photo,
-        areaName,
-        name: photo.name.includes(':')
-          ? `${areaName}: ${photo.name.split(':').slice(1).join(':').trim() || 'Photo'}`
-          : `${areaName}: ${photo.name}`,
-      };
-    }));
+      return { ...photo, areaName };
+    });
+    onUpdatePhotos(renumberPhotosByArea(updated));
+  };
+
+  const handleBulkMove = () => {
+    if (!bulkMoveArea || activeAreaFilter === 'ALL') return;
+    const updated = photos.map((photo) => {
+      const currentArea = (photo.areaName || 'General').trim() || 'General';
+      return currentArea === activeAreaFilter ? { ...photo, areaName: bulkMoveArea } : photo;
+    });
+    onUpdatePhotos(renumberPhotosByArea(updated));
+    setActiveAreaFilter(bulkMoveArea);
   };
 
   const areaCounts: Record<string, number> = {};
   photos.forEach((photo) => {
-    const key = photo.areaName || 'General';
+    const key = (photo.areaName || 'General').trim() || 'General';
     areaCounts[key] = (areaCounts[key] || 0) + 1;
   });
+
+  const areasWithoutPhotos = reportAreaNames.filter((name) => !areaCounts[name]);
+  const unmappedPhotoCount = photos.filter((photo) => {
+    if (!reportAreaNames.length) return false;
+    return !validAreaKeys.has(normalizeAreaName(photo.areaName || 'General'));
+  }).length;
 
   const filteredPhotos = activeAreaFilter === 'ALL'
     ? photos
@@ -152,25 +185,79 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                     ? 'bg-blue-600 border-blue-600 text-white'
                     : count
                     ? 'bg-blue-50 border-blue-200 text-blue-800'
-                    : 'bg-neutral-100 border-neutral-100 text-neutral-500'
+                    : 'bg-amber-50 border-amber-200 text-amber-800'
                 }`}
+                title={count ? undefined : 'No photos are currently assigned to this report area'}
               >
                 {area.name} ({count})
               </button>
             );
           })}
+          {unmappedAreaNames.map((name) => (
+            <button
+              key={`unmapped-${name}`}
+              onClick={() => setActiveAreaFilter(name)}
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 border ${
+                activeAreaFilter === name
+                  ? 'bg-red-600 border-red-600 text-white'
+                  : 'bg-red-50 border-red-200 text-red-800'
+              }`}
+              title="This photo area does not match a report commentary area"
+            >
+              {name} ({areaCounts[name] || 0}) - review
+            </button>
+          ))}
         </div>
 
         {activeAreaFilter !== 'ALL' && (
-          <button
-            onClick={() => handleUploadForSpecificArea(activeAreaFilter)}
-            disabled={isUploading}
-            className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg font-semibold flex items-center gap-1 disabled:opacity-50"
-          >
-            <Plus className="w-3.5 h-3.5" /> Add to {activeAreaFilter}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {validAreaKeys.has(normalizeAreaName(activeAreaFilter)) && (
+              <button
+                onClick={() => handleUploadForSpecificArea(activeAreaFilter)}
+                disabled={isUploading}
+                className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg font-semibold flex items-center gap-1 disabled:opacity-50"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add to {activeAreaFilter}
+              </button>
+            )}
+            {reportAreaNames.length > 0 && (
+              <div className="flex items-center rounded-lg border border-neutral-300 overflow-hidden bg-white">
+                <select
+                  value={bulkMoveArea}
+                  onChange={(event) => setBulkMoveArea(event.target.value)}
+                  className="px-2 py-1 bg-white text-neutral-700 focus:outline-hidden"
+                >
+                  {reportAreaNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+                <button
+                  onClick={handleBulkMove}
+                  disabled={!bulkMoveArea || bulkMoveArea === activeAreaFilter}
+                  className="px-2.5 py-1 border-l border-neutral-300 font-semibold text-neutral-700 disabled:opacity-40"
+                  title="Move every photo currently shown by this area filter"
+                >
+                  Move all shown
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
+
+      {(unmappedPhotoCount > 0 || areasWithoutPhotos.length > 0) && (
+        <div className="px-4 py-3 border-b border-amber-200 bg-amber-50 text-amber-900 text-xs">
+          <div className="font-bold">Photo area review recommended before finalising</div>
+          {unmappedPhotoCount > 0 && (
+            <div className="mt-1">
+              {unmappedPhotoCount} photo{unmappedPhotoCount === 1 ? '' : 's'} are not assigned to a current report area. Use the red filter above and move them to the correct area.
+            </div>
+          )}
+          {areasWithoutPhotos.length > 0 && (
+            <div className="mt-1">
+              No photos are currently assigned to: {areasWithoutPhotos.join(', ')}. Confirm this is intentional or reassign the relevant photos.
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="p-4 overflow-y-auto flex-1 bg-neutral-50/50">
         {filteredPhotos.length === 0 ? (
@@ -232,6 +319,11 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                     onChange={(event) => handleReassignPhotoArea(photo.id, event.target.value)}
                     className="w-full bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 font-bold text-neutral-800 text-[10px]"
                   >
+                    {!availableAreaNames.includes((photo.areaName || 'General').trim() || 'General') && (
+                      <option value={(photo.areaName || 'General').trim() || 'General'}>
+                        {(photo.areaName || 'General').trim() || 'General'} (unmapped)
+                      </option>
+                    )}
                     {availableAreaNames.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
                   <input

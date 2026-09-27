@@ -1,5 +1,28 @@
+import { formatAustralianDate, renumberPhotosByArea, splitTenantNames } from '../src/lib/reportFormatting';
 import { generateReportPdf } from '../src/lib/reportPdf';
 import { ReportData } from '../src/types/report';
+
+if (formatAustralianDate('2026-09-27') !== '27/09/2026') {
+  throw new Error('Australian date formatting regression detected.');
+}
+
+const tenantNames = splitTenantNames('John Smith & Jane Smith');
+if (tenantNames[0] !== 'John Smith' || tenantNames[1] !== 'Jane Smith') {
+  throw new Error('Tenant name splitting regression detected.');
+}
+
+const renumberedPhotos = renumberPhotosByArea([
+  { id: '1', name: 'Entry: Overall (photo 4)', areaName: 'Entry', photoIndex: 4 },
+  { id: '2', name: 'Entry: Overall (photo 9)', areaName: 'Entry', photoIndex: 9 },
+  { id: '3', name: 'Kitchen: Overall (photo 2)', areaName: 'Kitchen', photoIndex: 2 },
+]);
+if (
+  renumberedPhotos[0].photoIndex !== 1 ||
+  renumberedPhotos[1].photoIndex !== 2 ||
+  renumberedPhotos[2].photoIndex !== 1
+) {
+  throw new Error('Photo area renumbering regression detected.');
+}
 
 const longComment = [
   'Painted white with general age-related marks and minor scuffing.',
@@ -25,7 +48,7 @@ const report: ReportData = {
     inspectingAgent: 'PDF Regression Test',
     inspectionDate: '2026-09-27',
     tenancyStartDate: '',
-    tenants: 'Tenant One, Tenant Two',
+    tenants: 'Tenant One & Tenant Two',
     tenantReceivedDate: '',
     reportReturnDate: '',
     additionalComments: 'Regression test only.',
