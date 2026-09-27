@@ -1,5 +1,3 @@
-PRAGMA foreign_keys = OFF;
-
 CREATE TABLE reports_v2 (
   id TEXT PRIMARY KEY,
   property_id TEXT NOT NULL,
@@ -68,4 +66,3 @@ ALTER TABLE reports_v2 RENAME TO reports;
 CREATE INDEX idx_reports_property_updated ON reports(property_id, updated_at DESC);
 CREATE INDEX idx_reports_status ON reports(status);
 
-PRAGMA foreign_keys = ON;
