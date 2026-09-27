@@ -445,15 +445,27 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (request.headers.get('content-type')?.split(';')[0] !== 'application/pdf') {
         throw new HttpError(400, 'A PDF document is required.');
       }
-      const pdf = await request.arrayBuffer();
-      if (!pdf.byteLength) throw new HttpError(400, 'PDF is empty.');
-      if (pdf.byteLength > 25 * 1024 * 1024) throw new HttpError(413, 'PDF exceeds the 25 MB storage limit.');
+      const maxPdfBytes = 90 * 1024 * 1024;
+      const declaredLength = Number(request.headers.get('content-length') || 0);
+      if (Number.isFinite(declaredLength) && declaredLength > maxPdfBytes) {
+        throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.');
+      }
+      if (!request.body) throw new HttpError(400, 'PDF is empty.');
 
       const key = `reports/${reportId}/completed/report.pdf`;
-      await env.REPORT_STORAGE.put(key, pdf, {
+      const stored = await env.REPORT_STORAGE.put(key, request.body, {
         httpMetadata: { contentType: 'application/pdf' },
         customMetadata: { reportId, completedBy: userEmail },
       });
+
+      if (!stored || stored.size <= 0) {
+        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+        throw new HttpError(400, 'PDF is empty.');
+      }
+      if (stored.size > maxPdfBytes) {
+        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+        throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.');
+      }
 
       const report = parseReport(row);
       return json(await updateReportData(env, row, report, userEmail, 'completed', key));
