@@ -77,4 +77,10 @@ if (pageCount < 5) {
   throw new Error(`Expected a multi-page regression PDF, received ${pageCount} pages.`);
 }
 
+const outputPath = process.env.PDF_VERIFY_OUTPUT;
+if (outputPath) {
+  await Bun.write(outputPath, blob);
+  console.log(`Wrote PDF regression artifact to ${outputPath}.`);
+}
+
 console.log(`PDF regression generator check passed: ${pageCount} pages, ${blob.size} bytes.`);
