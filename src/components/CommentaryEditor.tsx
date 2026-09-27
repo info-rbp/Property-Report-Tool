@@ -182,7 +182,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
-          Condition Commentary ({areas.length} Areas)
+          {showConditionMatrix ? 'Condition Commentary' : 'Findings / Observations'} ({areas.length} Areas)
         </button>
         <button
           onClick={() => setActiveTab('details')}
@@ -406,7 +406,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                               <button
                                 onClick={() => handleDeleteItem(area.id, item.id)}
                                 className="text-neutral-300 hover:text-red-600 p-1"
-                                title="Delete condition row"
+                                title="Delete item"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
