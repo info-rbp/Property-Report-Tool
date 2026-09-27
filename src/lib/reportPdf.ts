@@ -163,7 +163,22 @@ async function fetchImageSource(source: string, label: string): Promise<Blob> {
   return response.blob();
 }
 
-async function prepareImageForPdf(source: string, label: string, maxDimension = 1000): Promise<PdfImage> {
+async function canvasToJpeg(canvas: HTMLCanvasElement, quality: number, label: string): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => blob ? resolve(blob) : reject(new Error(`Unable to compress ${label} for the PDF.`)),
+      'image/jpeg',
+      quality
+    );
+  });
+}
+
+async function prepareImageForPdf(
+  source: string,
+  label: string,
+  maxDimension = 720,
+  targetBytes = 45_000
+): Promise<PdfImage> {
   const sourceBlob = await fetchImageSource(source, label);
   let bitmap: ImageBitmap;
   try {
@@ -172,37 +187,50 @@ async function prepareImageForPdf(source: string, label: string, maxDimension = 
     throw new Error(`Unable to decode ${label} for the PDF.`);
   }
 
-  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const initialScale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  let width = Math.max(1, Math.round(bitmap.width * initialScale));
+  let height = Math.max(1, Math.round(bitmap.height * initialScale));
 
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d', { alpha: false });
-  if (!context) {
+  const renderBitmap = () => {
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) throw new Error(`Unable to prepare ${label} for the PDF.`);
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+    context.drawImage(bitmap, 0, 0, width, height);
+  };
+
+  try {
+    renderBitmap();
+
+    let output = await canvasToJpeg(canvas, 0.72, label);
+    for (const quality of [0.64, 0.56, 0.48]) {
+      if (output.size <= targetBytes) break;
+      output = await canvasToJpeg(canvas, quality, label);
+    }
+
+    // Large reports can contain hundreds or thousands of photos. Keep each embedded gallery
+    // image within a bounded byte budget so the final PDF remains uploadable on Cloudflare.
+    // If JPEG quality alone is not enough, reduce pixel dimensions while preserving aspect ratio.
+    let resizePasses = 0;
+    while (output.size > targetBytes && Math.max(width, height) > 420 && resizePasses < 3) {
+      const scale = Math.max(0.72, Math.min(0.9, Math.sqrt(targetBytes / output.size) * 0.95));
+      width = Math.max(1, Math.round(width * scale));
+      height = Math.max(1, Math.round(height * scale));
+      renderBitmap();
+      output = await canvasToJpeg(canvas, 0.56, label);
+      resizePasses += 1;
+    }
+
+    const bytes = new Uint8Array(await output.arrayBuffer());
+    return { bytes, width, height };
+  } finally {
     bitmap.close();
-    throw new Error(`Unable to prepare ${label} for the PDF.`);
+    canvas.width = 1;
+    canvas.height = 1;
   }
-
-  context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, width, height);
-  context.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-
-  const output = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => blob ? resolve(blob) : reject(new Error(`Unable to compress ${label} for the PDF.`)),
-      'image/jpeg',
-      0.78
-    );
-  });
-
-  const bytes = new Uint8Array(await output.arrayBuffer());
-  canvas.width = 1;
-  canvas.height = 1;
-
-  return { bytes, width, height };
 }
 
 function photoSource(photo: ReportPhoto): string {
@@ -267,7 +295,7 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
 
   if (cover) {
     onProgress?.('Preparing cover photo...');
-    const image = await prepareImageForPdf(cover.source, cover.label, 1500);
+    const image = await prepareImageForPdf(cover.source, cover.label, 1400, 280_000);
     const fit = containRect(image.width, image.height, imageBox.width, imageBox.height);
     pdf.addImage(
       image.bytes,
@@ -688,10 +716,7 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
   const gapX = 3;
   const gapY = 3;
   const firstTitleHeight = 7;
-  const regularTop = 13;
-  const availableHeight = BODY_BOTTOM - regularTop - 2;
   const cellWidth = (CONTENT_WIDTH - (gapX * (columns - 1))) / columns;
-  const cellHeight = (availableHeight - (gapY * (rows - 1))) / rows;
   const captionHeight = 5.2;
   let embedded = 0;
 
@@ -707,6 +732,13 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
       setTextColor(pdf, TEXT);
       pdf.text(`Agent Inspection Photos (${report.photos.length} photos)`, MARGIN_X + 1.5, y + 4.6);
       y += firstTitleHeight + 2;
+    }
+
+    const gridTop = y;
+    const availableHeight = BODY_BOTTOM - gridTop;
+    const cellHeight = (availableHeight - (gapY * (rows - 1))) / rows;
+    if (cellHeight <= captionHeight + 4) {
+      throw new Error('PDF photo layout validation failed because the gallery cells are too small.');
     }
 
     onProgress?.(`Rendering photo page ${pageNumber} of ${photoPageCount}...`);
@@ -731,7 +763,7 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
 
       const imageY = cellY + captionHeight;
       const imageHeight = cellHeight - captionHeight;
-      const image = await prepareImageForPdf(source, photo.name || `photo ${embedded + 1}`, 900);
+      const image = await prepareImageForPdf(source, photo.name || `photo ${embedded + 1}`, 720, 45_000);
       const fit = containRect(image.width, image.height, cellWidth - 1.2, imageHeight - 1.2);
 
       pdf.addImage(
