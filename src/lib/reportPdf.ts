@@ -294,17 +294,14 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
 
   setFont(pdf, 18, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text(
-    reportDisplayTitle(details.reportType),
-    PAGE_WIDTH / 2,
-    62,
-    { align: 'center' }
-  );
+  const titleLines = wrapText(pdf, reportDisplayTitle(details.reportType), 172);
+  drawWrappedLines(pdf, titleLines, PAGE_WIDTH / 2, 62, 7.2, { align: 'center' });
 
   const address = value(details.propertyAddress) || 'Property address not recorded';
+  const addressY = 62 + (titleLines.length * 7.2) + 2;
   setFont(pdf, 10.5, 'bold');
   const addressLines = wrapText(pdf, address, 150);
-  drawWrappedLines(pdf, addressLines, PAGE_WIDTH / 2, 71, 4.6, { align: 'center' });
+  drawWrappedLines(pdf, addressLines, PAGE_WIDTH / 2, addressY, 4.6, { align: 'center' });
 
   const cover = details.coverPhotoUrl
     ? { source: details.coverPhotoUrl, label: 'cover photo' }
@@ -314,7 +311,7 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
         return source ? { source, label: selected?.name || 'cover photo' } : null;
       })();
 
-  const imageBox = { x: 25, y: 91, width: 160, height: 105 };
+  const imageBox = { x: 25, y: Math.max(91, addressY + (addressLines.length * 4.6) + 10), width: 160, height: 105 };
   drawBox(pdf, imageBox.x, imageBox.y, imageBox.width, imageBox.height, LIGHT_FILL, LIGHT_BORDER);
 
   if (cover) {
