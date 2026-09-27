@@ -610,7 +610,7 @@ function drawEntryConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (m
     const count = areaPhotoCount(report, area);
     const fragments = area.items.flatMap((item) => splitItemFragments(pdf, item).map((fragment) => ({ item, fragment })));
     const firstRowHeight = fragments.length ? fragmentHeight(fragments[0].fragment) : 0;
-    const initialNeed = 7.8 + (count > 0 ? 5.6 : 0) + Math.min(firstRowHeight, 20);
+    const initialNeed = 7.8 + (count > 0 ? 5.6 : 0) + firstRowHeight;
 
     if (y + initialNeed > BODY_BOTTOM) {
       y = startEntryConditionPage(pdf, report);
@@ -694,20 +694,46 @@ function drawSimpleConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (
   });
 }
 
-function photoCaption(report: ReportData, photo: ReportPhoto, counts: Map<string, number>): string {
+function photoCaption(photo: ReportPhoto, total: number, ordinal: number): string {
   const area = value(photo.areaName) || 'General';
-  const total = counts.get(area.toLowerCase()) || 1;
-  const index = photo.photoIndex || 1;
-  return `${area}: Overall (photo ${index} of ${total})`;
+  return `${area}: Overall (photo ${ordinal} of ${total})`;
 }
 
 async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
   if (!report.photos.length) return;
 
+  const areaOrder = new Map(
+    report.areas.map((area, index) => [area.name.trim().toLowerCase(), index])
+  );
+  const orderedPhotos = report.photos
+    .map((photo, originalIndex) => ({ photo, originalIndex }))
+    .sort((a, b) => {
+      const areaA = (value(a.photo.areaName) || 'General').toLowerCase();
+      const areaB = (value(b.photo.areaName) || 'General').toLowerCase();
+      const orderA = areaOrder.get(areaA) ?? Number.MAX_SAFE_INTEGER;
+      const orderB = areaOrder.get(areaB) ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      if (areaA !== areaB) return areaA.localeCompare(areaB);
+      const indexA = a.photo.photoIndex ?? Number.MAX_SAFE_INTEGER;
+      const indexB = b.photo.photoIndex ?? Number.MAX_SAFE_INTEGER;
+      if (indexA !== indexB) return indexA - indexB;
+      return a.originalIndex - b.originalIndex;
+    })
+    .map(({ photo }) => photo);
+
   const counts = new Map<string, number>();
-  report.photos.forEach((photo) => {
+  orderedPhotos.forEach((photo) => {
     const key = (value(photo.areaName) || 'General').toLowerCase();
     counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  const ordinals = new Map<string, number>();
+  const photoOrdinal = new Map<string, number>();
+  orderedPhotos.forEach((photo) => {
+    const key = (value(photo.areaName) || 'General').toLowerCase();
+    const ordinal = (ordinals.get(key) || 0) + 1;
+    ordinals.set(key, ordinal);
+    photoOrdinal.set(photo.id, ordinal);
   });
 
   const photosPerPage = 12;
@@ -720,17 +746,17 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
   const captionHeight = 5.2;
   let embedded = 0;
 
-  for (let pageStart = 0; pageStart < report.photos.length; pageStart += photosPerPage) {
-    const pagePhotos = report.photos.slice(pageStart, pageStart + photosPerPage);
+  for (let pageStart = 0; pageStart < orderedPhotos.length; pageStart += photosPerPage) {
+    const pagePhotos = orderedPhotos.slice(pageStart, pageStart + photosPerPage);
     const pageNumber = Math.floor(pageStart / photosPerPage) + 1;
-    const photoPageCount = Math.ceil(report.photos.length / photosPerPage);
+    const photoPageCount = Math.ceil(orderedPhotos.length / photosPerPage);
 
     let y = addContentPage(pdf, report, 'Inspection Photos');
     if (pageStart === 0) {
       drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, firstTitleHeight, SECTION_FILL, BORDER);
       setFont(pdf, 7, 'bold');
       setTextColor(pdf, TEXT);
-      pdf.text(`Agent Inspection Photos (${report.photos.length} photos)`, MARGIN_X + 1.5, y + 4.6);
+      pdf.text(`Agent Inspection Photos (${orderedPhotos.length} photos)`, MARGIN_X + 1.5, y + 4.6);
       y += firstTitleHeight + 2;
     }
 
@@ -758,7 +784,12 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
       drawBox(pdf, x, cellY, cellWidth, cellHeight, undefined, LIGHT_BORDER);
       setFont(pdf, 5.2, 'bold');
       setTextColor(pdf, TEXT);
-      const caption = wrapText(pdf, photoCaption(report, photo, counts), cellWidth - 2);
+      const areaKey = (value(photo.areaName) || 'General').toLowerCase();
+      const caption = wrapText(
+        pdf,
+        photoCaption(photo, counts.get(areaKey) || 1, photoOrdinal.get(photo.id) || 1),
+        cellWidth - 2
+      );
       drawWrappedLines(pdf, caption, x + 1, cellY + 2.6, 1.9, { maxLines: 2 });
 
       const imageY = cellY + captionHeight;
@@ -782,8 +813,8 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
     }
   }
 
-  if (embedded !== report.photos.length) {
-    throw new Error(`PDF photo validation failed: expected ${report.photos.length} photos but embedded ${embedded}.`);
+  if (embedded !== orderedPhotos.length) {
+    throw new Error(`PDF photo validation failed: expected ${orderedPhotos.length} photos but embedded ${embedded}.`);
   }
 }
 
