@@ -447,7 +447,11 @@ function drawStatutoryPage(pdf: jsPDF, report: ReportData) {
   y = drawTenancyDetailRow(pdf, y, 'Tenancy Start Date:', formatAustralianDate(details.tenancyStartDate));
   y = drawTenancyDetailRow(pdf, y, 'Tenant/s:', value(details.tenants));
   y = drawTenancyDetailRow(pdf, y, 'Tenant Received Date:', formatAustralianDate(details.tenantReceivedDate));
-  drawTenancyDetailRow(pdf, y, 'Report Return Date:', formatAustralianDate(details.reportReturnDate));
+  y = drawTenancyDetailRow(pdf, y, 'Report Return Date:', formatAustralianDate(details.reportReturnDate));
+
+  if (y > BODY_BOTTOM) {
+    throw new Error('Form 1 statutory page content exceeds the available A4 page height.');
+  }
 }
 
 function entryColumnPositions() {
@@ -935,6 +939,10 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
       y += 18;
     });
     y += 5;
+  }
+
+  if (y > BODY_BOTTOM - 16) {
+    throw new Error('Final report signature page content exceeds the available A4 page height.');
   }
 
   setFont(pdf, 6.2, 'bold');
