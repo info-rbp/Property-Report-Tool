@@ -290,89 +290,87 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                             <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
                               <span className="font-bold text-neutral-800 text-[11px]">{item.name}</span>
 
-                              {/* Clean / Undamaged / Working Y/N buttons matching WA Form 1 */}
-                              <div className="flex items-center gap-2">
-                                {/* Clean */}
-                                <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
-                                  <span className="text-[10px] font-bold text-neutral-600 px-1">Cln</span>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'clean', item.clean === true ? null : true)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.clean === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    Y
-                                  </button>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'clean', item.clean === false ? null : false)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.clean === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    N
-                                  </button>
-                                </div>
+                              {details.reportType !== 'Routine' && (
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
+                                    <span className="text-[10px] font-bold text-neutral-600 px-1">Cln</span>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'clean', item.clean === true ? null : true)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.clean === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      Y
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'clean', item.clean === false ? null : false)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.clean === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      N
+                                    </button>
+                                  </div>
 
-                                {/* Undamaged */}
-                                <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
-                                  <span className="text-[10px] font-bold text-neutral-600 px-1">Udg</span>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === true ? null : true)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.undamaged === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    Y
-                                  </button>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === false ? null : false)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.undamaged === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    N
-                                  </button>
-                                </div>
+                                  <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
+                                    <span className="text-[10px] font-bold text-neutral-600 px-1">Udg</span>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === true ? null : true)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.undamaged === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      Y
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'undamaged', item.undamaged === false ? null : false)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.undamaged === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      N
+                                    </button>
+                                  </div>
 
-                                {/* Working */}
-                                <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
-                                  <span className="text-[10px] font-bold text-neutral-600 px-1">Wkg</span>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'working', item.working === true ? null : true)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.working === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    Y
-                                  </button>
-                                  <button
-                                    onClick={() =>
-                                      handleUpdateItem(area.id, item.id, 'working', item.working === false ? null : false)
-                                    }
-                                    className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
-                                      item.working === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
-                                    }`}
-                                  >
-                                    N
-                                  </button>
+                                  <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
+                                    <span className="text-[10px] font-bold text-neutral-600 px-1">Wkg</span>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'working', item.working === true ? null : true)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.working === true ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      Y
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        handleUpdateItem(area.id, item.id, 'working', item.working === false ? null : false)
+                                      }
+                                      className={`px-1.5 py-0.5 text-[10px] font-black rounded ${
+                                        item.working === false ? 'bg-red-600 text-white' : 'text-neutral-500 hover:bg-neutral-200'
+                                      }`}
+                                    >
+                                      N
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
 
                             {/* Middle: Agent Detailed Commentary */}
                             <div className="flex-1 w-full">
                               <label className="block text-[10px] font-bold text-neutral-600 uppercase mb-0.5">
-                                Agent Comments:
+                                {details.reportType === 'Routine' ? 'Inspection Finding:' : 'Agent Comments:'}
                               </label>
                               <textarea
                                 value={item.agentComments}
