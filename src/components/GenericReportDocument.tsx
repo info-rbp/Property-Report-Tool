@@ -170,10 +170,10 @@ export const GenericReportDocument: React.FC<Props> = ({ report }) => {
 
       {photoPages.map((page, pageIndex) => (
         <div key={pageIndex} className="pdf-page w-[210mm] min-h-[297mm] bg-white text-neutral-900 p-[12mm] shadow-2xl box-border flex flex-col">
-          <Header report={report} title="Inspection Photos" />
+          <Header report={report} title="Photographic Evidence" />
           {pageIndex === 0 && (
             <div className="bg-slate-100 border border-neutral-300 px-3 py-2 text-sm font-extrabold text-[#0a2540] mb-3">
-              Inspection Photos ({orderedPhotos.length} photos)
+              Photographic Evidence ({orderedPhotos.length} photos)
             </div>
           )}
           <div className="grid grid-cols-3 grid-rows-4 gap-2 flex-1 min-h-0">
