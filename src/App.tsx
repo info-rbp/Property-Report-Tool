@@ -316,6 +316,12 @@ export default function App() {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
       await api.saveReport(report);
       const blob = await renderPdf();
+      const maxCompletedPdfBytes = 90 * 1024 * 1024;
+      if (blob.size > maxCompletedPdfBytes) {
+        throw new Error(
+          `Generated PDF is ${(blob.size / (1024 * 1024)).toFixed(1)} MB and exceeds the 90 MB completed-report limit.`
+        );
+      }
       setExportProgressText('Storing completed PDF...');
       const completed = normalizeReport(await api.completeReport(report.id, blob));
       setReport(completed);
