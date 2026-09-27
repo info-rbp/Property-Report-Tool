@@ -51,23 +51,33 @@ export async function listDriveImagesInFolder(folderId: string): Promise<DriveIm
   if (!token) throw new Error('Not authenticated with Google');
 
   const query = `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`;
-  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
-    query
-  )}&fields=files(id,name,thumbnailLink,webContentLink,createdTime)&pageSize=100&orderBy=name`;
+  const files: DriveImageFile[] = [];
+  let pageToken: string | undefined;
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  do {
+    const params = new URLSearchParams({
+      q: query,
+      fields: 'nextPageToken,files(id,name,thumbnailLink,webContentLink,createdTime)',
+      pageSize: '100',
+      orderBy: 'name',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Drive API error (${response.status}): ${errorText}`);
-  }
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  const data = await response.json();
-  return data.files || [];
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Drive API error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    files.push(...(data.files || []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return files;
 }
 
 /**
