@@ -1,6 +1,8 @@
 # Production end-to-end test checklist
 
-Run this checklist on the authenticated production hostname before V1 is considered fully accepted.
+**Status: Pending operator execution.** All other identified production-hardening items are marked actioned.
+
+Run this checklist on `https://report.creation.proinspect.systems/` before V1 is considered fully accepted.
 
 ## Authentication
 
