@@ -1,6 +1,6 @@
 # ProInspect Property Reports - Cloudflare Deployment
 
-V1 is a single Cloudflare Workers application containing:
+V1 is deployed as a single Cloudflare Workers application containing:
 
 - React/Vite static assets.
 - A Worker API under `/api/*`.
@@ -10,33 +10,40 @@ V1 is a single Cloudflare Workers application containing:
 
 PDF rendering remains browser-side. Cloudflare stores the final PDF after the browser generates it.
 
+## Production resources
+
+The repository is configured for the following live Cloudflare resources:
+
+- Worker: `proinspect-property-report-creation-tool`
+- D1 database: `proinspect-property-reports`
+- D1 database ID: `777186a0-e6ca-43f5-8f50-448bd4454046`
+- R2 bucket: `proinspect-property-reports-data`
+- D1 binding: `DB`
+- R2 binding: `REPORT_STORAGE`
+
+The R2 S3 API endpoint is not required by the application. The Worker accesses R2 through the native `REPORT_STORAGE` binding, so no S3 credentials should be added to the repository.
+
 ## 1. Install dependencies
 
 ```bash
-bun install
+bun install --frozen-lockfile
 ```
 
-## 2. Create Cloudflare storage
+The repository pins Bun through:
 
-Create the D1 database:
-
-```bash
-bunx wrangler d1 create proinspect-property-reports
+```json
+"packageManager": "bun@1.4.2"
 ```
 
-Copy the returned database ID into `wrangler.jsonc` in place of:
+Cloudflare Builds should also have:
 
 ```text
-REPLACE_WITH_D1_DATABASE_ID
+BUN_VERSION=1.4.2
 ```
 
-Create the R2 bucket:
+## 2. Apply the D1 schema
 
-```bash
-bunx wrangler r2 bucket create proinspect-property-reports
-```
-
-## 3. Apply the D1 schema
+The D1 database exists, but the application requires the repository migration to be applied before first use.
 
 For local development:
 
@@ -50,6 +57,26 @@ For production:
 bun run db:migrate:remote
 ```
 
+The production migration creates the `properties` and `reports` tables and their indexes.
+
+## 3. Configure Cloudflare Access
+
+Protect the production Worker/custom hostname with Cloudflare Access and restrict it to approved ProInspect staff email addresses or an approved email domain.
+
+After creating the Access application, obtain:
+
+- Team domain, for example `https://your-team.cloudflareaccess.com`
+- Application Audience (AUD) tag
+
+Configure these Worker variables in Cloudflare:
+
+```text
+TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+POLICY_AUD=<application-audience-tag>
+```
+
+The Worker validates `Cf-Access-Jwt-Assertion` before allowing any `/api/*` request.
+
 ## 4. Local development
 
 Copy the local authentication example:
@@ -59,7 +86,7 @@ cp .dev.vars.example .dev.vars
 bun run dev
 ```
 
-The `DEV_USER_EMAIL` bypass is accepted only on localhost/127.0.0.1. It is not used for production requests.
+The `DEV_USER_EMAIL` bypass is accepted only on localhost/127.0.0.1 and is never used for production requests.
 
 ## 5. Build verification
 
@@ -69,32 +96,22 @@ bun run build
 bunx wrangler deploy --dry-run
 ```
 
-## 6. First deployment
+## 6. Deploy
 
 ```bash
 bun run deploy
 ```
 
-The application uses Cloudflare Workers Static Assets with `/api/*` routed to the Worker first.
+The application uses Workers Static Assets with `/api/*` routed to the Worker first.
 
-## 7. Enable Cloudflare Access
+For Cloudflare connected builds, the repository Worker name now matches the connected Worker name:
+`proinspect-property-report-creation-tool`.
 
-In Cloudflare, protect the production Worker/custom hostname with Access and restrict it to the ProInspect staff email addresses or approved email domain.
-
-After creating the Access application, obtain:
-
-- Team domain, for example `https://your-team.cloudflareaccess.com`
-- Application Audience (AUD) tag
-
-Configure the Worker variables `TEAM_DOMAIN` and `POLICY_AUD` in Cloudflare. They may be stored as encrypted secrets if preferred.
-
-The Worker validates the `Cf-Access-Jwt-Assertion` JWT against the Access signing keys before any API request is allowed.
-
-## 8. Production data model
+## 7. Production data model
 
 D1:
 - `properties` - address/reference/notes and audit fields.
-- `reports` - report type/status, report JSON, PDF key and audit fields.
+- `reports` - report type/status, report JSON, completed PDF key and audit fields.
 
 R2:
 - `reports/<report-id>/photos/<photo-id>.jpg`
@@ -102,7 +119,7 @@ R2:
 
 Completed reports cannot be edited or deleted through the V1 API.
 
-## 9. GitHub / Google AI Studio workflow
+## 8. GitHub / Google AI Studio workflow
 
 The repository remains the source of truth:
 
@@ -110,9 +127,9 @@ The repository remains the source of truth:
 Google AI Studio <-> GitHub main -> Cloudflare Workers deployment
 ```
 
-Cloudflare-specific files are ordinary repository files and do not change the application's Google AI Studio editing model.
+Cloudflare-specific files are ordinary repository files and do not change the Google AI Studio editing model.
 
-## 10. V1 scope
+## 9. V1 scope
 
 Included:
 - Properties as report containers.
