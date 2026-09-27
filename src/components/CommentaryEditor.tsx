@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { getReportTemplate, usesConditionMatrix } from '../data/reportCatalogue';
 import { InspectionArea, InspectionItem, TenancyDetails } from '../types/report';
+import { GenericTemplateEditor } from './GenericTemplateEditor';
 import {
   Plus,
   Trash2,
@@ -30,6 +32,10 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'areas' | 'details' | 'compliance' | 'notes'>('areas');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
+  const template = getReportTemplate(details.reportType);
+  const isCoreResidentialReport =
+    details.reportType === 'Entry' || details.reportType === 'Routine' || details.reportType === 'Exit';
+  const showConditionMatrix = usesConditionMatrix(details.reportType);
 
   const handleUpdateDetail = (key: keyof TenancyDetails, value: any) => {
     onChangeDetails({
@@ -201,7 +207,11 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5 text-cyan-700" />
-            {details.reportType === 'Routine' ? 'Summary, Maintenance & Sign-off' : 'Exit Notes, Work Dates & Sign-off'}
+            {details.reportType === 'Routine'
+              ? 'Summary, Maintenance & Sign-off'
+              : details.reportType === 'Exit'
+              ? 'Exit Notes, Work Dates & Sign-off'
+              : 'Template Details, Outcomes & Sign-off'}
           </button>
         )}
       </div>
@@ -214,12 +224,12 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
             <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-neutral-200 shadow-2xs">
               <div>
                 <h3 className="font-bold text-neutral-900 text-sm">
-                  {details.reportType === 'Entry' ? 'Property Room & Area Commentary (WA Form 1)' : 'Property Room & Area Commentary'}
+                  {details.reportType === 'Entry' ? 'Property Room & Area Commentary (WA Form 1)' : template.findingsTitle}
                 </h3>
                 <p className="text-xs text-neutral-500">
-                  {details.reportType === 'Routine'
-                    ? 'Record the inspection finding for each room or area. Routine reports present these as concise findings without condition-rating columns.'
-                    : 'Mark Clean (Cln), Undamaged (Udg), Working (Wkg) with Y/N and record detailed item observations.'}
+                  {showConditionMatrix
+                    ? 'Mark Clean (Cln), Undamaged (Udg), Working (Wkg) with Y/N where relevant and record detailed observations.'
+                    : 'Record concise findings and observations for each area or section. The issued PDF uses deterministic wrapped rows and continuation pages.'}
                 </p>
               </div>
               <button
@@ -227,7 +237,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                 className="px-3 py-1.5 bg-[#0a2540] hover:bg-[#07192c] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                Add Room / Area
+                Add Area / Section
               </button>
             </div>
 
@@ -290,7 +300,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                             <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
                               <span className="font-bold text-neutral-800 text-[11px]">{item.name}</span>
 
-                              {details.reportType !== 'Routine' && (
+                              {showConditionMatrix && (
                                 <div className="flex items-center gap-2">
                                   <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
                                     <span className="text-[10px] font-bold text-neutral-600 px-1">Cln</span>
@@ -370,7 +380,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                             {/* Middle: Agent Detailed Commentary */}
                             <div className="flex-1 w-full">
                               <label className="block text-[10px] font-bold text-neutral-600 uppercase mb-0.5">
-                                {details.reportType === 'Routine' ? 'Inspection Finding:' : 'Agent Comments:'}
+                                {showConditionMatrix ? 'Agent Comments:' : 'Inspection Finding:'}
                               </label>
                               <textarea
                                 value={item.agentComments}
@@ -454,10 +464,12 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block font-semibold text-neutral-700 mb-1">
-                  {details.reportType === 'Routine' ? 'Lease Start Date' : 'Tenancy Start Date'}
-                </label>
+              {isCoreResidentialReport && (
+                <>
+                  <div>
+                    <label className="block font-semibold text-neutral-700 mb-1">
+                      {details.reportType === 'Routine' ? 'Lease Start Date' : 'Tenancy Start Date'}
+                    </label>
                 <input
                   type="text"
                   value={details.tenancyStartDate}
@@ -514,6 +526,8 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                   placeholder="e.g. Tenant 1, Tenant 2"
                 />
               </div>
+                </>
+              )}
 
               {details.reportType === 'Entry' && (
                 <>
@@ -577,8 +591,9 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
           </div>
         )}
 
-        {/* ================= ROUTINE / EXIT NOTES & SIGN-OFF TAB ================= */}
+        {/* ================= ROUTINE / EXIT / GENERIC NOTES & SIGN-OFF TAB ================= */}
         {activeTab === 'notes' && details.reportType !== 'Entry' && (
+          isCoreResidentialReport ? (
           <div className="space-y-4 text-xs">
             <h3 className="font-bold text-neutral-900 text-sm pb-2 border-b border-neutral-200">
               {details.reportType === 'Routine'
@@ -698,6 +713,9 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
               />
             </div>
           </div>
+          ) : (
+            <GenericTemplateEditor details={details} onChangeDetails={onChangeDetails} />
+          )
         )}
 
         {/* ================= COMPLIANCE, WORK DATES & SIGNATURES TAB ================= */}
