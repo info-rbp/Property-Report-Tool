@@ -626,6 +626,10 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                     </div>
                   </div>
                 </div>
+                <p className="mt-1 text-[8.5px] text-neutral-600 leading-tight">
+                  Note: Further items and comments may be recorded on a separate sheet, signed by the
+                  lessor/property manager and the tenant, and attached to this report.
+                </p>
               </div>
 
               {/* Lessor/property manager's signature */}
