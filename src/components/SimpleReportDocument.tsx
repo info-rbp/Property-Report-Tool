@@ -44,7 +44,7 @@ export const SimpleReportDocument: React.FC<Props> = ({ report }) => {
       </div>
 
       {areas.map((area) => (
-        <div key={area.id} className="pdf-page w-[210mm] h-[297mm] bg-white text-neutral-900 p-[12mm] shadow-2xl box-border overflow-hidden">
+        <div key={area.id} className="pdf-page pdf-photo-page w-[210mm] h-[297mm] bg-white text-neutral-900 p-[12mm] shadow-2xl box-border overflow-hidden">
           <div className="flex justify-between border-b-2 border-neutral-900 pb-2 mb-4 text-sm font-bold">
             <span>{details.propertyAddress}</span>
             <span>{details.reportType} Inspection Report</span>
@@ -75,11 +75,11 @@ export const SimpleReportDocument: React.FC<Props> = ({ report }) => {
             <span>{details.propertyAddress}</span>
             <span>Inspection Photos</span>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-3 min-w-0">
             {page.map((photo) => (
-              <div key={photo.id} className="border border-neutral-200 rounded overflow-hidden">
+              <div key={photo.id} className="min-w-0 border border-neutral-200 rounded overflow-hidden">
                 <div className="h-[45mm] bg-neutral-100">
-                  <img src={photo.dataUrl || photo.url} alt={photo.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                  <img src={photo.dataUrl || photo.url} alt={photo.name} className="block w-full h-full max-w-full object-cover" loading="lazy" decoding="async" />
                 </div>
                 <div className="p-1.5 text-[9px] font-medium">{photo.name}</div>
               </div>
