@@ -40,8 +40,19 @@ interface ItemFragment {
   first: boolean;
 }
 
+function pdfSafeText(input: string): string {
+  return input
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/\u2022/g, '-')
+    .replace(/\u00A0/g, ' ')
+    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, '?');
+}
+
 function value(value: string | undefined | null): string {
-  return (value || '').trim();
+  return pdfSafeText(value || '').trim();
 }
 
 function setFont(pdf: jsPDF, size: number, style: 'normal' | 'bold' | 'italic' | 'bolditalic' = 'normal') {
@@ -54,7 +65,7 @@ function setTextColor(pdf: jsPDF, rgb: [number, number, number] = TEXT) {
 }
 
 function wrapText(pdf: jsPDF, text: string, width: number): string[] {
-  const normalized = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const normalized = pdfSafeText(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const paragraphs = normalized.split('\n');
   const lines: string[] = [];
   for (const paragraph of paragraphs) {
