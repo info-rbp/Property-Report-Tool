@@ -288,7 +288,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                 </div>
               </div>
 
-              {/* Tenancy Details card matching WA Form 1 exactly */}
+              {/* Additional tenancy details */}
               <div className="mt-2.5">
                 <div className="bg-neutral-200 border border-neutral-400 px-2 py-1 font-extrabold text-[10.5px] uppercase tracking-wider text-neutral-900">
                   Tenancy Details
@@ -364,7 +364,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
             className="pdf-page w-[210mm] min-h-[297mm] h-[297mm] bg-white text-neutral-900 p-[12mm] flex flex-col justify-between shadow-2xl relative box-border overflow-hidden select-text text-[10px]"
           >
             <div>
-              {/* Running header matching sample exactly */}
+              {/* Running report header */}
               <div className="flex justify-between items-center border-b-2 border-neutral-900 pb-1 mb-2 font-bold text-[11px]">
                 <span className="text-neutral-900">{details.propertyAddress}</span>
                 <span className="text-neutral-900">{details.reportType} Condition Report</span>
@@ -372,7 +372,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
 
               {/* Main Table Structure */}
               <table className="w-full border-collapse border border-neutral-400 text-left">
-                {/* Column Headers matching WA Form 1 exactly */}
+                {/* Condition report column headers */}
                 <thead>
                   <tr className="bg-neutral-100 text-neutral-900 font-bold border-b border-neutral-400">
                     <th colSpan={4} className="border-r border-neutral-400 p-1 text-center text-[10.5px]">
