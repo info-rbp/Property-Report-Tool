@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { INITIAL_SAMPLE_REPORT } from './data/sampleReport';
-import { ReportData, InspectionArea, DrivePhoto, TenancyDetails } from './types/report';
+import { createBlankReport, normalizeReport } from './data/reportTemplates';
+import { ReportData, InspectionArea, DrivePhoto, TenancyDetails, ReportType } from './types/report';
 import { ReportDocument } from './components/ReportDocument';
 import { ProInspectLogo } from './components/ProInspectLogo';
 import { CommentaryEditor } from './components/CommentaryEditor';
 import { PhotoManager } from './components/PhotoManager';
 import { GoogleWorkspaceModal } from './components/GoogleWorkspaceModal';
 import { MfaVerificationModal } from './components/MfaVerificationModal';
+import { ReportDashboard } from './components/ReportDashboard';
+import { ReportActions } from './components/ReportActions';
 import { exportElementToPdf } from './lib/pdfExporter';
 import { parseLocalSpreadsheetFile, downloadStarterCsv } from './lib/spreadsheetParser';
 import { initAuth, googleSignIn, logout, getAccessToken, SignInResult, MfaRequiredResult } from './lib/auth';
@@ -29,26 +31,32 @@ import {
   AlertCircle
 } from 'lucide-react';
 
-const STORAGE_KEY = 'proinspect_report_draft_wa_v2';
+const STORAGE_KEY = 'proinspect_reports_v1';
+const LEGACY_STORAGE_KEY = 'proinspect_report_draft_wa_v2';
 
 export default function App() {
-  // Load initial report from localStorage if available, otherwise default to INITIAL_SAMPLE_REPORT
-  const [report, setReport] = useState<ReportData>(() => {
+  const [reports, setReports] = useState<ReportData[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.details && Array.isArray(parsed.areas)) {
-          return parsed;
+        if (Array.isArray(parsed)) return parsed.map(normalizeReport);
+      }
+      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacy) {
+        const parsedLegacy = JSON.parse(legacy);
+        if (parsedLegacy?.details && Array.isArray(parsedLegacy.areas)) {
+          return [normalizeReport(parsedLegacy)];
         }
       }
     } catch (e) {
-      console.warn('Failed to load draft report from localStorage:', e);
+      console.warn('Failed to load draft reports from localStorage:', e);
     }
-    return INITIAL_SAMPLE_REPORT;
+    return [];
   });
-
-  const [viewMode, setViewMode] = useState<'preview' | 'commentary' | 'photos'>('preview');
+  const [activeReportId, setActiveReportId] = useState<string | null>(null);
+  const [report, setReport] = useState<ReportData>(() => createBlankReport('Entry'));
+  const [viewMode, setViewMode] = useState<'preview' | 'commentary' | 'photos' | 'actions'>('preview');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [hasGoogleAuth, setHasGoogleAuth] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -57,53 +65,64 @@ export default function App() {
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
-
-  // Multi-Factor Authentication state
   const [mfaResolver, setMfaResolver] = useState<MultiFactorResolver | null>(null);
   const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Automatically save report to localStorage whenever it changes
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(report));
-      const now = new Date();
-      setLastSavedTime(
-        now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      );
-    } catch (e: any) {
-      // If photos contain very large base64 strings exceeding the 5MB browser quota,
-      // save without heavy photo dataUrls so comments, areas, and metadata are never lost.
-      try {
-        const lightweightReport: ReportData = {
-          ...report,
-          photos: report.photos.map((p) => ({
-            ...p,
-            dataUrl: undefined, // drop large inline dataUrl for storage quota
-          })),
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweightReport));
-        const now = new Date();
-        setLastSavedTime(
-          now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        );
-      } catch (inner) {
-        console.warn('localStorage quota exceeded:', inner);
-      }
+      const lightweight = reports.map((item) => ({
+        ...item,
+        photos: item.photos.map((photo) => ({ ...photo, dataUrl: undefined })),
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweight));
+    } catch (e) {
+      console.warn('Failed to save draft report list:', e);
     }
-  }, [report]);
+  }, [reports]);
 
-  // Reset to default sample template
+  useEffect(() => {
+    if (!activeReportId) return;
+    const updated = { ...report, id: activeReportId, updatedAt: new Date().toISOString() };
+    setReports((current) => current.map((item) => item.id === activeReportId ? updated : item));
+    setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+  }, [report, activeReportId]);
+
+  const handleCreateReport = (type: ReportType) => {
+    const created = createBlankReport(type);
+    setReports((current) => [created, ...current]);
+    setReport(created);
+    setActiveReportId(created.id!);
+    setViewMode('commentary');
+  };
+
+  const handleOpenReport = (id: string) => {
+    const selected = reports.find((item) => item.id === id);
+    if (!selected) return;
+    setReport(normalizeReport(selected));
+    setActiveReportId(id);
+    setViewMode('preview');
+  };
+
+  const handleDeleteReport = (id: string) => {
+    if (!confirm('Delete this draft report? This cannot be undone.')) return;
+    setReports((current) => current.filter((item) => item.id !== id));
+    if (activeReportId === id) setActiveReportId(null);
+  };
+
+  const handleBackToDashboard = () => {
+    setActiveReportId(null);
+    setStatusMessage(null);
+  };
+
   const handleResetToDefault = () => {
-    if (confirm('Reset report to sample template? All current draft edits will be replaced.')) {
-      setReport(INITIAL_SAMPLE_REPORT);
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-      } catch {
-        // ignore
-      }
-      setStatusMessage({ text: 'Report reset to default template', type: 'info' });
+    if (!activeReportId) return;
+    if (confirm('Reset this report to a blank template? All current edits will be replaced.')) {
+      const blank = createBlankReport(report.details.reportType);
+      blank.id = activeReportId;
+      blank.createdAt = report.createdAt || blank.createdAt;
+      setReport(blank);
+      setStatusMessage({ text: 'Report reset to a blank template', type: 'info' });
     }
   };
 
@@ -201,7 +220,9 @@ export default function App() {
     setIsExportingPdf(true);
     setExportProgressText('Preparing report document...');
     try {
-      const safeFilename = `${report.details.reportType}_Condition_Report_${report.details.propertyAddress.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      const safeAddress = (report.details.propertyAddress || 'Property').trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      const safeDate = (report.details.inspectionDate || new Date().toISOString().slice(0, 10)).replace(/[^0-9-]/g, '');
+      const safeFilename = `ProInspect_${report.details.reportType}_Report_${safeAddress}_${safeDate}.pdf`;
       await exportElementToPdf(container, safeFilename, (msg) => {
         setExportProgressText(msg);
       });
@@ -214,6 +235,18 @@ export default function App() {
       setExportProgressText(null);
     }
   };
+
+  if (!activeReportId) {
+    return (
+      <div className="min-h-screen bg-neutral-100 flex flex-col text-neutral-900 font-sans">
+        <header className="bg-white border-b border-neutral-200 px-4 lg:px-8 py-3 flex items-center justify-between shadow-xs">
+          <ProInspectLogo size="sm" showTagline={false} />
+          <span className="text-xs font-semibold text-neutral-500">Property Reports V1</span>
+        </header>
+        <ReportDashboard reports={reports} onCreate={handleCreateReport} onOpen={handleOpenReport} onDelete={handleDeleteReport} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col text-neutral-900 font-sans">
@@ -249,6 +282,14 @@ export default function App() {
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>Reset Draft</span>
+          </button>
+          <button
+            onClick={handleBackToDashboard}
+            className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-xs text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
+            title="Back to draft reports"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Reports</span>
           </button>
 
           {/* Google Auth Status / Button */}
@@ -345,6 +386,15 @@ export default function App() {
           >
             <ImageIcon className="w-3.5 h-3.5" />
             Photos Gallery ({report.photos.length})
+          </button>
+          <button
+            onClick={() => setViewMode('actions')}
+            className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all ${
+              viewMode === 'actions' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Review & Send
           </button>
         </div>
 
@@ -472,6 +522,18 @@ export default function App() {
                   setIsWorkspaceModalOpen(true);
                 }
               }}
+            />
+          </div>
+        )}
+        {viewMode === 'actions' && (
+          <div className="py-8 px-4">
+            <ReportActions
+              report={report}
+              onDownload={() => {
+                setViewMode('preview');
+                setTimeout(handleExportPdf, 100);
+              }}
+              isExporting={isExportingPdf}
             />
           </div>
         )}
