@@ -1,10 +1,12 @@
+import { PROINSPECT_COMPANY } from '../config/company';
 import { ReportData, ReportType } from '../types/report';
 
 const COMPANY = {
-  companyName: 'ProInspect',
-  companyAddress: '',
-  companyPhone: '',
-  companyEmail: '',
+  companyName: PROINSPECT_COMPANY.name,
+  companyAddress: PROINSPECT_COMPANY.address,
+  companyPhone: PROINSPECT_COMPANY.phone,
+  companyEmail: PROINSPECT_COMPANY.email,
+  companyWebsite: PROINSPECT_COMPANY.website,
 };
 
 export function createBlankReport(
