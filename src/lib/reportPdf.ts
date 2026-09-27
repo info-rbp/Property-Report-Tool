@@ -1303,6 +1303,10 @@ function photoCaption(photo: ReportPhoto, total: number, ordinal: number): strin
 async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
   if (!report.photos.length) return;
 
+  const isCoreInspection = ['Entry', 'Routine', 'Exit'].includes(report.details.reportType);
+  const photoPageTitle = isCoreInspection ? 'Inspection Photos' : 'Photographic Evidence';
+  const photoSectionTitle = isCoreInspection ? 'Agent Inspection Photos' : 'Photographic Evidence';
+
   const areaOrder = new Map(
     report.areas.map((area, index) => [area.name.trim().toLowerCase(), index])
   );
@@ -1352,12 +1356,12 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
     const pageNumber = Math.floor(pageStart / photosPerPage) + 1;
     const photoPageCount = Math.ceil(orderedPhotos.length / photosPerPage);
 
-    let y = addContentPage(pdf, report, 'Inspection Photos');
+    let y = addContentPage(pdf, report, photoPageTitle);
     if (pageStart === 0) {
       drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, firstTitleHeight, SECTION_FILL, BORDER);
       setFont(pdf, 7, 'bold');
       setTextColor(pdf, TEXT);
-      pdf.text(`Agent Inspection Photos (${orderedPhotos.length} photos)`, MARGIN_X + 1.5, y + 4.6);
+      pdf.text(`${photoSectionTitle} (${orderedPhotos.length} photos)`, MARGIN_X + 1.5, y + 4.6);
       y += firstTitleHeight + 2;
     }
 
