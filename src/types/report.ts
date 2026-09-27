@@ -1,4 +1,35 @@
-export type ReportType = 'Entry' | 'Routine' | 'Exit';
+export type ReportType =
+  | 'Entry'
+  | 'Routine'
+  | 'Exit'
+  | 'PropertyOnboarding'
+  | 'VacantProperty'
+  | 'MaintenanceAssessment'
+  | 'MaintenanceCompletion'
+  | 'CleaningRectification'
+  | 'CommercialIngoing'
+  | 'CommercialPeriodic'
+  | 'CommercialExit'
+  | 'CommonProperty'
+  | 'BuildingManagement'
+  | 'Incident'
+  | 'ContractorWorks'
+  | 'PropertyHandover'
+  | 'PreventativeMaintenance'
+  | 'CleaningQuality'
+  | 'AnnualPropertySummary'
+  | 'KeySafeInstallation';
+
+export type ReportCategory = 'Residential' | 'Commercial' | 'Maintenance' | 'Building / Strata';
+export type ReportTemplateFamily =
+  | 'entry'
+  | 'routine'
+  | 'exit'
+  | 'condition'
+  | 'inspection'
+  | 'maintenance'
+  | 'operations'
+  | 'event';
 export type ReportStatus = 'draft' | 'completed';
 
 export interface InspectionItem {
@@ -60,6 +91,44 @@ export interface TenancyDetails {
   floorcoveringsCleanedDate?: string;
   additionalComments: string;
   maintenanceComments?: string;
+
+  // Shared fields used by operational, maintenance, commercial and strata templates.
+  clientName?: string;
+  siteContact?: string;
+  referenceNumber?: string;
+  inspectionPurpose?: string;
+  issueSummary?: string;
+  observedCondition?: string;
+  urgency?: string;
+  recommendedAction?: string;
+  actionRequired?: string;
+  contractorName?: string;
+  workOrderReference?: string;
+  workDescription?: string;
+  completionDate?: string;
+  verificationOutcome?: string;
+  incidentDate?: string;
+  incidentTime?: string;
+  incidentCategory?: string;
+  incidentDescription?: string;
+  immediateActions?: string;
+  accessDetails?: string;
+  meterReadings?: string;
+  keysAccessDevices?: string;
+  outstandingItems?: string;
+  buildingSummary?: string;
+  contractorAttendance?: string;
+  residentMatters?: string;
+  worksCompleted?: string;
+  mattersForApproval?: string;
+  keySafeLocation?: string;
+  keySafeModel?: string;
+  installationMethod?: string;
+  installationOutcome?: string;
+  codeHandlingNote?: string;
+  nextReviewDate?: string;
+  annualSummaryPeriod?: string;
+
   agentSignName: string;
   agentSignDate: string;
   tenant1SignName?: string;
