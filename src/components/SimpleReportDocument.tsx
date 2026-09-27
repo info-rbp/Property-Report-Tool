@@ -30,7 +30,7 @@ export const SimpleReportDocument: React.FC<Props> = ({ report }) => {
           </div>
           {cover && (
             <div className="mt-12 w-[140mm] h-[85mm] mx-auto overflow-hidden rounded border border-neutral-300">
-              <img src={cover.dataUrl || cover.thumbnailLink} alt={cover.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
+              <img src={cover.dataUrl || cover.url} alt={cover.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
             </div>
           )}
         </div>
@@ -77,7 +77,7 @@ export const SimpleReportDocument: React.FC<Props> = ({ report }) => {
             {page.map((photo) => (
               <div key={photo.id} className="border border-neutral-200 rounded overflow-hidden">
                 <div className="h-[45mm] bg-neutral-100">
-                  <img src={photo.dataUrl || photo.thumbnailLink} alt={photo.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                  <img src={photo.dataUrl || photo.url} alt={photo.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
                 </div>
                 <div className="p-1.5 text-[9px] font-medium">{photo.name}</div>
               </div>
