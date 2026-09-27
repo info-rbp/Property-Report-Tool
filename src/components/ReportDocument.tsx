@@ -9,6 +9,12 @@ interface ReportPreviewProps {
 
 export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
   const { details, areas, photos } = report;
+  const coverPhoto =
+    details.coverPhotoUrl ||
+    photos.find((photo) => photo.isCover)?.dataUrl ||
+    photos.find((photo) => photo.isCover)?.url ||
+    photos[0]?.dataUrl ||
+    photos[0]?.url;
 
   if (details.reportType !== 'Entry') {
     return <SimpleReportDocument report={report} />;
@@ -114,18 +120,18 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
           {/* Cover Hero Photo (if available) or Spacer */}
           <div className="mt-14 flex justify-center">
             <div className="w-[140mm] h-[85mm] bg-neutral-100 border border-neutral-300 rounded shadow-xs overflow-hidden flex items-center justify-center">
-              <img
-                src={
-                  details.coverPhotoUrl ||
-                  photos.find((photo) => photo.isCover)?.dataUrl ||
-                  photos.find((photo) => photo.isCover)?.url ||
-                  photos[0]?.dataUrl ||
-                  photos[0]?.url
-                }
-                alt="Property exterior"
-                className="w-full h-full object-cover"
-                crossOrigin="anonymous"
-              />
+              {coverPhoto ? (
+                <img
+                  src={coverPhoto}
+                  alt="Property exterior"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="text-center text-neutral-400">
+                  <div className="font-bold text-sm text-[#0a2540]">ProInspect</div>
+                  <div className="text-[10px] mt-1">No cover photo selected</div>
+                </div>
+              )}
             </div>
           </div>
         </div>
