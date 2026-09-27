@@ -1585,12 +1585,26 @@ export async function generateReportPdf(
     onProgress?.('Building routine inspection summary and maintenance actions...');
     drawRoutineClosingPages(pdf, report);
     await drawPhotoPages(pdf, report, onProgress);
-  } else {
+  } else if (report.details.reportType === 'Exit') {
     onProgress?.('Building exit condition tables...');
     drawExitConditionPages(pdf, report, onProgress);
     await drawPhotoPages(pdf, report, onProgress);
     onProgress?.('Building exit special reporting and sign-off...');
     drawFinalPage(pdf, report);
+  } else {
+    const definition = getReportTemplate(report.details.reportType);
+    onProgress?.(`Building ${definition.shortLabel} report details...`);
+    drawGenericSummaryPages(pdf, report, definition);
+
+    if (definition.conditionMatrix) {
+      drawGenericConditionPages(pdf, report, definition, onProgress);
+    } else {
+      drawGenericFindingsPages(pdf, report, definition, onProgress);
+    }
+
+    await drawPhotoPages(pdf, report, onProgress);
+    onProgress?.(`Building ${definition.shortLabel} report outcomes and sign-off...`);
+    drawGenericClosingPages(pdf, report, definition);
   }
 
   addFooters(pdf, report);
@@ -1601,7 +1615,9 @@ export async function generateReportPdf(
       ? 3 + (report.areas.length ? 1 : 0) + photoPageMinimum
       : report.details.reportType === 'Routine'
       ? 3 + photoPageMinimum
-      : 2 + (report.areas.length ? 1 : 0) + photoPageMinimum;
+      : report.details.reportType === 'Exit'
+      ? 2 + (report.areas.length ? 1 : 0) + photoPageMinimum
+      : 3 + (report.areas.length ? 1 : 0) + photoPageMinimum;
 
   if (pdf.getNumberOfPages() < expectedMinimumPages) {
     throw new Error('PDF validation failed because the generated page count was lower than expected.');
