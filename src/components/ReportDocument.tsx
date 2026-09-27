@@ -95,7 +95,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
 
             <div className="text-right text-xs text-neutral-700 leading-snug space-y-0.5 font-medium">
               <p className="font-bold text-[#0a2540] text-sm">{details.companyName || PROINSPECT_COMPANY.name}</p>
-              {details.companyAddress && <p>{details.companyAddress}</p>}
+              {(details.companyAddress || PROINSPECT_COMPANY.address) && <p>{details.companyAddress || PROINSPECT_COMPANY.address}</p>}
               {(details.companyPhone || PROINSPECT_COMPANY.phone) && (
                 <p className="font-semibold text-neutral-800">{details.companyPhone || PROINSPECT_COMPANY.phone}</p>
               )}
