@@ -1,0 +1,5 @@
+# Local development only. Copy this file to .dev.vars.
+DEV_USER_EMAIL=local@proinspect.test
+
+# Production requests use Cloudflare Access instead.
+# Configure TEAM_DOMAIN and POLICY_AUD as Worker variables/secrets in Cloudflare.

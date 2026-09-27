@@ -9,6 +9,12 @@ interface ReportPreviewProps {
 
 export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
   const { details, areas, photos } = report;
+  const coverPhoto =
+    details.coverPhotoUrl ||
+    photos.find((photo) => photo.isCover)?.dataUrl ||
+    photos.find((photo) => photo.isCover)?.url ||
+    photos[0]?.dataUrl ||
+    photos[0]?.url;
 
   if (details.reportType !== 'Entry') {
     return <SimpleReportDocument report={report} />;
@@ -114,19 +120,18 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
           {/* Cover Hero Photo (if available) or Spacer */}
           <div className="mt-14 flex justify-center">
             <div className="w-[140mm] h-[85mm] bg-neutral-100 border border-neutral-300 rounded shadow-xs overflow-hidden flex items-center justify-center">
-              <img
-                src={
-                  details.coverPhotoUrl ||
-                  photos.find((photo) => photo.isCover)?.dataUrl ||
-                  photos.find((photo) => photo.isCover)?.thumbnailLink ||
-                  photos[0]?.dataUrl ||
-                  photos[0]?.thumbnailLink ||
-                  'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200&auto=format&fit=crop&q=80'
-                }
-                alt="Property exterior"
-                className="w-full h-full object-cover"
-                crossOrigin="anonymous"
-              />
+              {coverPhoto ? (
+                <img
+                  src={coverPhoto}
+                  alt="Property exterior"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="text-center text-neutral-400">
+                  <div className="font-bold text-sm text-[#0a2540]">ProInspect</div>
+                  <div className="text-[10px] mt-1">No cover photo selected</div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -532,7 +537,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                       {/* Photo Image Aspect */}
                       <div className="w-full h-[47mm] bg-neutral-200 overflow-hidden rounded-xs flex items-center justify-center">
                         <img
-                          src={photo.dataUrl || photo.thumbnailLink || 'https://via.placeholder.com/300x200'}
+                          src={photo.dataUrl || photo.url || 'https://via.placeholder.com/300x200'}
                           alt={photo.name}
                           className="w-full h-full object-cover"
                           crossOrigin="anonymous"

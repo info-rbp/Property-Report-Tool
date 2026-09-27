@@ -2,7 +2,10 @@ node_modules/
 build/
 dist/
 coverage/
+.wrangler/
 .DS_Store
 *.log
 .env*
+.dev.vars*
 !.env.example
+!.dev.vars.example

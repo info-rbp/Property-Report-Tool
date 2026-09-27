@@ -1,0 +1,110 @@
+import { PropertyRecord, ReportData, ReportSummary, ReportType } from '../types/report';
+
+async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(init?.headers || {}),
+    },
+    credentials: 'same-origin',
+  });
+
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const data = await response.json() as { error?: string };
+      if (data.error) message = data.error;
+    } catch {
+      // keep default message
+    }
+    throw new Error(message);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export const api = {
+  me: () => apiRequest<{ email: string }>('/api/me'),
+
+  listProperties: () => apiRequest<PropertyRecord[]>('/api/properties'),
+
+  createProperty: (input: { address: string; reference?: string; notes?: string }) =>
+    apiRequest<PropertyRecord>('/api/properties', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  updateProperty: (id: string, input: { address: string; reference?: string; notes?: string }) =>
+    apiRequest<PropertyRecord>(`/api/properties/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  getProperty: (id: string) =>
+    apiRequest<{ property: PropertyRecord; reports: ReportSummary[] }>(
+      `/api/properties/${encodeURIComponent(id)}`
+    ),
+
+  createReport: (propertyId: string, reportType: ReportType, report: ReportData) =>
+    apiRequest<ReportData>(`/api/properties/${encodeURIComponent(propertyId)}/reports`, {
+      method: 'POST',
+      body: JSON.stringify({ reportType, report }),
+    }),
+
+  getReport: (id: string) =>
+    apiRequest<ReportData>(`/api/reports/${encodeURIComponent(id)}`),
+
+  saveReport: (report: ReportData) =>
+    apiRequest<ReportData>(`/api/reports/${encodeURIComponent(report.id || '')}`, {
+      method: 'PUT',
+      body: JSON.stringify({ report }),
+    }),
+
+  deleteReport: (id: string) =>
+    apiRequest<{ success: true }>(`/api/reports/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+
+  uploadPhoto: async (
+    reportId: string,
+    file: Blob,
+    metadata: { id: string; name: string; areaName: string; photoIndex: number; isCover?: boolean }
+  ) => {
+    const form = new FormData();
+    form.append('file', file, `${metadata.id}.jpg`);
+    form.append('photoId', metadata.id);
+    form.append('name', metadata.name);
+    form.append('areaName', metadata.areaName);
+    form.append('photoIndex', String(metadata.photoIndex));
+    form.append('isCover', metadata.isCover ? 'true' : 'false');
+
+    return apiRequest<ReportData>(`/api/reports/${encodeURIComponent(reportId)}/photos`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  deletePhoto: (reportId: string, photoId: string) =>
+    apiRequest<ReportData>(
+      `/api/reports/${encodeURIComponent(reportId)}/photos/${encodeURIComponent(photoId)}`,
+      { method: 'DELETE' }
+    ),
+
+  completeReport: async (reportId: string, pdf: Blob) => {
+    const response = await fetch(`/api/reports/${encodeURIComponent(reportId)}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/pdf' },
+      body: pdf,
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      throw new Error(data.error || `Unable to complete report (${response.status})`);
+    }
+    return response.json() as Promise<ReportData>;
+  },
+
+  completedPdfUrl: (reportId: string) =>
+    `/api/reports/${encodeURIComponent(reportId)}/pdf`,
+};

@@ -1,6 +1,6 @@
 {
   "name": "ProInspect Property Reports",
-  "description": "Create property reports from imported commentary and inspection photos, then review, download and prepare them for email.",
+  "description": "Cloud-backed property reporting for ProInspect with CSV commentary import, device photo uploads, saved properties, cross-device drafts and PDF finalisation.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
