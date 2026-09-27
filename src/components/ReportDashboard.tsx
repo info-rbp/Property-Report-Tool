@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Download, FileText, Plus, Trash2 } from 'lucide-react';
+import { REPORT_CATEGORIES, REPORT_TEMPLATE_DEFINITIONS, getReportTypeLabel } from '../data/reportCatalogue';
 import { PropertyRecord, ReportSummary, ReportType } from '../types/report';
 
 interface Props {
@@ -53,9 +54,17 @@ export const ReportDashboard: React.FC<Props> = ({
               onChange={(e) => setType(e.target.value as ReportType)}
               className="border border-neutral-300 rounded-lg px-3 py-2 text-sm bg-white"
             >
-              <option value="Entry">Entry Condition Report</option>
-              <option value="Routine">Routine Inspection Report</option>
-              <option value="Exit">Exit Condition Report</option>
+              {REPORT_CATEGORIES.map((category) => (
+                <optgroup key={category} label={category}>
+                  {REPORT_TEMPLATE_DEFINITIONS
+                    .filter((definition) => definition.category === category)
+                    .map((definition) => (
+                      <option key={definition.type} value={definition.type}>
+                        {definition.label}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
             </select>
             <button
               onClick={create}
@@ -84,7 +93,7 @@ export const ReportDashboard: React.FC<Props> = ({
                   >
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-neutral-500 shrink-0" />
-                      <span className="font-bold text-neutral-900">{report.reportType} Report</span>
+                      <span className="font-bold text-neutral-900">{getReportTypeLabel(report.reportType)}</span>
                       <span className={`text-[10px] uppercase font-bold rounded-full px-2 py-0.5 ${
                         report.status === 'completed'
                           ? 'bg-emerald-100 text-emerald-800'
