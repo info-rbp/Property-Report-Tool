@@ -1,4 +1,5 @@
 export type ReportType = 'Entry' | 'Routine' | 'Exit';
+export type ReportStatus = 'draft' | 'completed';
 
 export interface InspectionItem {
   id: string;
@@ -27,14 +28,15 @@ export interface DrivePhoto {
   dataUrl?: string;
   areaName?: string;
   photoIndex?: number;
+  isCover?: boolean;
 }
 
 export interface TenancyDetails {
   reportType: ReportType;
-  formName: string; // e.g., "Property Condition Report"
-  actNotice: string; // e.g., "RESIDENTIAL TENANCIES ACT 1987 (WA) Section 27C(6)"
-  formNumber?: string; // "FORM 1"
-  governingBody?: string; // "Department of Energy, Mines, Industry Regulation and Safety - Consumer Protection"
+  formName: string;
+  actNotice: string;
+  formNumber?: string;
+  governingBody?: string;
   companyName: string;
   companyAddress: string;
   companyPhone: string;
@@ -49,14 +51,10 @@ export interface TenancyDetails {
   tenantReceivedDate?: string;
   reportReturnDate: string;
   coverPhotoUrl?: string;
-
-  // WA Form 1 specific section: Approximate dates when work last done
   paintingPremisesExternalDate?: string;
   paintingPremisesInternalDate?: string;
   floorcoveringsLaidDate?: string;
   floorcoveringsCleanedDate?: string;
-
-  // Additional comments
   additionalComments: string;
   agentSignName: string;
   agentSignDate: string;
@@ -67,6 +65,10 @@ export interface TenancyDetails {
 }
 
 export interface ReportData {
+  id?: string;
+  status?: ReportStatus;
+  createdAt?: string;
+  updatedAt?: string;
   details: TenancyDetails;
   areas: InspectionArea[];
   photos: DrivePhoto[];
