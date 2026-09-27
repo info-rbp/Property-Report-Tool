@@ -245,11 +245,13 @@ export default function App() {
 
     try {
       let current = report;
-      let areaCount = current.photos.filter((photo) => photo.areaName === areaName).length;
+      let nextAreaPhotoIndex = current.photos
+        .filter((photo) => photo.areaName === areaName)
+        .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
 
       for (const file of files) {
         const processed = await processInspectionImage(file);
-        const photoIndex = ++areaCount;
+        const photoIndex = ++nextAreaPhotoIndex;
         const photoId = crypto.randomUUID();
         const name = `${areaName}: Overall (photo ${photoIndex})`;
         current = await api.uploadPhoto(current.id!, processed.blob, {
