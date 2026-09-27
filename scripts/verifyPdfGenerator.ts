@@ -1,3 +1,5 @@
+import { REPORT_TEMPLATE_DEFINITIONS } from '../src/data/reportCatalogue';
+import { createBlankReport } from '../src/data/reportTemplates';
 import { formatAustralianDate, renumberPhotosByArea, splitTenantNames } from '../src/lib/reportFormatting';
 import { generateReportPdf } from '../src/lib/reportPdf';
 import { ReportData } from '../src/types/report';
@@ -245,5 +247,57 @@ const exitReport: ReportData = {
 await verifyPdf('Entry', report, 5, 10_000);
 await verifyPdf('Routine', routineReport, 3, 4_000);
 await verifyPdf('Exit', exitReport, 4);
+
+for (const definition of REPORT_TEMPLATE_DEFINITIONS.filter(
+  (item) => !['Entry', 'Routine', 'Exit'].includes(item.type)
+)) {
+  const genericReport = createBlankReport(definition.type, {
+    id: 'generic-regression-property',
+    address: '19 Bonnard Crescent Ashby WA 6065',
+  });
+  genericReport.details.inspectingAgent = 'Template Regression Test';
+  genericReport.details.agentSignName = 'Template Regression Test';
+  genericReport.details.additionalComments =
+    'Template regression summary. This report verifies deterministic rendering, branded section hierarchy, wrapped findings and sign-off layout.';
+  genericReport.details.maintenanceComments =
+    definition.maintenanceCommentsLabel
+      ? 'Template regression maintenance/action commentary.'
+      : '';
+  genericReport.details.templateFields = Object.fromEntries(
+    (definition.fields || []).map((field) => [
+      field.key,
+      field.kind === 'date'
+        ? '2026-09-27'
+        : field.kind === 'textarea'
+        ? `${field.label} regression content with enough text to verify wrapping and stable page geometry.`
+        : field.options?.[0] || `${field.label} test value`,
+    ])
+  );
+  genericReport.areas = genericReport.areas.slice(0, 3).map((area, areaIndex) => ({
+    ...area,
+    items: [
+      {
+        id: `${area.id}-overall`,
+        name: 'Overall',
+        clean: definition.conditionMatrix ? areaIndex % 2 === 0 : null,
+        undamaged: definition.conditionMatrix ? true : null,
+        working: definition.conditionMatrix ? true : null,
+        agentComments:
+          'Visible condition and operational observations are recorded here. The deterministic renderer must keep this text inside the allocated row and preserve the ProInspect layout.',
+      },
+      {
+        id: `${area.id}-follow-up`,
+        name: 'Follow-up item',
+        clean: definition.conditionMatrix ? true : null,
+        undamaged: definition.conditionMatrix ? areaIndex !== 1 : null,
+        working: definition.conditionMatrix ? true : null,
+        agentComments:
+          'Secondary observation used to confirm row wrapping, page continuation behaviour and consistent table geometry.',
+      },
+    ],
+  }));
+
+  await verifyPdf(definition.shortLabel, genericReport, 4, 4_000);
+}
 
 console.log('All report-template PDF regression checks passed.');
