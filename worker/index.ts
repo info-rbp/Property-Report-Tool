@@ -69,6 +69,13 @@ function unexpectedErrorResponse(error: unknown): Response {
     );
   }
 
+  if (/CHECK constraint failed.*report_type|report_type.*CHECK constraint/i.test(message)) {
+    return json(
+      { error: 'The report-template database migration has not been applied. Apply the latest D1 migrations and try again.' },
+      503
+    );
+  }
+
   if (/D1_ERROR|database/i.test(message)) {
     return json(
       { error: 'Database operation failed. Check Cloudflare Worker/D1 logs for the underlying error.' },
