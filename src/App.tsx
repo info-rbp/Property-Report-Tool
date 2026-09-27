@@ -438,7 +438,7 @@ export default function App() {
           <div className="hidden sm:block border-l border-neutral-300 pl-4 min-w-0">
             <h1 className="text-sm font-bold text-neutral-800 truncate">{report.details.propertyAddress}</h1>
             <p className="text-[11px] text-neutral-500 font-medium">
-              {report.details.reportType} Report • {completed ? 'Completed' : 'Draft'}
+              {reportLabel(report.details.reportType)} • {completed ? 'Completed' : 'Draft'}
             </p>
           </div>
         </div>
