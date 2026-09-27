@@ -493,7 +493,7 @@ export default function App() {
         {viewMode === 'preview' && (
           <div className="py-6">
             <div className="max-w-[210mm] mx-auto mb-4 px-4 flex justify-between items-center text-xs text-neutral-500">
-              <span>Layout standard: Western Australia Form 1 (Residential Tenancies Act 1987 Section 27C(6))</span>
+              <span>{report.details.reportType === 'Entry' ? 'Layout: Western Australia Form 1' : `Layout: ProInspect ${report.details.reportType} Report`}</span>
               <span>A4 Portrait • Print & PDF Ready</span>
             </div>
             <ReportDocument report={report} />
