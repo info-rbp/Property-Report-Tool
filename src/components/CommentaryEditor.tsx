@@ -177,19 +177,21 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          WA Form 1 Tenancy Details
+          {details.reportType === 'Entry' ? 'WA Form 1 Tenancy Details' : 'Report Details'}
         </button>
-        <button
-          onClick={() => setActiveTab('compliance')}
-          className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
-            activeTab === 'compliance'
-              ? 'border-neutral-900 text-neutral-900 bg-white'
-              : 'border-transparent text-neutral-500 hover:text-neutral-900'
-          }`}
-        >
-          <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-          WA Work Dates, Signatures & Disclaimer
-        </button>
+        {details.reportType === 'Entry' && (
+          <button
+            onClick={() => setActiveTab('compliance')}
+            className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
+              activeTab === 'compliance'
+                ? 'border-neutral-900 text-neutral-900 bg-white'
+                : 'border-transparent text-neutral-500 hover:text-neutral-900'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+            WA Work Dates, Signatures & Disclaimer
+          </button>
+        )}
       </div>
 
       {/* Tab Contents */}
@@ -200,7 +202,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
             <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-neutral-200 shadow-2xs">
               <div>
                 <h3 className="font-bold text-neutral-900 text-sm">
-                  Property Room & Area Commentary (WA Form 1)
+                  {details.reportType === 'Entry' ? 'Property Room & Area Commentary (WA Form 1)' : 'Property Room & Area Commentary'}
                 </h3>
                 <p className="text-xs text-neutral-500">
                   Mark Clean (Cln), Undamaged (Udg), Working (Wkg) with Y/N and record detailed item observations.
@@ -393,11 +395,15 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
           <div className="space-y-4 text-xs">
             <div className="border-b border-neutral-200 pb-2">
               <h3 className="font-bold text-neutral-900 text-sm">
-                Western Australia Form 1 Tenancy Header & Property Details
+                {details.reportType === 'Entry'
+                  ? 'Western Australia Form 1 Tenancy Header & Property Details'
+                  : `${details.reportType} Inspection Details`}
               </h3>
-              <p className="text-neutral-500 text-[11px]">
-                Governed under the <span className="font-semibold">Residential Tenancies Act 1987 (WA) Section 27C(6)</span>.
-              </p>
+              {details.reportType === 'Entry' && (
+                <p className="text-neutral-500 text-[11px]">
+                  Governed under the <span className="font-semibold">Residential Tenancies Act 1987 (WA) Section 27C(6)</span>.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -517,7 +523,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
         )}
 
         {/* ================= COMPLIANCE, WORK DATES & SIGNATURES TAB ================= */}
-        {activeTab === 'compliance' && (
+        {activeTab === 'compliance' && details.reportType === 'Entry' && (
           <div className="space-y-4 text-xs">
             <h3 className="font-bold text-neutral-900 text-sm pb-2 border-b border-neutral-200">
               WA Form 1 Statutory Work Dates, Additional Comments & Signatures
