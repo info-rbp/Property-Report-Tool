@@ -14,7 +14,7 @@ PDF rendering remains browser-side. Cloudflare stores the final issued PDF after
 
 - Worker: `proinspect-property-report-creation-tool`
 - Current Worker URL: `https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev/`
-- Target production hostname: `reports.proinspect.systems`
+- Active production hostname: `https://report.creation.proinspect.systems/`
 - D1 database: `proinspect-property-reports`
 - D1 database ID: `777186a0-e6ca-43f5-8f50-448bd4454046`
 - R2 bucket: `proinspect-property-reports-data`
@@ -34,6 +34,13 @@ Completed:
 - The production D1 schema has been initialized.
 - Cloudflare Access is enabled and the Worker validates the Access JWT.
 - The application loads and can use cloud-backed Properties and reports.
+- The production custom hostname is active at `https://report.creation.proinspect.systems/`.
+- ProInspect report business address is set to `19 Bonnard Crescent Ashby WA 6065`.
+- Initial D1 backup/retention setup is marked actioned.
+- Repository production documentation has been updated.
+
+Pending:
+- Authenticated end-to-end production acceptance test by the operator.
 
 The Access application audience value (`POLICY_AUD`) is intentionally stored only in Cloudflare runtime configuration and is not committed to GitHub.
 
@@ -123,28 +130,15 @@ The application uses Workers Static Assets with `/api/*` routed to the Worker fi
 
 ## Production hostname
 
-The selected production hostname is:
+The active production hostname is:
 
 ```text
-reports.proinspect.systems
+https://report.creation.proinspect.systems/
 ```
 
-Do not add the route to `wrangler.jsonc` until the `proinspect.systems` zone is confirmed to be managed in the same Cloudflare account.
+The custom hostname is attached to `proinspect-property-report-creation-tool` and is protected by the existing Cloudflare Access policy for approved `@remotebusinesspartner.com.au` users.
 
-When ready, attach it under:
-
-```text
-Workers & Pages
-  -> proinspect-property-report-creation-tool
-  -> Settings
-  -> Domains & Routes
-  -> Add
-  -> Custom Domain
-```
-
-Then add `reports.proinspect.systems` to the existing Cloudflare Access application so the same staff authentication policy protects the custom hostname.
-
-Keep the `workers.dev` address available during cutover/testing. It can be disabled later if desired.
+Keep the `workers.dev` address available as a deployment fallback unless ProInspect later decides to disable it.
 
 ## Production data model
 
