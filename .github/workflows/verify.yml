@@ -23,18 +23,8 @@ jobs:
       - name: Production build
         run: bun run build
       - name: PDF renderer regression
-        env:
-          PDF_VERIFY_OUTPUT_DIR: /tmp/report-library-regression
-        run: |
-          mkdir -p /tmp/report-library-regression
-          bun run pdf:verify
+        run: bun run pdf:verify
       - name: D1 migration regression
         run: bun run db:verify
-      - name: Upload report library visual QA PDFs
-        uses: actions/upload-artifact@v4
-        with:
-          name: report-library-regression
-          path: /tmp/report-library-regression/*.pdf
-          retention-days: 1
       - name: Wrangler deployment dry run
         run: bunx wrangler deploy --dry-run --outdir .wrangler-dry
