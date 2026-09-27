@@ -832,13 +832,13 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
 }
 
 function drawDateRow(pdf: jsPDF, y: number, label: string, date: string): number {
-  const h = 6.6;
+  const h = 8.2;
   drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, undefined, LIGHT_BORDER);
-  setFont(pdf, 6.1, 'normal');
+  setFont(pdf, 6.7, 'normal');
   setTextColor(pdf, TEXT);
-  pdf.text(label, MARGIN_X + 1.5, y + 4.2);
-  drawBox(pdf, PAGE_WIDTH - MARGIN_X - 53, y + 0.8, 51.5, h - 1.6, LIGHT_FILL, LIGHT_BORDER);
-  pdf.text(formatAustralianDate(date) || '/ /', PAGE_WIDTH - MARGIN_X - 27.2, y + 4.2, { align: 'center' });
+  pdf.text(label, MARGIN_X + 1.8, y + 5.2);
+  drawBox(pdf, PAGE_WIDTH - MARGIN_X - 53, y + 0.9, 51.5, h - 1.8, LIGHT_FILL, LIGHT_BORDER);
+  pdf.text(formatAustralianDate(date) || '/ /', PAGE_WIDTH - MARGIN_X - 27.2, y + 5.2, { align: 'center' });
   return y + h;
 }
 
@@ -846,70 +846,70 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
   let y = addContentPage(pdf, report);
   const details = report.details;
 
-  setFont(pdf, 7, 'bold');
+  setFont(pdf, 8, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text(`${details.reportType} Report Additional comments`, MARGIN_X, y + 3);
-  y += 5;
-  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 27, LIGHT_FILL, BORDER);
-  setFont(pdf, 6.4, 'normal');
+  pdf.text(`${details.reportType} Report Additional comments`, MARGIN_X, y + 3.5);
+  y += 6;
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 32, LIGHT_FILL, BORDER);
+  setFont(pdf, 7, 'normal');
   const comments = wrapText(pdf, value(details.additionalComments) || 'No additional general comments provided.', CONTENT_WIDTH - 4);
-  drawWrappedLines(pdf, comments, MARGIN_X + 2, y + 4, 2.55, { maxLines: 9 });
-  y += 31;
+  drawWrappedLines(pdf, comments, MARGIN_X + 2, y + 4.6, 2.8, { maxLines: 9 });
+  y += 36;
 
   if (details.reportType === 'Entry') {
-    setFont(pdf, 7, 'bold');
+    setFont(pdf, 7.5, 'bold');
     pdf.text('Approximate dates when work last done on residential premises', MARGIN_X, y);
-    y += 2.5;
+    y += 3.2;
     y = drawDateRow(pdf, y, 'Painting of premises (external):', value(details.paintingPremisesExternalDate));
     y = drawDateRow(pdf, y, 'Painting of premises (internal):', value(details.paintingPremisesInternalDate));
     y = drawDateRow(pdf, y, 'Floorcoverings laid:', value(details.floorcoveringsLaidDate));
     y = drawDateRow(pdf, y, 'Floorcoverings professionally cleaned:', value(details.floorcoveringsCleanedDate));
-    setFont(pdf, 5.2, 'italic');
+    setFont(pdf, 5.8, 'italic');
     setTextColor(pdf, MUTED);
-    pdf.text('Further items and comments may be recorded on a separate sheet signed by the lessor/property manager and tenant.', MARGIN_X, y + 3);
-    y += 6.5;
+    pdf.text('Further items and comments may be recorded on a separate sheet signed by the lessor/property manager and tenant.', MARGIN_X, y + 3.5);
+    y += 7.5;
   }
 
-  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 6.5, SECTION_FILL, BORDER);
-  setFont(pdf, 6.5, 'bold');
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
+  setFont(pdf, 7.2, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text("Lessor/property manager's signature", MARGIN_X + 1.5, y + 4.2);
-  y += 6.5;
+  pdf.text("Lessor/property manager's signature", MARGIN_X + 1.8, y + 5.1);
+  y += 8;
 
   const thirds = [65, 75, CONTENT_WIDTH - 140];
   let x = MARGIN_X;
   thirds.forEach((width) => {
-    drawBox(pdf, x, y, width, 12, undefined, LIGHT_BORDER);
+    drawBox(pdf, x, y, width, 18, undefined, LIGHT_BORDER);
     x += width;
   });
-  setFont(pdf, 5.7, 'bold');
-  pdf.text('Print Name:', MARGIN_X + 1.5, y + 3.5);
-  setFont(pdf, 6.2, 'normal');
-  pdf.text(value(details.agentSignName) || value(details.inspectingAgent), MARGIN_X + 1.5, y + 8.3);
-  setFont(pdf, 5.7, 'bold');
-  pdf.text('Signature:', MARGIN_X + 66.5, y + 3.5);
-  setFont(pdf, 7, 'italic');
-  pdf.text(value(details.agentSignName) || value(details.inspectingAgent), MARGIN_X + 66.5, y + 8.5);
-  setFont(pdf, 5.7, 'bold');
-  pdf.text('Date:', MARGIN_X + 141.5, y + 3.5);
-  setFont(pdf, 6.2, 'normal');
-  pdf.text(formatAustralianDate(details.agentSignDate || details.inspectionDate), MARGIN_X + 141.5, y + 8.3);
-  y += 15;
+  setFont(pdf, 6.1, 'bold');
+  pdf.text('Print Name:', MARGIN_X + 1.8, y + 4);
+  setFont(pdf, 7, 'normal');
+  pdf.text(value(details.agentSignName) || value(details.inspectingAgent), MARGIN_X + 1.8, y + 10.8);
+  setFont(pdf, 6.1, 'bold');
+  pdf.text('Signature:', MARGIN_X + 66.8, y + 4);
+  setFont(pdf, 8, 'italic');
+  pdf.text(value(details.agentSignName) || value(details.inspectingAgent), MARGIN_X + 66.8, y + 11.2);
+  setFont(pdf, 6.1, 'bold');
+  pdf.text('Date:', MARGIN_X + 141.8, y + 4);
+  setFont(pdf, 7, 'normal');
+  pdf.text(formatAustralianDate(details.agentSignDate || details.inspectionDate), MARGIN_X + 141.8, y + 10.8);
+  y += 22;
 
   if (details.reportType === 'Entry') {
-    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 6.5, SECTION_FILL, BORDER);
-    setFont(pdf, 6.5, 'bold');
-    pdf.text("Tenant's Acknowledgement & Signature", MARGIN_X + 1.5, y + 4.2);
-    y += 6.5;
-    setFont(pdf, 5.1, 'normal');
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
+    setFont(pdf, 7.2, 'bold');
+    pdf.text("Tenant's Acknowledgement & Signature", MARGIN_X + 1.8, y + 5.1);
+    y += 8;
+    setFont(pdf, 6.2, 'normal');
     const statement = wrapText(
       pdf,
       'I/we have received and read the Condition Report for the above property and understand that it must be returned within 7 days.',
       CONTENT_WIDTH - 3
     );
-    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 7.5, undefined, LIGHT_BORDER);
-    drawWrappedLines(pdf, statement, MARGIN_X + 1.5, y + 3, 2.1, { maxLines: 2 });
-    y += 7.5;
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 11, undefined, LIGHT_BORDER);
+    drawWrappedLines(pdf, statement, MARGIN_X + 1.8, y + 3.8, 2.6, { maxLines: 3 });
+    y += 11;
 
     const parsedTenantNames = splitTenantNames(details.tenants, 3);
     const tenantNames = [
@@ -919,31 +919,31 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
     ];
 
     tenantNames.forEach((name, index) => {
-      drawBox(pdf, MARGIN_X, y, 62, 12, undefined, LIGHT_BORDER);
-      drawBox(pdf, MARGIN_X + 62, y, 82, 12, undefined, LIGHT_BORDER);
-      drawBox(pdf, MARGIN_X + 144, y, CONTENT_WIDTH - 144, 12, undefined, LIGHT_BORDER);
-      setFont(pdf, 5.6, 'bold');
-      pdf.text(`Tenant ${index + 1}`, MARGIN_X + 1.5, y + 3.3);
-      setFont(pdf, 5.2, 'normal');
-      pdf.text('Print Name:', MARGIN_X + 1.5, y + 6.4);
-      setFont(pdf, 6, 'bold');
-      pdf.text(name, MARGIN_X + 1.5, y + 9.7);
-      setFont(pdf, 5.2, 'normal');
-      pdf.text('Signature:', MARGIN_X + 63.5, y + 3.3);
-      pdf.text('Date:', MARGIN_X + 145.5, y + 3.3);
-      pdf.text('/ /', MARGIN_X + 145.5, y + 8.5);
-      y += 12;
+      drawBox(pdf, MARGIN_X, y, 62, 18, undefined, LIGHT_BORDER);
+      drawBox(pdf, MARGIN_X + 62, y, 82, 18, undefined, LIGHT_BORDER);
+      drawBox(pdf, MARGIN_X + 144, y, CONTENT_WIDTH - 144, 18, undefined, LIGHT_BORDER);
+      setFont(pdf, 6.2, 'bold');
+      pdf.text(`Tenant ${index + 1}`, MARGIN_X + 1.8, y + 4);
+      setFont(pdf, 5.8, 'normal');
+      pdf.text('Print Name:', MARGIN_X + 1.8, y + 7.3);
+      setFont(pdf, 7.2, 'bold');
+      pdf.text(name, MARGIN_X + 1.8, y + 13.2);
+      setFont(pdf, 5.8, 'normal');
+      pdf.text('Signature:', MARGIN_X + 63.8, y + 4);
+      pdf.text('Date:', MARGIN_X + 145.8, y + 4);
+      pdf.text('____ / ____ / ________', MARGIN_X + 145.8, y + 13.2);
+      y += 18;
     });
-    y += 3;
+    y += 5;
   }
 
-  setFont(pdf, 5.4, 'bold');
+  setFont(pdf, 6.2, 'bold');
   setTextColor(pdf, TEXT);
   pdf.text('DISCLAIMER:', MARGIN_X, y);
-  setFont(pdf, 5.1, 'italic');
+  setFont(pdf, 6, 'italic');
   setTextColor(pdf, MUTED);
   const disclaimer = wrapText(pdf, value(details.disclaimerText), CONTENT_WIDTH);
-  drawWrappedLines(pdf, disclaimer, MARGIN_X, y + 3.2, 2.15, { maxLines: Math.max(1, Math.floor((BODY_BOTTOM - y - 4) / 2.15)) });
+  drawWrappedLines(pdf, disclaimer, MARGIN_X, y + 3.8, 2.5, { maxLines: Math.max(1, Math.floor((BODY_BOTTOM - y - 5) / 2.5)) });
 }
 
 function addFooters(pdf: jsPDF, report: ReportData) {
