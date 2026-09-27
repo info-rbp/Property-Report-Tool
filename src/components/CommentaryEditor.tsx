@@ -429,7 +429,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
               <h3 className="font-bold text-neutral-900 text-sm">
                 {details.reportType === 'Entry'
                   ? 'Western Australia Form 1 Tenancy Header & Property Details'
-                  : `${details.reportType} Inspection Details`}
+                  : `${template.label} - Core Details`}
               </h3>
               {details.reportType === 'Entry' && (
                 <p className="text-neutral-500 text-[11px]">
