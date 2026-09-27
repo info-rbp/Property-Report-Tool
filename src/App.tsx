@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
-import { ReportData, InspectionArea, DrivePhoto, TenancyDetails, ReportType } from './types/report';
+import { ReportData, ReportType } from './types/report';
 import { ReportDocument } from './components/ReportDocument';
 import { ProInspectLogo } from './components/ProInspectLogo';
 import { CommentaryEditor } from './components/CommentaryEditor';
@@ -11,7 +11,7 @@ import { ReportDashboard } from './components/ReportDashboard';
 import { ReportActions } from './components/ReportActions';
 import { exportElementToPdf } from './lib/pdfExporter';
 import { parseLocalSpreadsheetFile, downloadStarterCsv } from './lib/spreadsheetParser';
-import { initAuth, googleSignIn, logout, getAccessToken, SignInResult, MfaRequiredResult } from './lib/auth';
+import { initAuth, googleSignIn, logout } from './lib/auth';
 import { User, MultiFactorResolver } from 'firebase/auth';
 import {
   FileSpreadsheet,
@@ -22,11 +22,9 @@ import {
   Image as ImageIcon,
   CheckCircle2,
   FileDown,
-  Upload,
   RefreshCw,
   LogOut,
   RotateCcw,
-  Sparkles,
   FileText,
   AlertCircle
 } from 'lucide-react';
@@ -71,13 +69,17 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const lightweight = reports.map((item) => ({
-        ...item,
-        photos: item.photos.map((photo) => ({ ...photo, dataUrl: undefined })),
-      }));
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweight));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
     } catch (e) {
-      console.warn('Failed to save draft report list:', e);
+      try {
+        const lightweight = reports.map((item) => ({
+          ...item,
+          photos: item.photos.map((photo) => ({ ...photo, dataUrl: undefined })),
+        }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweight));
+      } catch (inner) {
+        console.warn('Failed to save draft report list:', inner);
+      }
     }
   }, [reports]);
 
