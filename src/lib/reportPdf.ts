@@ -1214,9 +1214,37 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
   let y = addContentPage(pdf, report);
   const details = report.details;
 
+  if (details.reportType === 'Exit') {
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
+    setFont(pdf, 7.4, 'bold');
+    setTextColor(pdf, NAVY);
+    pdf.text('Special Reporting at Exit Condition Report', MARGIN_X + 1.8, y + 5.1);
+    y += 12;
+
+    setFont(pdf, 7.5, 'bold');
+    setTextColor(pdf, TEXT);
+    pdf.text('Approximate dates when work last done on residential premises', MARGIN_X, y);
+    y += 3.5;
+    y = drawDateRow(pdf, y, 'Painting of premises (external):', value(details.paintingPremisesExternalDate));
+    y = drawDateRow(pdf, y, 'Painting of premises (internal):', value(details.paintingPremisesInternalDate));
+    y = drawDateRow(pdf, y, 'Floorcoverings laid:', value(details.floorcoveringsLaidDate));
+    y = drawDateRow(pdf, y, 'Floorcoverings professionally cleaned:', value(details.floorcoveringsCleanedDate));
+    y += 4;
+
+    y = drawNarrativeSection(pdf, report, y, 'Exit Report Additional Comments', details.additionalComments);
+
+    if (y + 48 > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, 'Exit Condition Report');
+    }
+    y = drawAgentSignoff(pdf, y, report, 'Agent Signature at the END of the Tenancy');
+    y += 3;
+    drawDisclaimerSection(pdf, report, y);
+    return;
+  }
+
   setFont(pdf, 8, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text(`${details.reportType} Report Additional comments`, MARGIN_X, y + 3.5);
+  pdf.text('Entry Report Additional comments', MARGIN_X, y + 3.5);
   y += 6;
   drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 32, LIGHT_FILL, BORDER);
   setFont(pdf, 7, 'normal');
@@ -1224,86 +1252,59 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
   drawWrappedLines(pdf, comments, MARGIN_X + 2, y + 4.6, 2.8, { maxLines: 9 });
   y += 36;
 
-  if (details.reportType === 'Entry') {
-    setFont(pdf, 7.5, 'bold');
-    pdf.text('Approximate dates when work last done on residential premises', MARGIN_X, y);
-    y += 3.2;
-    y = drawDateRow(pdf, y, 'Painting of premises (external):', value(details.paintingPremisesExternalDate));
-    y = drawDateRow(pdf, y, 'Painting of premises (internal):', value(details.paintingPremisesInternalDate));
-    y = drawDateRow(pdf, y, 'Floorcoverings laid:', value(details.floorcoveringsLaidDate));
-    y = drawDateRow(pdf, y, 'Floorcoverings professionally cleaned:', value(details.floorcoveringsCleanedDate));
-    setFont(pdf, 5.8, 'italic');
-    setTextColor(pdf, MUTED);
-    pdf.text('Further items and comments may be recorded on a separate sheet signed by the lessor/property manager and tenant.', MARGIN_X, y + 3.5);
-    y += 7.5;
-  }
+  setFont(pdf, 7.5, 'bold');
+  pdf.text('Approximate dates when work last done on residential premises', MARGIN_X, y);
+  y += 3.2;
+  y = drawDateRow(pdf, y, 'Painting of premises (external):', value(details.paintingPremisesExternalDate));
+  y = drawDateRow(pdf, y, 'Painting of premises (internal):', value(details.paintingPremisesInternalDate));
+  y = drawDateRow(pdf, y, 'Floorcoverings laid:', value(details.floorcoveringsLaidDate));
+  y = drawDateRow(pdf, y, 'Floorcoverings professionally cleaned:', value(details.floorcoveringsCleanedDate));
+  setFont(pdf, 5.8, 'italic');
+  setTextColor(pdf, MUTED);
+  pdf.text('Further items and comments may be recorded on a separate sheet signed by the lessor/property manager and tenant.', MARGIN_X, y + 3.5);
+  y += 7.5;
+
+  y = drawAgentSignoff(pdf, y, report, "Lessor/property manager's signature");
 
   drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
   setFont(pdf, 7.2, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text("Lessor/property manager's signature", MARGIN_X + 1.8, y + 5.1);
+  pdf.text("Tenant's Acknowledgement & Signature", MARGIN_X + 1.8, y + 5.1);
   y += 8;
+  setFont(pdf, 6.2, 'normal');
+  const statement = wrapText(
+    pdf,
+    'I/we have received and read the Condition Report for the above property and understand that it must be returned within 7 days.',
+    CONTENT_WIDTH - 3
+  );
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 11, undefined, LIGHT_BORDER);
+  drawWrappedLines(pdf, statement, MARGIN_X + 1.8, y + 3.8, 2.6, { maxLines: 3 });
+  y += 11;
 
-  const thirds = [65, 75, CONTENT_WIDTH - 140];
-  let x = MARGIN_X;
-  thirds.forEach((width) => {
-    drawBox(pdf, x, y, width, 18, undefined, LIGHT_BORDER);
-    x += width;
-  });
-  setFont(pdf, 6.1, 'bold');
-  pdf.text('Print Name:', MARGIN_X + 1.8, y + 4);
-  setFont(pdf, 7, 'normal');
-  pdf.text(value(details.agentSignName) || value(details.inspectingAgent), MARGIN_X + 1.8, y + 10.8);
-  setFont(pdf, 6.1, 'bold');
-  pdf.text('Signature:', MARGIN_X + 66.8, y + 4);
-  setFont(pdf, 8, 'italic');
-  pdf.text(value(details.agentSignName) || value(details.inspectingAgent), MARGIN_X + 66.8, y + 11.2);
-  setFont(pdf, 6.1, 'bold');
-  pdf.text('Date:', MARGIN_X + 141.8, y + 4);
-  setFont(pdf, 7, 'normal');
-  pdf.text(formatAustralianDate(details.agentSignDate || details.inspectionDate), MARGIN_X + 141.8, y + 10.8);
-  y += 22;
+  const parsedTenantNames = splitTenantNames(details.tenants, 3);
+  const tenantNames = [
+    value(details.tenant1SignName) || parsedTenantNames[0] || '',
+    value(details.tenant2SignName) || parsedTenantNames[1] || '',
+    value(details.tenant3SignName) || parsedTenantNames[2] || '',
+  ];
 
-  if (details.reportType === 'Entry') {
-    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, SECTION_FILL, BORDER);
+  tenantNames.forEach((name, index) => {
+    drawBox(pdf, MARGIN_X, y, 62, 18, undefined, LIGHT_BORDER);
+    drawBox(pdf, MARGIN_X + 62, y, 82, 18, undefined, LIGHT_BORDER);
+    drawBox(pdf, MARGIN_X + 144, y, CONTENT_WIDTH - 144, 18, undefined, LIGHT_BORDER);
+    setFont(pdf, 6.2, 'bold');
+    pdf.text(`Tenant ${index + 1}`, MARGIN_X + 1.8, y + 4);
+    setFont(pdf, 5.8, 'normal');
+    pdf.text('Print Name:', MARGIN_X + 1.8, y + 7.3);
     setFont(pdf, 7.2, 'bold');
-    pdf.text("Tenant's Acknowledgement & Signature", MARGIN_X + 1.8, y + 5.1);
-    y += 8;
-    setFont(pdf, 6.2, 'normal');
-    const statement = wrapText(
-      pdf,
-      'I/we have received and read the Condition Report for the above property and understand that it must be returned within 7 days.',
-      CONTENT_WIDTH - 3
-    );
-    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 11, undefined, LIGHT_BORDER);
-    drawWrappedLines(pdf, statement, MARGIN_X + 1.8, y + 3.8, 2.6, { maxLines: 3 });
-    y += 11;
-
-    const parsedTenantNames = splitTenantNames(details.tenants, 3);
-    const tenantNames = [
-      value(details.tenant1SignName) || parsedTenantNames[0] || '',
-      value(details.tenant2SignName) || parsedTenantNames[1] || '',
-      value(details.tenant3SignName) || parsedTenantNames[2] || '',
-    ];
-
-    tenantNames.forEach((name, index) => {
-      drawBox(pdf, MARGIN_X, y, 62, 18, undefined, LIGHT_BORDER);
-      drawBox(pdf, MARGIN_X + 62, y, 82, 18, undefined, LIGHT_BORDER);
-      drawBox(pdf, MARGIN_X + 144, y, CONTENT_WIDTH - 144, 18, undefined, LIGHT_BORDER);
-      setFont(pdf, 6.2, 'bold');
-      pdf.text(`Tenant ${index + 1}`, MARGIN_X + 1.8, y + 4);
-      setFont(pdf, 5.8, 'normal');
-      pdf.text('Print Name:', MARGIN_X + 1.8, y + 7.3);
-      setFont(pdf, 7.2, 'bold');
-      pdf.text(name, MARGIN_X + 1.8, y + 13.2);
-      setFont(pdf, 5.8, 'normal');
-      pdf.text('Signature:', MARGIN_X + 63.8, y + 4);
-      pdf.text('Date:', MARGIN_X + 145.8, y + 4);
-      pdf.text('____ / ____ / ________', MARGIN_X + 145.8, y + 13.2);
-      y += 18;
-    });
-    y += 5;
-  }
+    pdf.text(name, MARGIN_X + 1.8, y + 13.2);
+    setFont(pdf, 5.8, 'normal');
+    pdf.text('Signature:', MARGIN_X + 63.8, y + 4);
+    pdf.text('Date:', MARGIN_X + 145.8, y + 4);
+    pdf.text('____ / ____ / ________', MARGIN_X + 145.8, y + 13.2);
+    y += 18;
+  });
+  y += 5;
 
   if (y > BODY_BOTTOM - 16) {
     throw new Error('Final report signature page content exceeds the available A4 page height.');
