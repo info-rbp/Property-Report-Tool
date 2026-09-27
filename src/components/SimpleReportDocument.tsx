@@ -1,4 +1,5 @@
 import React from 'react';
+import { PROINSPECT_COMPANY } from '../config/company';
 import { ReportData } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
 
@@ -19,9 +20,9 @@ export const SimpleReportDocument: React.FC<Props> = ({ report }) => {
           <div className="flex justify-between items-start">
             <ProInspectLogo size="md" showTagline={true} />
             <div className="text-right text-xs text-neutral-600">
-              <p className="font-bold text-[#0a2540]">{details.companyName || 'ProInspect'}</p>
-              {details.companyPhone && <p>{details.companyPhone}</p>}
-              {details.companyEmail && <p>{details.companyEmail}</p>}
+              <p className="font-bold text-[#0a2540]">{details.companyName || PROINSPECT_COMPANY.name}</p>
+              {(details.companyPhone || PROINSPECT_COMPANY.phone) && <p>{details.companyPhone || PROINSPECT_COMPANY.phone}</p>}
+              {(details.companyEmail || PROINSPECT_COMPANY.email) && <p>{details.companyEmail || PROINSPECT_COMPANY.email}</p>}
             </div>
           </div>
           <div className="mt-24 text-center">
