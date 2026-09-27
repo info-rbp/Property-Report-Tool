@@ -294,17 +294,14 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
 
   setFont(pdf, 18, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text(
-    reportDisplayTitle(details.reportType),
-    PAGE_WIDTH / 2,
-    62,
-    { align: 'center' }
-  );
+  const titleLines = wrapText(pdf, reportDisplayTitle(details.reportType), 165);
+  drawWrappedLines(pdf, titleLines, PAGE_WIDTH / 2, 58, 7.2, { align: 'center', maxLines: 3 });
 
   const address = value(details.propertyAddress) || 'Property address not recorded';
   setFont(pdf, 10.5, 'bold');
   const addressLines = wrapText(pdf, address, 150);
-  drawWrappedLines(pdf, addressLines, PAGE_WIDTH / 2, 71, 4.6, { align: 'center' });
+  const addressY = 69 + Math.max(0, titleLines.length - 1) * 4.5;
+  drawWrappedLines(pdf, addressLines, PAGE_WIDTH / 2, addressY, 4.6, { align: 'center' });
 
   const cover = details.coverPhotoUrl
     ? { source: details.coverPhotoUrl, label: 'cover photo' }
