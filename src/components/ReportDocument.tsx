@@ -1,11 +1,71 @@
 import React from 'react';
 import { PROINSPECT_COMPANY } from '../config/company';
-import { ReportData, InspectionArea } from '../types/report';
+import { ReportData, InspectionArea, InspectionItem } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
 import { SimpleReportDocument } from './SimpleReportDocument';
 
 interface ReportPreviewProps {
   report: ReportData;
+}
+
+interface AreaPageSegment {
+  area: InspectionArea;
+  items: InspectionItem[];
+  continuation: boolean;
+}
+
+function wrappedLineCount(value: string | undefined, charsPerLine: number): number {
+  if (!value?.trim()) return 1;
+  return value
+    .split(/\r?\n/)
+    .reduce((total, line) => total + Math.max(1, Math.ceil(line.trim().length / charsPerLine)), 0);
+}
+
+function estimatedItemHeightMm(item: InspectionItem): number {
+  const lines = Math.max(
+    wrappedLineCount(item.name, 22),
+    wrappedLineCount(item.agentComments, 52),
+    wrappedLineCount(item.tenantComments, 34)
+  );
+  return 4.5 + Math.max(0, lines - 1) * 3.2;
+}
+
+function paginateInspectionAreas(areas: InspectionArea[]): AreaPageSegment[] {
+  const pages: AreaPageSegment[] = [];
+  // Allows for the running header, table headings, area heading, optional photo row and footer.
+  const itemHeightBudgetMm = 190;
+
+  for (const area of areas) {
+    let pageItems: InspectionItem[] = [];
+    let usedHeightMm = 0;
+    let segmentIndex = 0;
+
+    const pushPage = () => {
+      pages.push({
+        area,
+        items: pageItems,
+        continuation: segmentIndex > 0,
+      });
+      segmentIndex += 1;
+      pageItems = [];
+      usedHeightMm = 0;
+    };
+
+    for (const item of area.items) {
+      const itemHeightMm = estimatedItemHeightMm(item);
+      if (pageItems.length > 0 && usedHeightMm + itemHeightMm > itemHeightBudgetMm) {
+        pushPage();
+      }
+      pageItems.push(item);
+      usedHeightMm += itemHeightMm;
+    }
+
+    if (pageItems.length > 0 || area.items.length === 0) {
+      pushPage();
+    }
+  }
+
+  return pages;
 }
 
 export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
@@ -24,25 +84,9 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
   // Total inspection photos
   const totalPhotos = photos.length;
 
-  // Chunk areas into inspection pages (approx 12-16 item rows per page for clean A4 printing)
-  const areaPages: InspectionArea[][] = [];
-  let currentChunk: InspectionArea[] = [];
-  let currentItemsCount = 0;
-
-  areas.forEach((area) => {
-    const areaWeight = Math.max(area.items.length, 3) + 2; // header + overall photo row + items
-    if (currentChunk.length > 0 && currentItemsCount + areaWeight > 18) {
-      areaPages.push(currentChunk);
-      currentChunk = [area];
-      currentItemsCount = areaWeight;
-    } else {
-      currentChunk.push(area);
-      currentItemsCount += areaWeight;
-    }
-  });
-  if (currentChunk.length > 0) {
-    areaPages.push(currentChunk);
-  }
+  // Keep each inspection area on its own page sequence and split long areas by estimated row height.
+  // This avoids overflow/clipping when imported commentary is substantially longer than average.
+  const areaPages = paginateInspectionAreas(areas);
 
   // Photo pages: 12 photos per page (3 columns x 4 rows) as per WA sample
   const photosPerPage = 12;
@@ -354,14 +398,14 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
       })()}
 
       {/* ================= INSPECTION AREA PAGES (PAGES 3 TO N) ================= */}
-      {areaPages.map((areaGroup, groupIndex) => {
+      {areaPages.map((areaPage, groupIndex) => {
         pageCounter++;
         const thisPageNum = pageCounter;
 
         return (
           <div
             key={`page-area-group-${groupIndex}`}
-            className="pdf-page w-[210mm] min-h-[297mm] h-[297mm] bg-white text-neutral-900 p-[12mm] flex flex-col justify-between shadow-2xl relative box-border overflow-hidden select-text text-[10px]"
+            className="pdf-page pdf-commentary-page w-[210mm] min-h-[297mm] h-[297mm] bg-white text-neutral-900 p-[12mm] flex flex-col justify-between shadow-2xl relative box-border overflow-hidden select-text text-[10px]"
           >
             <div>
               {/* Running report header */}
@@ -371,11 +415,20 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
               </div>
 
               {/* Main Table Structure */}
-              <table className="w-full border-collapse border border-neutral-400 text-left">
+              <table className="w-full table-fixed border-collapse border border-neutral-400 text-left">
+                <colgroup>
+                  <col style={{ width: '22%' }} />
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '40%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '18%' }} />
+                </colgroup>
                 {/* Condition report column headers */}
                 <thead>
                   <tr className="bg-neutral-100 text-neutral-900 font-bold border-b border-neutral-400">
-                    <th colSpan={4} className="border-r border-neutral-400 p-1 text-center text-[10.5px]">
+                    <th colSpan={5} className="border-r border-neutral-400 p-1 text-center text-[10.5px]">
                       Agent section
                       <div className="text-[8px] font-normal text-neutral-600 mt-0.5 leading-snug">
                         Each item has been given a column description of 'clean', 'undamaged', 'working'. Tick each column
@@ -393,11 +446,15 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                 </thead>
 
                 <tbody>
-                  {areaGroup.map((area) => (
-                    <React.Fragment key={area.id}>
+                  {(() => {
+                    const area = areaPage.area;
+                    return (
+                    <React.Fragment key={`${area.id}-${groupIndex}`}>
                       {/* Area Header Row */}
                       <tr className="bg-neutral-200/90 font-bold text-neutral-900 border-t-2 border-b border-neutral-400">
-                        <td className="w-32 p-1 text-[10.5px] font-extrabold uppercase">{area.name}</td>
+                        <td className="p-1 text-[10.5px] font-extrabold uppercase break-words">
+                          {area.name}{areaPage.continuation ? ' (continued)' : ''}
+                        </td>
                         <td className="w-7 text-center p-1 text-[8.5px] font-bold border-l border-neutral-400">Cln</td>
                         <td className="w-7 text-center p-1 text-[8.5px] font-bold border-l border-neutral-400">Udg</td>
                         <td className="w-7 text-center p-1 text-[8.5px] font-bold border-l border-neutral-400">Wkg</td>
@@ -438,13 +495,13 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                       })()}
 
                       {/* Items rows with Y / N checkboxes for WA compliance */}
-                      {area.items.map((item) => (
+                      {areaPage.items.map((item) => (
                         <tr
                           key={item.id}
                           className="border-b border-neutral-300 hover:bg-neutral-50/80 transition-colors align-top text-[9px]"
                         >
                           {/* Item name */}
-                          <td className="p-1 font-medium text-neutral-900 pr-1">{item.name}</td>
+                          <td className="p-1 font-medium text-neutral-900 pr-1 break-words">{item.name}</td>
 
                           {/* Clean (Y / N) */}
                           <td className="border-l border-neutral-300 text-center p-1 font-bold">
@@ -480,7 +537,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                           </td>
 
                           {/* Agent comments */}
-                          <td className="border-l border-r border-neutral-300 p-1 font-normal text-neutral-800 whitespace-pre-line leading-tight">
+                          <td className="border-l border-r border-neutral-300 p-1 font-normal text-neutral-800 whitespace-pre-line break-words leading-tight">
                             {item.agentComments || ''}
                           </td>
 
@@ -490,13 +547,14 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                           </td>
 
                           {/* Tenant comments */}
-                          <td className="p-1 text-neutral-800 italic leading-tight">
+                          <td className="p-1 text-neutral-800 italic break-words leading-tight">
                             {item.tenantComments || ''}
                           </td>
                         </tr>
                       ))}
                     </React.Fragment>
-                  ))}
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -515,7 +573,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
         return (
           <div
             key={`page-photos-${pageIdx}`}
-            className="pdf-page w-[210mm] min-h-[297mm] h-[297mm] bg-white text-neutral-900 p-[12mm] flex flex-col justify-between shadow-2xl relative box-border overflow-hidden select-text text-[10px]"
+            className="pdf-page pdf-photo-page w-[210mm] min-h-[297mm] h-[297mm] bg-white text-neutral-900 p-[12mm] flex flex-col justify-between shadow-2xl relative box-border overflow-hidden select-text text-[10px]"
           >
             <div>
               {/* Running header matching sample */}
@@ -532,11 +590,11 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
               )}
 
               {/* 3 columns x 4 rows grid */}
-              <div className="grid grid-cols-3 gap-2 mt-1">
+              <div className="grid grid-cols-3 gap-2 mt-1 min-w-0">
                 {photoGroup.map((photo, pIdx) => {
                   const absoluteIndex = pageIdx * photosPerPage + pIdx + 1;
                   return (
-                    <div key={photo.id} className="flex flex-col border border-neutral-200 p-0.5 rounded bg-neutral-50/50">
+                    <div key={photo.id} className="min-w-0 flex flex-col border border-neutral-200 p-0.5 rounded bg-neutral-50/50">
                       {/* Photo Caption Header */}
                       <div className="font-bold text-[8px] text-neutral-900 leading-tight truncate px-1 py-0.5">
                         {photo.name || `${photo.areaName || 'Overall'}: photo ${photo.photoIndex || absoluteIndex}`}
@@ -548,8 +606,9 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                           <img
                             src={photo.dataUrl || photo.url}
                             alt={photo.name}
-                            className="w-full h-full object-cover"
+                            className="block w-full h-full max-w-full object-cover"
                             loading="lazy"
+                            decoding="async"
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-[8px] text-neutral-500">
