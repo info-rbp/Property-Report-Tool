@@ -120,12 +120,21 @@ function parseReport(row: ReportRow): ReportData {
   };
 }
 
+function storageReportType(reportType: ReportType): 'Entry' | 'Routine' | 'Exit' {
+  if (reportType === 'Entry') return 'Entry';
+  if (reportType === 'Exit') return 'Exit';
+  // The initial D1 schema constrains report_type to Entry/Routine/Exit. All extended
+  // report types retain their canonical type in report_data and use Routine as the
+  // compatibility value for this legacy indexed column.
+  return 'Routine';
+}
+
 function reportSummary(row: ReportRow) {
   const report = JSON.parse(row.report_data) as ReportData;
   return {
     id: row.id,
     propertyId: row.property_id,
-    reportType: row.report_type,
+    reportType: report.details?.reportType || row.report_type,
     status: row.status,
     inspectionDate: report.details?.inspectionDate || '',
     completedPdfKey: row.completed_pdf_key || undefined,
@@ -212,7 +221,7 @@ async function updateReportData(
      WHERE id = ?`
   )
     .bind(
-      stored.details.reportType,
+      storageReportType(stored.details.reportType),
       status,
       JSON.stringify(stored),
       completedPdfKey,
@@ -224,7 +233,7 @@ async function updateReportData(
 
   return parseReport({
     ...row,
-    report_type: stored.details.reportType,
+    report_type: storageReportType(stored.details.reportType),
     status,
     report_data: JSON.stringify(stored),
     completed_pdf_key: completedPdfKey,
@@ -343,7 +352,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
          (id, property_id, report_type, status, report_data, completed_pdf_key, created_at, updated_at, created_by, updated_by)
          VALUES (?, ?, ?, 'draft', ?, NULL, ?, ?, ?, ?)`
       )
-        .bind(id, propertyId, body.reportType, JSON.stringify(report), now, now, userEmail, userEmail)
+        .bind(id, propertyId, storageReportType(body.reportType), JSON.stringify(report), now, now, userEmail, userEmail)
         .run();
 
       return json(report, 201);
