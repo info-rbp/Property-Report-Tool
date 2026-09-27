@@ -1,4 +1,27 @@
-export type ReportType = 'Entry' | 'Routine' | 'Exit';
+export const REPORT_TYPES = [
+  'Entry',
+  'Routine',
+  'Exit',
+  'Property Onboarding',
+  'Vacant Property',
+  'Maintenance Assessment',
+  'Maintenance Completion',
+  'Cleaning Rectification',
+  'Commercial Ingoing',
+  'Commercial Periodic',
+  'Commercial Exit',
+  'Common Property',
+  'Building Management',
+  'Incident',
+  'Contractor Works',
+  'Property Handover',
+  'Preventative Maintenance',
+  'Cleaning Quality',
+  'Annual Property Summary',
+  'Key Safe Installation',
+] as const;
+
+export type ReportType = (typeof REPORT_TYPES)[number];
 export type ReportStatus = 'draft' | 'completed';
 
 export interface InspectionItem {
@@ -60,6 +83,7 @@ export interface TenancyDetails {
   floorcoveringsCleanedDate?: string;
   additionalComments: string;
   maintenanceComments?: string;
+  templateFields?: Record<string, string>;
   agentSignName: string;
   agentSignDate: string;
   tenant1SignName?: string;
