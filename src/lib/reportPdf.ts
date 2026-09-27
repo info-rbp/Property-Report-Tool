@@ -1372,11 +1372,13 @@ export async function generateReportPdf(
 
   addFooters(pdf, report);
 
+  const photoPageMinimum = report.photos.length ? Math.ceil(report.photos.length / 12) : 0;
   const expectedMinimumPages =
-    1 +
-    (report.details.reportType === 'Entry' ? 2 : report.details.reportType === 'Routine' ? 2 : 1) +
-    (report.areas.length ? 1 : 0) +
-    (report.photos.length ? Math.ceil(report.photos.length / 12) : 0);
+    report.details.reportType === 'Entry'
+      ? 3 + (report.areas.length ? 1 : 0) + photoPageMinimum
+      : report.details.reportType === 'Routine'
+      ? 3 + photoPageMinimum
+      : 2 + (report.areas.length ? 1 : 0) + photoPageMinimum;
 
   if (pdf.getNumberOfPages() < expectedMinimumPages) {
     throw new Error('PDF validation failed because the generated page count was lower than expected.');
