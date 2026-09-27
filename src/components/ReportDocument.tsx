@@ -118,10 +118,9 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                 src={
                   details.coverPhotoUrl ||
                   photos.find((photo) => photo.isCover)?.dataUrl ||
-                  photos.find((photo) => photo.isCover)?.thumbnailLink ||
+                  photos.find((photo) => photo.isCover)?.url ||
                   photos[0]?.dataUrl ||
-                  photos[0]?.thumbnailLink ||
-                  'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200&auto=format&fit=crop&q=80'
+                  photos[0]?.url
                 }
                 alt="Property exterior"
                 className="w-full h-full object-cover"
@@ -532,7 +531,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                       {/* Photo Image Aspect */}
                       <div className="w-full h-[47mm] bg-neutral-200 overflow-hidden rounded-xs flex items-center justify-center">
                         <img
-                          src={photo.dataUrl || photo.thumbnailLink || 'https://via.placeholder.com/300x200'}
+                          src={photo.dataUrl || photo.url || 'https://via.placeholder.com/300x200'}
                           alt={photo.name}
                           className="w-full h-full object-cover"
                           crossOrigin="anonymous"
