@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { REPORT_TYPES } from '../src/types/report';
 import type { ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
 
 interface Env {
@@ -36,6 +37,14 @@ interface ReportRow {
 class HttpError extends Error {
   constructor(public status: number, message: string) {
     super(message);
+  }
+}
+
+const REPORT_TYPE_SET = new Set<string>(REPORT_TYPES);
+
+function assertReportType(value: unknown): asserts value is ReportType {
+  if (typeof value !== 'string' || !REPORT_TYPE_SET.has(value)) {
+    throw new HttpError(400, 'Unsupported report type.');
   }
 }
 
@@ -190,6 +199,7 @@ async function updateReportData(
   status: ReportStatus = row.status,
   completedPdfKey: string | null = row.completed_pdf_key
 ): Promise<ReportData> {
+  assertReportType(report.details?.reportType);
   const now = new Date().toISOString();
   const stored: ReportData = {
     ...report,
@@ -320,6 +330,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       const property = await getPropertyRow(env, propertyId);
       const body = await request.json() as { reportType?: ReportType; report?: ReportData };
       if (!body.report || !body.reportType) throw new HttpError(400, 'Report data is required.');
+      assertReportType(body.reportType);
 
       const id = body.report.id || crypto.randomUUID();
       const now = new Date().toISOString();
