@@ -9,7 +9,8 @@ import {
   Filter,
   Layers,
   CheckCircle2,
-  Plus
+  Plus,
+  Star
 } from 'lucide-react';
 
 interface PhotoManagerProps {
@@ -86,6 +87,10 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
 
   const handleDeletePhoto = (id: string) => {
     onUpdatePhotos(photos.filter((p) => p.id !== id));
+  };
+
+  const handleSetCoverPhoto = (id: string) => {
+    onUpdatePhotos(photos.map((p) => ({ ...p, isCover: p.id === id })));
   };
 
   const handleRenamePhoto = (id: string, name: string) => {
@@ -307,13 +312,22 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                   <div className="absolute top-1.5 left-1.5 bg-black/75 text-white text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
                     #{photo.photoIndex || index + 1}
                   </div>
-                  <button
-                    onClick={() => handleDeletePhoto(photo.id)}
-                    className="absolute top-1.5 right-1.5 bg-red-600 text-white p-1 rounded hover:bg-red-700 shadow-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Delete photo"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="absolute top-1.5 right-1.5 flex gap-1">
+                    <button
+                      onClick={() => handleSetCoverPhoto(photo.id)}
+                      className={`p-1 rounded shadow-xs transition-opacity ${photo.isCover ? 'bg-amber-400 text-neutral-900' : 'bg-white/90 text-neutral-600 opacity-0 group-hover:opacity-100'}`}
+                      title="Use as cover photo"
+                    >
+                      <Star className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeletePhoto(photo.id)}
+                      className="bg-red-600 text-white p-1 rounded hover:bg-red-700 shadow-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Delete photo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="p-2.5 bg-white flex flex-col gap-1.5 border-t border-neutral-100">
