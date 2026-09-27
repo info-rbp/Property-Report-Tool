@@ -11,7 +11,7 @@
     "db:migrate:local": "wrangler d1 migrations apply proinspect-property-reports --local",
     "db:migrate:remote": "wrangler d1 migrations apply proinspect-property-reports --remote",
     "clean": "rm -rf dist .wrangler",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
