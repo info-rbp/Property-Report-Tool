@@ -22,7 +22,7 @@ import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
 import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
 import { processInspectionImage } from './lib/imageProcessor';
-import { downloadPdfBlob, generateElementPdf } from './lib/pdfExporter';
+import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
 
 type ViewMode = 'preview' | 'commentary' | 'photos' | 'actions';
@@ -245,11 +245,13 @@ export default function App() {
 
     try {
       let current = report;
-      let areaCount = current.photos.filter((photo) => photo.areaName === areaName).length;
+      let nextAreaPhotoIndex = current.photos
+        .filter((photo) => photo.areaName === areaName)
+        .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
 
       for (const file of files) {
         const processed = await processInspectionImage(file);
-        const photoIndex = ++areaCount;
+        const photoIndex = ++nextAreaPhotoIndex;
         const photoId = crypto.randomUUID();
         const name = `${areaName}: Overall (photo ${photoIndex})`;
         current = await api.uploadPhoto(current.id!, processed.blob, {
@@ -287,14 +289,7 @@ export default function App() {
 
   const renderPdf = async (): Promise<Blob> => {
     if (!report) throw new Error('No report is open.');
-    if (viewMode !== 'preview') {
-      setViewMode('preview');
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 180));
-    }
-    const container = document.getElementById('report-print-container');
-    if (!container) throw new Error('Report preview is not ready.');
-    if (document.fonts?.ready) await document.fonts.ready;
-    return generateElementPdf(container, (message) => setExportProgressText(message));
+    return generateReportPdf(report, (message) => setExportProgressText(message));
   };
 
   const handleDownloadPdf = async () => {
@@ -321,6 +316,12 @@ export default function App() {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
       await api.saveReport(report);
       const blob = await renderPdf();
+      const maxCompletedPdfBytes = 90 * 1024 * 1024;
+      if (blob.size > maxCompletedPdfBytes) {
+        throw new Error(
+          `Generated PDF is ${(blob.size / (1024 * 1024)).toFixed(1)} MB and exceeds the 90 MB completed-report limit.`
+        );
+      }
       setExportProgressText('Storing completed PDF...');
       const completed = normalizeReport(await api.completeReport(report.id, blob));
       setReport(completed);
@@ -541,7 +542,7 @@ export default function App() {
                   ? 'Layout: Western Australia Form 1'
                   : `Layout: ProInspect ${report.details.reportType} Report`}
               </span>
-              <span>A4 Portrait • Browser PDF</span>
+              <span>A4 Portrait • Production PDF renderer</span>
             </div>
             <ReportDocument report={report} />
           </div>

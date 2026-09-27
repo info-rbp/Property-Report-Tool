@@ -8,7 +8,7 @@ V1 is deployed as a single Cloudflare Workers application containing:
 - Cloudflare R2 for inspection photos and completed PDFs.
 - Cloudflare Access for staff authentication.
 
-PDF rendering remains browser-side. Cloudflare stores the final issued PDF after the browser generates it.
+PDF generation remains browser-side, but the production renderer now builds the PDF directly from report data using jsPDF. It does not rasterise the React/Tailwind preview with html2canvas. Cloudflare stores the final issued PDF after generation.
 
 ## Production resources
 
@@ -38,9 +38,11 @@ Completed:
 - ProInspect report business address is set to `19 Bonnard Crescent Ashby WA 6065`.
 - Initial D1 backup/retention setup is marked actioned.
 - Repository production documentation has been updated.
+- The authenticated end-to-end application workflow has been completed successfully.
 
-Pending:
-- Authenticated end-to-end production acceptance test by the operator.
+Pending acceptance gate:
+- Repeat the production report-generation test after deployment of the deterministic PDF renderer, using a large photo-heavy report (minimum 300 photos; target 400+ where practical).
+- Inspect the entire generated PDF before treating the renderer as production-accepted.
 
 The Access application audience value (`POLICY_AUD`) is intentionally stored only in Cloudflare runtime configuration and is not committed to GitHub.
 
@@ -152,6 +154,8 @@ R2:
 
 Completed reports cannot be edited or deleted through the V1 API.
 
+Completed PDFs are streamed from the Worker request directly into R2 instead of first being loaded into Worker memory. The application enforces a 90 MB completed-PDF ceiling, leaving headroom under Cloudflare's 100 MB request-body limit on the Free plan.
+
 ## Backups and retention
 
 See `DATA_RETENTION.md`.
@@ -190,7 +194,7 @@ Included:
 - CSV commentary import.
 - Device photo upload with browser resize/compression.
 - Cross-device cloud drafts.
-- Browser PDF generation.
+- Deterministic browser PDF generation from report data.
 - Stored final PDFs.
 - Prepared email workflow.
 - Cloudflare Access staff authentication.
