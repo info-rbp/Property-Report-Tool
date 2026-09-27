@@ -1,6 +1,7 @@
 import React from 'react';
 import { ReportData, InspectionArea } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
+import { SimpleReportDocument } from './SimpleReportDocument';
 
 interface ReportPreviewProps {
   report: ReportData;
@@ -8,6 +9,10 @@ interface ReportPreviewProps {
 
 export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
   const { details, areas, photos } = report;
+
+  if (details.reportType !== 'Entry') {
+    return <SimpleReportDocument report={report} />;
+  }
 
   // Total inspection photos
   const totalPhotos = photos.length;
@@ -112,8 +117,10 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
               <img
                 src={
                   details.coverPhotoUrl ||
-                  photos[0]?.thumbnailLink ||
+                  photos.find((photo) => photo.isCover)?.dataUrl ||
+                  photos.find((photo) => photo.isCover)?.thumbnailLink ||
                   photos[0]?.dataUrl ||
+                  photos[0]?.thumbnailLink ||
                   'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200&auto=format&fit=crop&q=80'
                 }
                 alt="Property exterior"
