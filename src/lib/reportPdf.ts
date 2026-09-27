@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { formatAustralianDate, splitTenantNames } from './reportFormatting';
-import { InspectionArea, InspectionItem, ReportData, ReportPhoto } from '../types/report';
+import { InspectionArea, InspectionItem, ReportData, ReportPhoto, ReportType } from '../types/report';
 
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
@@ -24,6 +24,7 @@ const RED: [number, number, number] = [185, 28, 28];
 const BLUE: [number, number, number] = [29, 78, 216];
 
 const ENTRY_COLUMN_WIDTHS = [34, 7, 7, 7, 78, 14, 47] as const;
+const EXIT_COLUMN_WIDTHS = [42, 8, 8, 8, 128] as const;
 const ROW_FONT_SIZE = 6.4;
 const ROW_LINE_HEIGHT = 2.55;
 const CELL_PAD = 1.15;
@@ -111,11 +112,23 @@ function drawBrand(pdf: jsPDF, x: number, y: number, scale = 1) {
   pdf.text('INSPECT. REPORT. PROTECT.', x + (16 * scale), y + (11.4 * scale));
 }
 
+function reportDisplayTitle(reportType: ReportType): string {
+  if (reportType === 'Entry') return 'Residential Tenancy Entry Condition Report';
+  if (reportType === 'Exit') return 'Residential Tenancy Exit Condition Report';
+  return 'Routine Inspection Report';
+}
+
+function reportRunningTitle(reportType: ReportType): string {
+  if (reportType === 'Entry') return 'Entry Condition Report';
+  if (reportType === 'Exit') return 'Exit Condition Report';
+  return 'Routine Inspection Report';
+}
+
 function drawRunningHeader(pdf: jsPDF, report: ReportData, rightTitle?: string) {
   setFont(pdf, 6.8, 'bold');
   setTextColor(pdf, TEXT);
   pdf.text(value(report.details.propertyAddress) || 'Property address not recorded', MARGIN_X, HEADER_Y);
-  pdf.text(rightTitle || `${report.details.reportType} Condition Report`, PAGE_WIDTH - MARGIN_X, HEADER_Y, { align: 'right' });
+  pdf.text(rightTitle || reportRunningTitle(report.details.reportType), PAGE_WIDTH - MARGIN_X, HEADER_Y, { align: 'right' });
   pdf.setDrawColor(...LIGHT_BORDER);
   pdf.setLineWidth(0.2);
   pdf.line(MARGIN_X, 9.2, PAGE_WIDTH - MARGIN_X, 9.2);
@@ -281,9 +294,7 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
   setFont(pdf, 18, 'bold');
   setTextColor(pdf, TEXT);
   pdf.text(
-    details.reportType === 'Entry'
-      ? 'Residential Tenancy Entry Condition Report'
-      : `${details.reportType} Inspection Report`,
+    reportDisplayTitle(details.reportType),
     PAGE_WIDTH / 2,
     62,
     { align: 'center' }
