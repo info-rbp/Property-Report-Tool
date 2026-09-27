@@ -105,16 +105,14 @@ export const GoogleWorkspaceModal: React.FC<GoogleWorkspaceModalProps> = ({
     setImportingImages(true);
     try {
       const chosen = folderImages.filter((img) => selectedImageIds.has(img.id));
-      // Convert first 15 images to full dataUrls for flawless offline & PDF rendering
+      // Fetch each selected image as a data URL so PDF export is not dependent on temporary Drive thumbnails
       const newDrivePhotos: DrivePhoto[] = [];
 
       for (let i = 0; i < chosen.length; i++) {
         const item = chosen[i];
         let dataUrl: string | undefined = undefined;
         try {
-          if (i < 20) {
-            dataUrl = await fetchDriveImageDataUrl(item.id);
-          }
+          dataUrl = await fetchDriveImageDataUrl(item.id);
         } catch (e) {
           console.warn('Could not fetch dataUrl for image', item.name, e);
         }
