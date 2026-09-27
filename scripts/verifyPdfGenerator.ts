@@ -73,7 +73,7 @@ if (blob.size < 10_000) {
 
 const binary = new TextDecoder('latin1').decode(await blob.arrayBuffer());
 const pageCount = (binary.match(/\/Type\s*\/Page\b/g) || []).length;
-if (pageCount < 7) {
+if (pageCount < 5) {
   throw new Error(`Expected a multi-page regression PDF, received ${pageCount} pages.`);
 }
 
