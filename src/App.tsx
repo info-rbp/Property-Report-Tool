@@ -17,6 +17,7 @@ import { PropertiesDashboard } from './components/PropertiesDashboard';
 import { ReportActions } from './components/ReportActions';
 import { ReportDashboard } from './components/ReportDashboard';
 import { ReportDocument } from './components/ReportDocument';
+import { getReportTypeLabel } from './data/reportCatalogue';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
 import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
@@ -36,7 +37,10 @@ function pdfFilename(report: ReportData): string {
     .replace(/^_+|_+$/g, '');
   const safeDate = (report.details.inspectionDate || new Date().toISOString().slice(0, 10))
     .replace(/[^0-9-]/g, '');
-  return `ProInspect_${report.details.reportType}_Report_${safeAddress}_${safeDate}.pdf`;
+  const safeType = getReportTypeLabel(report.details.reportType)
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `ProInspect_${safeType}_${safeAddress}_${safeDate}.pdf`;
 }
 
 export default function App() {
@@ -560,7 +564,7 @@ export default function App() {
               <span>
                 {report.details.reportType === 'Entry'
                   ? 'Layout: Western Australia Form 1'
-                  : `Layout: ProInspect ${report.details.reportType} Report`}
+                  : `Layout: ProInspect ${getReportTypeLabel(report.details.reportType)}`}
               </span>
               <span>A4 Portrait • Production PDF renderer</span>
             </div>
