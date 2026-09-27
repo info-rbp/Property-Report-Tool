@@ -374,7 +374,7 @@ export default function App() {
       <div className="min-h-screen bg-neutral-100 flex flex-col text-neutral-900 font-sans">
         <header className="bg-white border-b border-neutral-200 px-4 lg:px-8 py-3 flex items-center justify-between shadow-xs">
           <ProInspectLogo size="sm" showTagline={false} />
-          <span className="text-xs font-semibold text-neutral-500">Property Reports V1</span>
+          <span className="text-xs font-semibold text-neutral-500">Property Report Creation Tool</span>
         </header>
         {statusMessage && (
           <div className={`px-4 py-2.5 text-xs border-b ${
