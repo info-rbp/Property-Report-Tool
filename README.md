@@ -12,7 +12,7 @@ Properties
   -> Import commentary from CSV
   -> Upload inspection photos from the device
   -> Review report
-  -> Generate PDF in the browser
+  -> Generate deterministic PDF from report data
   -> Finalise and store the issued PDF
 ```
 
@@ -24,7 +24,7 @@ Properties
 - Cloudflare R2 for compressed inspection photos and completed PDFs.
 - Cloudflare Access for staff authentication.
 - IndexedDB as a local draft cache only.
-- Browser-side PDF generation using `html2canvas-pro` and `jsPDF`.
+- Browser-side deterministic PDF generation using `jsPDF` directly from report data; final PDFs do not depend on DOM screenshots or Tailwind rendering.
 
 Google Drive, Google Sheets, Firebase, AI commentary generation and direct email sending are deliberately outside V1.
 
