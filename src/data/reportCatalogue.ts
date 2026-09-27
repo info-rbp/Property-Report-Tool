@@ -207,7 +207,7 @@ export const REPORT_TEMPLATE_DEFINITIONS: ReportTemplateDefinition[] = [
   {
     type: 'Cleaning Rectification',
     label: 'Cleaning / Rectification Reinspection Report',
-    shortLabel: 'Cleaning / Rectification',
+    shortLabel: 'Cleaning Rectification',
     category: 'Maintenance',
     family: 'verification',
     description: 'Follow-up inspection after cleaning or rectification items have been requested.',
