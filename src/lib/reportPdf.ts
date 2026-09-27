@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
+import { formatAustralianDate, splitTenantNames } from './reportFormatting';
 import { InspectionArea, InspectionItem, ReportData, ReportPhoto } from '../types/report';
 
 const PAGE_WIDTH = 210;
@@ -326,7 +327,7 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
 
   setFont(pdf, 8.5, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text(`Report completed on ${value(details.inspectionDate) || 'Not recorded'}`, PAGE_WIDTH / 2, 226, { align: 'center' });
+  pdf.text(`Report completed on ${formatAustralianDate(details.inspectionDate) || 'Not recorded'}`, PAGE_WIDTH / 2, 226, { align: 'center' });
   setFont(pdf, 8, 'normal');
   pdf.text(`Prepared by ${value(details.inspectingAgent) || 'Not recorded'}`, PAGE_WIDTH / 2, 232, { align: 'center' });
 
@@ -345,8 +346,9 @@ function drawNumberedList(
   x: number,
   y: number,
   width: number,
-  fontSize = 5.4,
-  lineHeight = 2.15
+  fontSize = 6.2,
+  lineHeight = 2.65,
+  itemGap = 0.85
 ): number {
   setFont(pdf, fontSize, 'normal');
   setTextColor(pdf, TEXT);
@@ -358,20 +360,20 @@ function drawNumberedList(
     setFont(pdf, fontSize, 'normal');
     const lines = wrapText(pdf, item, width - 7);
     drawWrappedLines(pdf, lines, x + 7, cursor, lineHeight);
-    cursor += Math.max(1, lines.length) * lineHeight + 0.55;
+    cursor += Math.max(1, lines.length) * lineHeight + itemGap;
   });
   return cursor;
 }
 
 function drawTenancyDetailRow(pdf: jsPDF, y: number, label: string, content: string): number {
-  const h = 6.4;
+  const h = 8;
   drawBox(pdf, MARGIN_X, y, 46, h, SECTION_FILL, LIGHT_BORDER);
   drawBox(pdf, MARGIN_X + 46, y, CONTENT_WIDTH - 46, h, undefined, LIGHT_BORDER);
-  setFont(pdf, 6.1, 'bold');
+  setFont(pdf, 6.7, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text(label, MARGIN_X + 1.5, y + 4.2);
-  setFont(pdf, 6.1, 'normal');
-  pdf.text(content, MARGIN_X + 48, y + 4.2);
+  pdf.text(label, MARGIN_X + 1.5, y + 5.1);
+  setFont(pdf, 6.7, 'normal');
+  pdf.text(content, MARGIN_X + 48, y + 5.1);
   return y + h;
 }
 
@@ -394,9 +396,9 @@ function drawStatutoryPage(pdf: jsPDF, report: ReportData) {
   pdf.text('RESIDENTIAL TENANCIES ACT 1987 (WA) Section 27C(6)', PAGE_WIDTH - MARGIN_X, 24, { align: 'right' });
 
   let y = 29;
-  setFont(pdf, 6.2, 'bold');
+  setFont(pdf, 7.2, 'bold');
   pdf.text('HOW TO COMPLETE THIS FORM', MARGIN_X, y);
-  y += 3.4;
+  y += 4.2;
 
   y = drawNumberedList(pdf, [
     'Before the tenancy begins, the lessor or the property manager should inspect the residential premises and record the condition of the premises by indicating whether the particular room item is clean, undamaged and working by placing "Y" (YES) or "N" (NO) in the appropriate column. Where necessary, comments should be included in the report.',
@@ -405,12 +407,12 @@ function drawStatutoryPage(pdf: jsPDF, report: ReportData) {
     'The tenant must return one copy of the completed property condition report to the lessor or the property manager within 7 days after receiving it. The tenant should keep the second copy of the property condition report.',
     'If photographs or video recordings are taken at the time the property inspection is carried out, it is recommended that all photographs or video recordings are signed and dated by all parties. Photographs and/or video recordings are not a substitute for accurate written descriptions of the condition of the property.',
     'As soon as practicable, and in any event within 14 days after the termination of the tenancy agreement, the lessor or the property manager should complete a property condition report indicating the condition of the premises at the end of the tenancy. This should be done in the presence of the tenant unless the tenant has been given a reasonable opportunity to be present and has not attended the inspection.',
-  ], MARGIN_X, y, CONTENT_WIDTH);
+  ], MARGIN_X, y, CONTENT_WIDTH, 6.2, 2.65, 0.85);
 
-  y += 1.3;
-  setFont(pdf, 6.2, 'bold');
+  y += 1.8;
+  setFont(pdf, 7.2, 'bold');
   pdf.text('IMPORTANT NOTES ABOUT THIS PROPERTY CONDITION REPORT', MARGIN_X, y);
-  y += 3.4;
+  y += 4.2;
 
   y = drawNumberedList(pdf, [
     'This property condition report is an important record of the condition of the residential premises when the tenancy begins. It may be used as evidence of the state of repair or general condition of the premises at the commencement of the tenancy if there is a dispute, particularly about the return of the security bond money and any damage to the premises. It is important to complete the property condition report accurately.',
@@ -419,33 +421,33 @@ function drawStatutoryPage(pdf: jsPDF, report: ReportData) {
     'A tenant is not responsible for fair wear and tear to the premises. Fair wear and tear is a general term for anything that occurs through ordinary use such as the carpet becoming worn in frequently used areas. Wilful and intentional damage, or damage caused by negligence, is not fair wear and tear.',
     'If you do not have enough space on the report, attach a separate sheet. All attachments should be signed and dated by all of the parties to the residential tenancy agreement.',
     'Information about the rights and responsibilities of lessors and tenants may be obtained from Consumer Protection on 1300 30 40 54 or at www.consumerprotection.wa.gov.au.',
-  ], MARGIN_X, y, CONTENT_WIDTH);
+  ], MARGIN_X, y, CONTENT_WIDTH, 6.2, 2.65, 0.85);
 
-  y += 1.4;
-  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 9.2, LIGHT_FILL, LIGHT_BORDER);
-  setFont(pdf, 5.1, 'normal');
+  y += 1.8;
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 11.5, LIGHT_FILL, LIGHT_BORDER);
+  setFont(pdf, 6, 'normal');
   setTextColor(pdf, TEXT);
   const info = wrapText(
     pdf,
     'For further information about tenancy rights, refer to the Residential Tenancies Act 1987 or contact Consumer Protection on 1300 304 054 or www.consumerprotection.wa.gov.au. For Translating and Interpreting Services telephone TIS on 13 14 50.',
     CONTENT_WIDTH - 4
   );
-  drawWrappedLines(pdf, info, MARGIN_X + 2, y + 3.1, 2.15);
-  y += 12;
+  drawWrappedLines(pdf, info, MARGIN_X + 2, y + 3.4, 2.5);
+  y += 14;
 
-  setFont(pdf, 6.4, 'bold');
-  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 6.5, SECTION_FILL, BORDER);
-  pdf.text('TENANCY DETAILS', MARGIN_X + 1.5, y + 4.3);
-  y += 6.5;
+  setFont(pdf, 7.1, 'bold');
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 7.5, SECTION_FILL, BORDER);
+  pdf.text('TENANCY DETAILS', MARGIN_X + 1.5, y + 4.9);
+  y += 7.5;
 
   const details = report.details;
   y = drawTenancyDetailRow(pdf, y, 'Property Address:', value(details.propertyAddress));
   y = drawTenancyDetailRow(pdf, y, 'Inspecting Agent:', value(details.inspectingAgent));
-  y = drawTenancyDetailRow(pdf, y, 'Inspection Date:', value(details.inspectionDate));
-  y = drawTenancyDetailRow(pdf, y, 'Tenancy Start Date:', value(details.tenancyStartDate));
+  y = drawTenancyDetailRow(pdf, y, 'Inspection Date:', formatAustralianDate(details.inspectionDate));
+  y = drawTenancyDetailRow(pdf, y, 'Tenancy Start Date:', formatAustralianDate(details.tenancyStartDate));
   y = drawTenancyDetailRow(pdf, y, 'Tenant/s:', value(details.tenants));
-  y = drawTenancyDetailRow(pdf, y, 'Tenant Received Date:', value(details.tenantReceivedDate));
-  drawTenancyDetailRow(pdf, y, 'Report Return Date:', value(details.reportReturnDate));
+  y = drawTenancyDetailRow(pdf, y, 'Tenant Received Date:', formatAustralianDate(details.tenantReceivedDate));
+  drawTenancyDetailRow(pdf, y, 'Report Return Date:', formatAustralianDate(details.reportReturnDate));
 }
 
 function entryColumnPositions() {
@@ -836,7 +838,7 @@ function drawDateRow(pdf: jsPDF, y: number, label: string, date: string): number
   setTextColor(pdf, TEXT);
   pdf.text(label, MARGIN_X + 1.5, y + 4.2);
   drawBox(pdf, PAGE_WIDTH - MARGIN_X - 53, y + 0.8, 51.5, h - 1.6, LIGHT_FILL, LIGHT_BORDER);
-  pdf.text(date || '/ /', PAGE_WIDTH - MARGIN_X - 27.2, y + 4.2, { align: 'center' });
+  pdf.text(formatAustralianDate(date) || '/ /', PAGE_WIDTH - MARGIN_X - 27.2, y + 4.2, { align: 'center' });
   return y + h;
 }
 
@@ -891,7 +893,7 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
   setFont(pdf, 5.7, 'bold');
   pdf.text('Date:', MARGIN_X + 141.5, y + 3.5);
   setFont(pdf, 6.2, 'normal');
-  pdf.text(value(details.agentSignDate) || value(details.inspectionDate), MARGIN_X + 141.5, y + 8.3);
+  pdf.text(formatAustralianDate(details.agentSignDate || details.inspectionDate), MARGIN_X + 141.5, y + 8.3);
   y += 15;
 
   if (details.reportType === 'Entry') {
@@ -909,10 +911,11 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
     drawWrappedLines(pdf, statement, MARGIN_X + 1.5, y + 3, 2.1, { maxLines: 2 });
     y += 7.5;
 
+    const parsedTenantNames = splitTenantNames(details.tenants, 3);
     const tenantNames = [
-      value(details.tenant1SignName) || (value(details.tenants).split(',')[0] || '').trim(),
-      value(details.tenant2SignName) || (value(details.tenants).split(',')[1] || '').trim(),
-      value(details.tenant3SignName) || (value(details.tenants).split(',')[2] || '').trim(),
+      value(details.tenant1SignName) || parsedTenantNames[0] || '',
+      value(details.tenant2SignName) || parsedTenantNames[1] || '',
+      value(details.tenant3SignName) || parsedTenantNames[2] || '',
     ];
 
     tenantNames.forEach((name, index) => {
