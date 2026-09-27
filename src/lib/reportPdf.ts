@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
+import { getReportTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
 import { formatAustralianDate, splitTenantNames } from './reportFormatting';
 import { InspectionArea, InspectionItem, ReportData, ReportPhoto, ReportType } from '../types/report';
 
@@ -115,13 +116,13 @@ function drawBrand(pdf: jsPDF, x: number, y: number, scale = 1) {
 function reportDisplayTitle(reportType: ReportType): string {
   if (reportType === 'Entry') return 'Residential Tenancy Entry Condition Report';
   if (reportType === 'Exit') return 'Residential Tenancy Exit Condition Report';
-  return 'Routine Inspection Report';
+  return getReportTemplate(reportType).label;
 }
 
 function reportRunningTitle(reportType: ReportType): string {
   if (reportType === 'Entry') return 'Entry Condition Report';
   if (reportType === 'Exit') return 'Exit Condition Report';
-  return 'Routine Inspection Report';
+  return getReportTemplate(reportType).shortLabel;
 }
 
 function drawRunningHeader(pdf: jsPDF, report: ReportData, rightTitle?: string) {
