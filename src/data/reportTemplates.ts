@@ -1,5 +1,6 @@
 import { PROINSPECT_COMPANY } from '../config/company';
-import { ReportData, ReportType } from '../types/report';
+import { getReportTemplate } from './reportCatalogue';
+import { InspectionArea, ReportData, ReportType } from '../types/report';
 
 const COMPANY = {
   companyName: PROINSPECT_COMPANY.name,
@@ -9,14 +10,22 @@ const COMPANY = {
   companyWebsite: PROINSPECT_COMPANY.website,
 };
 
-function defaultDisclaimer(reportType: ReportType): string {
-  if (reportType === 'Routine') {
-    return 'This routine inspection report records visible conditions observed at the property at the time of inspection. It is a visual inspection only and is not a building, structural, electrical, plumbing, gas, pest, pool barrier, asbestos or statutory compliance inspection. Furniture, floor coverings and stored goods are not moved unless expressly noted. The report should be read together with the photographs and commentary, and specialist assessment should be obtained where required.';
-  }
-  if (reportType === 'Exit') {
-    return 'This exit condition report records visible conditions observed at the property at the end-of-tenancy inspection. It is a visual inspection only and is not a building, structural, electrical, plumbing, gas, pest, pool barrier, asbestos or statutory compliance inspection. Furniture, floor coverings and stored goods are not moved unless expressly noted. The report should be read together with the photographs and commentary, and specialist assessment should be obtained where required.';
-  }
-  return 'This report records the condition observed at the time of inspection. It should be read together with the photographs and commentary contained in the report.';
+function makeDefaultAreas(reportType: ReportType): InspectionArea[] {
+  const definition = getReportTemplate(reportType);
+  return definition.defaultAreas.map((name) => ({
+    id: `area-${crypto.randomUUID()}`,
+    name,
+    items: [
+      {
+        id: `item-${crypto.randomUUID()}`,
+        name: 'Overall',
+        clean: definition.family === 'condition' ? null : undefined,
+        undamaged: definition.family === 'condition' ? null : undefined,
+        working: definition.family === 'condition' ? null : undefined,
+        agentComments: '',
+      },
+    ],
+  }));
 }
 
 export function createBlankReport(
@@ -25,6 +34,7 @@ export function createBlankReport(
 ): ReportData {
   const now = new Date();
   const date = now.toISOString().slice(0, 10);
+  const template = getReportTemplate(reportType);
 
   return {
     id: crypto.randomUUID(),
@@ -37,9 +47,7 @@ export function createBlankReport(
       formName:
         reportType === 'Entry'
           ? 'Property Condition Report'
-          : reportType === 'Exit'
-          ? 'Exit Condition Report'
-          : 'Routine Inspection Report',
+          : template.label,
       actNotice: reportType === 'Entry' ? 'RESIDENTIAL TENANCIES ACT 1987 (WA) Section 27C(6)' : '',
       formNumber: reportType === 'Entry' ? 'FORM 1' : undefined,
       governingBody: reportType === 'Entry' ? 'Consumer Protection, Western Australia' : undefined,
@@ -56,23 +64,66 @@ export function createBlankReport(
       reportReturnDate: '',
       additionalComments: '',
       maintenanceComments: '',
+      clientName: '',
+      siteContact: '',
+      referenceNumber: '',
+      inspectionPurpose: '',
+      issueSummary: '',
+      observedCondition: '',
+      urgency: '',
+      recommendedAction: '',
+      actionRequired: '',
+      contractorName: '',
+      workOrderReference: '',
+      workDescription: '',
+      completionDate: '',
+      verificationOutcome: '',
+      incidentDate: '',
+      incidentTime: '',
+      incidentCategory: '',
+      incidentDescription: '',
+      immediateActions: '',
+      accessDetails: '',
+      meterReadings: '',
+      keysAccessDevices: '',
+      outstandingItems: '',
+      buildingSummary: '',
+      contractorAttendance: '',
+      residentMatters: '',
+      worksCompleted: '',
+      mattersForApproval: '',
+      keySafeLocation: '',
+      keySafeModel: '',
+      installationMethod: '',
+      installationOutcome: '',
+      codeHandlingNote: reportType === 'KeySafeInstallation'
+        ? 'Access code recorded securely and supplied separately. Do not include the code in this report.'
+        : '',
+      nextReviewDate: '',
+      annualSummaryPeriod: '',
       agentSignName: '',
       agentSignDate: date,
-      disclaimerText: defaultDisclaimer(reportType),
+      disclaimerText: template.disclaimer,
     },
-    areas: [],
+    areas: makeDefaultAreas(reportType),
     photos: [],
   };
 }
 
 export function normalizeReport(report: ReportData): ReportData {
   const now = new Date().toISOString();
+  const template = getReportTemplate(report.details.reportType);
   return {
     ...report,
     id: report.id || crypto.randomUUID(),
     status: report.status || 'draft',
     createdAt: report.createdAt || now,
     updatedAt: report.updatedAt || now,
+    details: {
+      ...report.details,
+      formName: report.details.formName || template.label,
+      disclaimerText: report.details.disclaimerText || template.disclaimer,
+    },
     photos: report.photos || [],
     areas: report.areas || [],
   };

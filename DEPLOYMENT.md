@@ -40,9 +40,11 @@ Completed:
 - Repository production documentation has been updated.
 - The authenticated end-to-end application workflow has been completed successfully.
 
-Pending acceptance gate:
-- Repeat the production report-generation test after deployment of the deterministic PDF renderer, using a large photo-heavy report (minimum 300 photos; target 400+ where practical).
-- Inspect the entire generated PDF before treating the renderer as production-accepted.
+Production renderer status:
+- The deterministic renderer has passed the large Entry-report production test and the Entry/Routine/Exit template regressions.
+- All 20 catalogue templates are generated in CI on every verification run.
+- Representative extended template families have also been visually rendered and reviewed during catalogue implementation.
+- Real-world operational acceptance remains appropriate as each new template is first used with live data, but all templates use the same hardened PDF and photo-rendering path.
 
 The Access application audience value (`POLICY_AUD`) is intentionally stored only in Cloudflare runtime configuration and is not committed to GitHub.
 
@@ -146,7 +148,8 @@ Keep the `workers.dev` address available as a deployment fallback unless ProInsp
 
 D1:
 - `properties` - address/reference/notes and audit fields.
-- `reports` - report type/status, report JSON, completed PDF key and audit fields.
+- `reports` - status, report JSON, completed PDF key and audit fields.
+- The initial D1 schema restricts the indexed `report_type` column to Entry/Routine/Exit. Extended templates keep their canonical report type inside `report_data` and use a backward-compatible value in the legacy indexed column. Report summaries read the canonical JSON type. No database migration is required for the expanded catalogue.
 
 R2:
 - `reports/<report-id>/photos/<photo-id>.jpg`
@@ -190,7 +193,9 @@ Cloudflare-specific files are ordinary repository files and do not change the Go
 
 Included:
 - Properties as report containers.
-- Entry, Routine and Exit reports.
+- 20 report templates across Residential, Commercial, Maintenance and Building / Strata.
+- Entry, Routine and Exit remain dedicated production templates.
+- Extended reports use catalogue-driven condition, inspection, maintenance/verification, operations and event/handover template families.
 - CSV commentary import.
 - Device photo upload with browser resize/compression.
 - Cross-device cloud drafts.

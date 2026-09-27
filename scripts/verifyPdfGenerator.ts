@@ -1,3 +1,5 @@
+import { REPORT_TEMPLATES } from '../src/data/reportCatalogue';
+import { createBlankReport } from '../src/data/reportTemplates';
 import { formatAustralianDate, renumberPhotosByArea, splitTenantNames } from '../src/lib/reportFormatting';
 import { generateReportPdf } from '../src/lib/reportPdf';
 import { ReportData } from '../src/types/report';
@@ -246,4 +248,39 @@ await verifyPdf('Entry', report, 5, 10_000);
 await verifyPdf('Routine', routineReport, 3, 4_000);
 await verifyPdf('Exit', exitReport, 4);
 
-console.log('All report-template PDF regression checks passed.');
+for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', 'Exit'].includes(item.type))) {
+  const extended = createBlankReport(template.type, {
+    id: `property-${template.type}`,
+    address: '19 Bonnard Crescent Ashby WA 6065',
+  });
+  extended.details.inspectingAgent = 'Catalogue Regression Test';
+  extended.details.clientName = 'ProInspect Test Client';
+  extended.details.referenceNumber = `TEST-${template.type}`;
+  extended.details.additionalComments = 'Catalogue regression test summary.';
+  extended.details.agentSignName = 'Catalogue Regression Test';
+  extended.areas = extended.areas.slice(0, 4).map((area, areaIndex) => ({
+    ...area,
+    items: [
+      {
+        ...area.items[0],
+        clean: template.family === 'condition' ? areaIndex % 3 !== 0 : undefined,
+        undamaged: template.family === 'condition' ? true : undefined,
+        working: template.family === 'condition' ? true : undefined,
+        agentComments:
+          `Representative ${template.shortLabel} observation for ${area.name}. The deterministic renderer must preserve wrapping, page geometry and ProInspect branding.`,
+      },
+      {
+        id: `extra-${template.type}-${areaIndex}`,
+        name: 'Follow-up observation',
+        clean: template.family === 'condition' ? true : undefined,
+        undamaged: template.family === 'condition' ? areaIndex % 2 === 0 : undefined,
+        working: template.family === 'condition' ? true : undefined,
+        agentComments: 'Additional report finding included to exercise the reusable template family.',
+      },
+    ],
+  }));
+
+  await verifyPdf(template.type, extended, template.family === 'condition' ? 4 : 3, 3_500);
+}
+
+console.log(`All ${REPORT_TEMPLATES.length} report-template PDF regression checks passed.`);

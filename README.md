@@ -8,8 +8,8 @@ Production: `https://report.creation.proinspect.systems/`
 
 ```text
 Properties
-  -> Create Entry / Routine / Exit report
-  -> Import commentary from CSV
+  -> Select a report template from the Residential / Commercial / Maintenance / Building catalogue
+  -> Import commentary from CSV or use the seeded report areas
   -> Upload inspection photos from the device
   -> Review report
   -> Generate deterministic PDF from report data
@@ -25,6 +25,17 @@ Properties
 - Cloudflare Access for staff authentication.
 - IndexedDB as a local draft cache only.
 - Browser-side deterministic PDF generation using `jsPDF` directly from report data; final PDFs do not depend on DOM screenshots or Tailwind rendering.
+
+## Report catalogue
+
+The application currently includes 20 deterministic PDF templates:
+
+- Residential: Entry Condition, Routine Inspection, Exit Condition, Property Onboarding Condition, Vacant Property Inspection, Property Handover, Annual Property Condition Summary.
+- Commercial: Commercial Ingoing Condition, Commercial Periodic Inspection, Commercial Exit / Make-Good.
+- Maintenance: Maintenance Assessment, Maintenance Completion / Verification, Cleaning / Rectification Reinspection, Contractor Works Inspection, Preventative Maintenance Inspection, Cleaning Quality Inspection, Key Safe Installation.
+- Building / Strata: Common Property Inspection, Building Management Site Report, Incident Report.
+
+The extended catalogue is implemented through reusable deterministic template families rather than separate DOM/screenshot renderers. This keeps cover pages, page geometry, text wrapping, pagination, photo galleries, sign-off sections and disclaimers consistent.
 
 Google Drive, Google Sheets, Firebase, AI commentary generation and direct email sending are deliberately outside V1.
 
