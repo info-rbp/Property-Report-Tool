@@ -243,7 +243,7 @@ const exitReport: ReportData = {
 };
 
 await verifyPdf('Entry', report, 5, 10_000);
-await verifyPdf('Routine', routineReport, 3);
+await verifyPdf('Routine', routineReport, 3, 4_000);
 await verifyPdf('Exit', exitReport, 4);
 
 console.log('All report-template PDF regression checks passed.');
