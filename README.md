@@ -8,8 +8,8 @@ Production: `https://report.creation.proinspect.systems/`
 
 ```text
 Properties
-  -> Create Entry / Routine / Exit report
-  -> Import commentary from CSV
+  -> Choose a report template from the ProInspect catalogue
+  -> Import commentary from CSV or use the template starter areas
   -> Upload inspection photos from the device
   -> Review report
   -> Generate deterministic PDF from report data
@@ -28,4 +28,6 @@ Properties
 
 Google Drive, Google Sheets, Firebase, AI commentary generation and direct email sending are deliberately outside V1.
 
-See `DEPLOYMENT.md`, `DATA_RETENTION.md` and `docs/WA_FORM_1_COMPLIANCE.md` for production guidance.
+The report library covers residential tenancy, commercial, maintenance, building/strata and property-operations reporting, including key safe installation verification.
+
+See `docs/REPORT_TEMPLATE_CATALOGUE.md`, `DEPLOYMENT.md`, `DATA_RETENTION.md` and `docs/WA_FORM_1_COMPLIANCE.md` for production guidance.
