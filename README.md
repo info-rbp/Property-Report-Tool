@@ -1,0 +1,29 @@
+# ProInspect Property Reports
+
+Cloud-backed internal property reporting application for ProInspect.
+
+## V1 workflow
+
+```text
+Properties
+  -> Create Entry / Routine / Exit report
+  -> Import commentary from CSV
+  -> Upload inspection photos from the device
+  -> Review report
+  -> Generate PDF in the browser
+  -> Finalise and store the issued PDF
+```
+
+## Production architecture
+
+- React + Vite frontend served as Cloudflare Workers Static Assets.
+- Cloudflare Worker API under `/api/*`.
+- Cloudflare D1 for Properties, report metadata and report JSON.
+- Cloudflare R2 for compressed inspection photos and completed PDFs.
+- Cloudflare Access for staff authentication.
+- IndexedDB as a local draft cache only.
+- Browser-side PDF generation using `html2canvas-pro` and `jsPDF`.
+
+Google Drive, Google Sheets, Firebase, AI commentary generation and direct email sending are deliberately outside V1.
+
+See `DEPLOYMENT.md`, `DATA_RETENTION.md` and `docs/WA_FORM_1_COMPLIANCE.md` for production guidance.
