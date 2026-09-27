@@ -913,6 +913,156 @@ function drawRoutineClosingPages(pdf: jsPDF, report: ReportData) {
   drawDisclaimerSection(pdf, report, y);
 }
 
+function detailFieldValue(report: ReportData, field: ReportFieldDefinition): string {
+  const raw = report.details[field.key];
+  const text = typeof raw === 'string' ? raw : '';
+  const dateKeys = new Set([
+    'inspectionDate',
+    'tenancyStartDate',
+    'leaseExpiryDate',
+    'rentReviewDate',
+    'completionDate',
+    'incidentDate',
+    'nextReviewDate',
+    'agentSignDate',
+  ]);
+  return dateKeys.has(String(field.key)) ? formatAustralianDate(text) : value(text);
+}
+
+function drawGenericOverview(pdf: jsPDF, report: ReportData): number {
+  const template = getReportTemplate(report.details.reportType);
+  let y = addContentPage(pdf, report, template.shortLabel);
+  y = drawRoutinePageHeading(pdf, y, template.summaryTitle);
+  y = drawRoutineDetailRow(pdf, y, 'Property / Site Address', value(report.details.propertyAddress));
+  template.detailFields.forEach((field) => {
+    const fieldValue = detailFieldValue(report, field);
+    if (field.multiline) {
+      if (y + 22 > BODY_BOTTOM) {
+        y = addContentPage(pdf, report, template.shortLabel);
+      }
+      y = drawNarrativeSection(pdf, report, y, field.label, fieldValue || 'Not recorded.');
+    } else {
+      if (y + 7.2 > BODY_BOTTOM) {
+        y = addContentPage(pdf, report, template.shortLabel);
+      }
+      y = drawRoutineDetailRow(pdf, y, field.label, fieldValue);
+    }
+  });
+  return y;
+}
+
+function drawGenericFindingsPages(
+  pdf: jsPDF,
+  report: ReportData,
+  startY: number,
+  onProgress?: (message: string) => void
+) {
+  const template = getReportTemplate(report.details.reportType);
+  let y = startY;
+  if (y + 18 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+  y += 3;
+  y = drawRoutinePageHeading(pdf, y, template.findingsTitle);
+
+  report.areas.forEach((area, areaIndex) => {
+    onProgress?.(`Laying out ${template.shortLabel} area ${areaIndex + 1} of ${report.areas.length}...`);
+    const count = areaPhotoCount(report, area);
+    const items = area.items.length
+      ? area.items
+      : [{ id: `${area.id}-empty`, name: 'Overall', agentComments: 'No observation recorded.' } as InspectionItem];
+
+    const first = items[0];
+    setFont(pdf, 6.7, 'normal');
+    const firstItemLines = wrapText(pdf, value(first.name) || 'Overall', 38.8);
+    const firstCommentLines = wrapText(pdf, value(first.agentComments) || 'No observation recorded.', 148.8);
+    const firstHeight = Math.max(7, Math.max(firstItemLines.length, firstCommentLines.length) * 2.7 + 3);
+
+    if (y + 7.2 + 6.2 + firstHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, template.shortLabel);
+      y = drawRoutinePageHeading(pdf, y, `${template.findingsTitle} (continued)`);
+    }
+
+    y = drawRoutineAreaHeader(pdf, y, area, count, false);
+    y = drawRoutineColumnHeader(pdf, y);
+
+    items.forEach((item) => {
+      setFont(pdf, 6.7, 'normal');
+      const itemLines = wrapText(pdf, value(item.name) || 'Overall', 38.8);
+      const commentLines = wrapText(pdf, value(item.agentComments) || 'No observation recorded.', 148.8);
+      const height = Math.max(7, Math.max(itemLines.length, commentLines.length) * 2.7 + 3);
+
+      if (y + height > BODY_BOTTOM) {
+        y = addContentPage(pdf, report, template.shortLabel);
+        y = drawRoutinePageHeading(pdf, y, `${template.findingsTitle} (continued)`);
+        y = drawRoutineAreaHeader(pdf, y, area, count, true);
+        y = drawRoutineColumnHeader(pdf, y);
+      }
+      y = drawRoutineFindingRow(pdf, y, item);
+    });
+    y += 2.5;
+  });
+}
+
+function drawGenericConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
+  const template = getReportTemplate(report.details.reportType);
+  let y = addContentPage(pdf, report, template.shortLabel);
+
+  report.areas.forEach((area, areaIndex) => {
+    onProgress?.(`Laying out ${template.shortLabel} condition area ${areaIndex + 1} of ${report.areas.length}...`);
+    const count = areaPhotoCount(report, area);
+    const fragments = area.items.flatMap((item) =>
+      exitItemFragments(pdf, item).map((fragment) => ({ item, fragment }))
+    );
+    const firstHeight = fragments.length ? exitFragmentHeight(fragments[0].fragment) : 7;
+    if (y + 7.8 + (count > 0 ? 5.8 : 0) + firstHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, template.shortLabel);
+    }
+    y = drawExitAreaHeader(pdf, y, area.name, false);
+    if (count > 0) y = drawExitOverallRow(pdf, y, count);
+
+    fragments.forEach(({ item, fragment }) => {
+      const height = exitFragmentHeight(fragment);
+      if (y + height > BODY_BOTTOM) {
+        y = addContentPage(pdf, report, template.shortLabel);
+        y = drawExitAreaHeader(pdf, y, area.name, true);
+      }
+      y = drawExitItemRow(pdf, y, item, fragment);
+    });
+  });
+}
+
+function drawGenericClosingPages(pdf: jsPDF, report: ReportData) {
+  const template = getReportTemplate(report.details.reportType);
+  let y = addContentPage(pdf, report, template.shortLabel);
+  y = drawRoutinePageHeading(pdf, y, template.finalSectionTitle);
+
+  const signoffKeys = new Set(['agentSignName', 'agentSignDate']);
+  template.summaryFields.forEach((field) => {
+    if (signoffKeys.has(String(field.key))) return;
+    const fieldValue = detailFieldValue(report, field);
+    if (field.multiline) {
+      y = drawNarrativeSection(pdf, report, y, field.label, fieldValue || 'No comments recorded.');
+    } else {
+      if (y + 7.2 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+      y = drawRoutineDetailRow(pdf, y, field.label, fieldValue);
+    }
+  });
+
+  if (y + 48 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+  y = drawAgentSignoff(pdf, y, report, 'Prepared by / Report sign-off');
+  y += 3;
+  drawDisclaimerSection(pdf, report, y);
+}
+
+function drawExtendedReportPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
+  const template = getReportTemplate(report.details.reportType);
+  const overviewEnd = drawGenericOverview(pdf, report);
+  if (template.family === 'condition') {
+    drawGenericConditionPages(pdf, report, onProgress);
+  } else {
+    drawGenericFindingsPages(pdf, report, overviewEnd, onProgress);
+  }
+}
+
 interface ExitItemFragment {
   nameLines: string[];
   agentLines: string[];
