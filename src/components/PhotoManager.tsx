@@ -7,8 +7,9 @@ interface PhotoManagerProps {
   photos: ReportPhoto[];
   areas?: InspectionArea[];
   isUploading?: boolean;
-  onUploadPhotos: (files: File[], areaName: string) => Promise<void>;
+  onUploadPhotos: (files: File[], areaName: string, itemId?: string) => Promise<void>;
   onUpdatePhotos: (photos: ReportPhoto[]) => void;
+  linkToItems?: boolean;
   onDeletePhoto: (id: string) => Promise<void>;
 }
 
@@ -19,6 +20,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   onUploadPhotos,
   onUpdatePhotos,
   onDeletePhoto,
+  linkToItems = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const areaFileInputRef = useRef<HTMLInputElement>(null);
@@ -26,6 +28,8 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   const [targetUploadArea, setTargetUploadArea] = useState<string>(areas[0]?.name || 'General');
   const [activeAreaFilter, setActiveAreaFilter] = useState<string>('ALL');
   const [bulkMoveArea, setBulkMoveArea] = useState<string>(areas[0]?.name || '');
+  const [selectedUploadItemId, setSelectedUploadItemId] = useState<string>('');
+  const [targetUploadItemId, setTargetUploadItemId] = useState<string>('');
 
   const reportAreaNames = useMemo(
     () => Array.from(new Set(areas.map((area) => area.name.trim()).filter(Boolean))),
@@ -43,26 +47,71 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   const unmappedAreaNames = existingAreaNames.filter(
     (name) => reportAreaNames.length > 0 && !validAreaKeys.has(normalizeAreaName(name))
   );
+  const areaByName = useMemo(
+    () => new Map(areas.map((area) => [area.name, area])),
+    [areas]
+  );
+  const selectedAreaItems = areaByName.get(selectedUploadArea)?.items || [];
+  const targetAreaItems = areaByName.get(targetUploadArea)?.items || [];
+
+  const validItemIds = useMemo(() => {
+    const ids = new Set<string>();
+    areas.forEach((area) => area.items.forEach((item) => ids.add(item.id)));
+    return ids;
+  }, [areas]);
 
   useEffect(() => {
     const fallback = availableAreaNames[0] || 'General';
     if (!availableAreaNames.includes(selectedUploadArea)) setSelectedUploadArea(fallback);
     if (!availableAreaNames.includes(targetUploadArea)) setTargetUploadArea(fallback);
     if (!availableAreaNames.includes(bulkMoveArea)) setBulkMoveArea(fallback);
-  }, [availableAreaNames, selectedUploadArea, targetUploadArea, bulkMoveArea]);
+
+    if (linkToItems) {
+      const selectedItems = areaByName.get(selectedUploadArea)?.items || [];
+      if (!selectedItems.some((item) => item.id === selectedUploadItemId)) {
+        setSelectedUploadItemId(selectedItems[0]?.id || '');
+      }
+      const targetItems = areaByName.get(targetUploadArea)?.items || [];
+      if (!targetItems.some((item) => item.id === targetUploadItemId)) {
+        setTargetUploadItemId(targetItems[0]?.id || '');
+      }
+    }
+  }, [
+    availableAreaNames,
+    selectedUploadArea,
+    targetUploadArea,
+    bulkMoveArea,
+    linkToItems,
+    areaByName,
+    selectedUploadItemId,
+    targetUploadItemId,
+  ]);
 
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
-    areaName: string
+    areaName: string,
+    itemId?: string
   ) => {
     const files = Array.from(event.target.files || []);
     event.target.value = '';
     if (!files.length) return;
-    await onUploadPhotos(files, areaName || 'General');
+    if (linkToItems && !itemId) {
+      alert('Select a reporting item before uploading photos.');
+      return;
+    }
+    await onUploadPhotos(files, areaName || 'General', itemId);
   };
 
   const handleUploadForSpecificArea = (areaName: string) => {
     setTargetUploadArea(areaName);
+    const items = areaByName.get(areaName)?.items || [];
+    if (linkToItems) {
+      if (!items.length) {
+        alert('Add a reporting item to this category before attaching photos.');
+        return;
+      }
+      setTargetUploadItemId(items[0].id);
+    }
     areaFileInputRef.current?.click();
   };
 
@@ -75,11 +124,30 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   };
 
   const handleReassignPhotoArea = (id: string, areaName: string) => {
+    const firstItem = areaByName.get(areaName)?.items[0];
     const updated = photos.map((photo) => {
       if (photo.id !== id) return photo;
-      return { ...photo, areaName };
+      return {
+        ...photo,
+        areaName,
+        itemId: linkToItems ? firstItem?.id : photo.itemId,
+        itemName: linkToItems ? firstItem?.name : photo.itemName,
+      };
     });
     onUpdatePhotos(renumberPhotosByArea(updated));
+  };
+
+  const handleReassignPhotoItem = (id: string, itemId: string) => {
+    const photo = photos.find((item) => item.id === id);
+    const area = areaByName.get(photo?.areaName || '');
+    const item = area?.items.find((candidate) => candidate.id === itemId);
+    onUpdatePhotos(
+      photos.map((candidate) =>
+        candidate.id === id
+          ? { ...candidate, itemId: item?.id, itemName: item?.name || '' }
+          : candidate
+      )
+    );
   };
 
   const handleBulkMove = () => {
@@ -103,6 +171,9 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     if (!reportAreaNames.length) return false;
     return !validAreaKeys.has(normalizeAreaName(photo.areaName || 'General'));
   }).length;
+  const unlinkedItemPhotoCount = linkToItems
+    ? photos.filter((photo) => !photo.itemId || !validItemIds.has(photo.itemId)).length
+    : 0;
 
   const filteredPhotos = activeAreaFilter === 'ALL'
     ? photos
@@ -115,7 +186,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         type="file"
         multiple
         accept="image/jpeg,image/png,image/webp"
-        onChange={(event) => handleFileUpload(event, selectedUploadArea)}
+        onChange={(event) => handleFileUpload(event, selectedUploadArea, selectedUploadItemId)}
         className="hidden"
       />
       <input
@@ -123,7 +194,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         type="file"
         multiple
         accept="image/jpeg,image/png,image/webp"
-        onChange={(event) => handleFileUpload(event, targetUploadArea)}
+        onChange={(event) => handleFileUpload(event, targetUploadArea, targetUploadItemId)}
         className="hidden"
       />
 
@@ -131,10 +202,12 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         <div>
           <h3 className="font-bold text-neutral-900 text-sm flex items-center gap-2">
             <Image className="w-4 h-4 text-neutral-700" />
-            Property Inspection Photos ({photos.length})
+            {linkToItems ? 'Building Manager Photo Evidence' : 'Property Inspection Photos'} ({photos.length})
           </h3>
           <p className="text-xs text-neutral-500">
-            Upload JPG, PNG or WebP images from this device. Images are resized before cloud storage.
+            {linkToItems
+              ? 'Select the report category and exact reporting item before uploading. Each photo will remain linked to that item in the final PDF.'
+              : 'Upload JPG, PNG or WebP images from this device. Images are resized before cloud storage.'}
           </p>
         </div>
 
@@ -144,14 +217,34 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           </span>
           <select
             value={selectedUploadArea}
-            onChange={(event) => setSelectedUploadArea(event.target.value)}
+            onChange={(event) => {
+              const areaName = event.target.value;
+              setSelectedUploadArea(areaName);
+              if (linkToItems) {
+                setSelectedUploadItemId(areaByName.get(areaName)?.items[0]?.id || '');
+              }
+            }}
             className="px-2 py-1.5 bg-transparent font-medium text-neutral-800 focus:outline-hidden"
           >
             {availableAreaNames.map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
+          {linkToItems && (
+            <select
+              value={selectedUploadItemId}
+              onChange={(event) => setSelectedUploadItemId(event.target.value)}
+              className="px-2 py-1.5 bg-transparent font-medium text-neutral-800 focus:outline-hidden border-l border-neutral-300 max-w-56"
+              disabled={!selectedAreaItems.length}
+              title="Reporting item"
+            >
+              {!selectedAreaItems.length && <option value="">Add a reporting item first</option>}
+              {selectedAreaItems.map((item) => (
+                <option key={item.id} value={item.id}>{item.name || 'Untitled reporting item'}</option>
+              ))}
+            </select>
+          )}
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
+            disabled={isUploading || (linkToItems && !selectedUploadItemId)}
             className="px-3 py-1.5 bg-[#0a2540] text-white font-bold flex items-center gap-1.5 disabled:opacity-50"
           >
             <Upload className="w-3.5 h-3.5" />
@@ -220,7 +313,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                 <Plus className="w-3.5 h-3.5" /> Add to {activeAreaFilter}
               </button>
             )}
-            {reportAreaNames.length > 0 && (
+            {!linkToItems && reportAreaNames.length > 0 && (
               <div className="flex items-center rounded-lg border border-neutral-300 overflow-hidden bg-white">
                 <select
                   value={bulkMoveArea}
@@ -243,12 +336,17 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         )}
       </div>
 
-      {(unmappedPhotoCount > 0 || areasWithoutPhotos.length > 0) && (
+      {(unmappedPhotoCount > 0 || unlinkedItemPhotoCount > 0 || areasWithoutPhotos.length > 0) && (
         <div className="px-4 py-3 border-b border-amber-200 bg-amber-50 text-amber-900 text-xs">
           <div className="font-bold">Photo area review recommended before finalising</div>
           {unmappedPhotoCount > 0 && (
             <div className="mt-1">
               {unmappedPhotoCount} photo{unmappedPhotoCount === 1 ? '' : 's'} are not assigned to a current report area. Use the red filter above and move them to the correct area.
+            </div>
+          )}
+          {unlinkedItemPhotoCount > 0 && (
+            <div className="mt-1">
+              {unlinkedItemPhotoCount} photo{unlinkedItemPhotoCount === 1 ? '' : 's'} are not linked to a current reporting item. Assign each photo to the exact activity it supports before finalising.
             </div>
           )}
           {areasWithoutPhotos.length > 0 && (
@@ -326,6 +424,18 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                     )}
                     {availableAreaNames.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
+                  {linkToItems && (
+                    <select
+                      value={photo.itemId || ''}
+                      onChange={(event) => handleReassignPhotoItem(photo.id, event.target.value)}
+                      className="w-full bg-cyan-50 border border-cyan-200 rounded px-1.5 py-1 font-semibold text-cyan-900 text-[10px]"
+                    >
+                      <option value="">Select reporting item</option>
+                      {(areaByName.get(photo.areaName || '')?.items || []).map((item) => (
+                        <option key={item.id} value={item.id}>{item.name || 'Untitled reporting item'}</option>
+                      ))}
+                    </select>
+                  )}
                   <input
                     value={photo.name}
                     onChange={(event) => handleRenamePhoto(photo.id, event.target.value)}

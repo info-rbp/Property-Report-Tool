@@ -42,8 +42,8 @@ Completed:
 
 Production renderer status:
 - The deterministic renderer has passed the large Entry-report production test and the Entry/Routine/Exit template regressions.
-- All 20 catalogue templates are generated in CI on every verification run.
-- Representative extended template families have also been visually rendered and reviewed during catalogue implementation.
+- All 22 report definitions, including the hidden legacy Building Management compatibility template, are generated in CI on every verification run. There are 21 selectable report templates in the application.
+- Representative extended template families have also been visually rendered and reviewed during catalogue implementation. The filled Building Manager Daily and Monthly stress fixtures were separately rendered and visually checked for table continuation, category pagination and sign-off layout.
 - Real-world operational acceptance remains appropriate as each new template is first used with live data, but all templates use the same hardened PDF and photo-rendering path.
 
 The Access application audience value (`POLICY_AUD`) is intentionally stored only in Cloudflare runtime configuration and is not committed to GitHub.
@@ -193,9 +193,10 @@ Cloudflare-specific files are ordinary repository files and do not change the Go
 
 Included:
 - Properties as report containers.
-- 20 report templates across Residential, Commercial, Maintenance and Building / Strata.
+- 21 selectable report templates across Residential, Commercial, Maintenance and Building / Strata.
 - Entry, Routine and Exit remain dedicated production templates.
 - Extended reports use catalogue-driven condition, inspection, maintenance/verification, operations and event/handover template families.
+- Building Manager Daily and Monthly reports use a dedicated Category / Reporting Item / Activity Summary / Actions / Photos layout and require photos to be linked to a current reporting item before finalisation.
 - CSV commentary import.
 - Device photo upload with browser resize/compression.
 - Cross-device cloud drafts.

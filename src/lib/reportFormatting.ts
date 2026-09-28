@@ -46,8 +46,11 @@ export function renumberPhotosByArea(photos: ReportPhoto[]): ReportPhoto[] {
     const descriptiveSuffix = currentName.includes(':')
       ? currentName.split(':').slice(1).join(':').trim()
       : currentName;
-    const generatedPattern = /^overall\s*\(photo\s+\d+(?:\s+of\s+\d+)?\)$/i;
-    const suffix = !descriptiveSuffix || generatedPattern.test(descriptiveSuffix)
+    const generatedPattern = /^(?:overall|.+?)\s*\(photo\s+\d+(?:\s+of\s+\d+)?\)$/i;
+    const itemLabel = (photo.itemName || '').trim();
+    const suffix = itemLabel
+      ? `${itemLabel} (photo ${photoIndex})`
+      : !descriptiveSuffix || generatedPattern.test(descriptiveSuffix)
       ? `Overall (photo ${photoIndex})`
       : descriptiveSuffix;
 

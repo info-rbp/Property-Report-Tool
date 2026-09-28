@@ -2,6 +2,7 @@ import React from 'react';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { ReportData, InspectionArea, InspectionItem } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
+import { BuildingManagementReportDocument } from './BuildingManagementReportDocument';
 import { ExtendedReportDocument } from './ExtendedReportDocument';
 import { SimpleReportDocument } from './SimpleReportDocument';
 
@@ -79,6 +80,9 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
     photos[0]?.url;
 
   if (details.reportType !== 'Entry') {
+    if (['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(details.reportType)) {
+      return <BuildingManagementReportDocument report={report} />;
+    }
     return ['Routine', 'Exit'].includes(details.reportType)
       ? <SimpleReportDocument report={report} />
       : <ExtendedReportDocument report={report} />;

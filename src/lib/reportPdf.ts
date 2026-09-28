@@ -1060,6 +1060,238 @@ function drawExtendedReportPages(pdf: jsPDF, report: ReportData, onProgress?: (m
   }
 }
 
+function isBuildingManagementReport(type: ReportType): boolean {
+  return ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(type);
+}
+
+function isDailyBuildingManagementReport(type: ReportType): boolean {
+  return type === 'BuildingManagementDaily';
+}
+
+const BUILDING_MANAGEMENT_WIDTHS = [40, 34, 60, 48, 12] as const;
+
+function buildingManagementColumnPositions(): number[] {
+  const positions: number[] = [MARGIN_X];
+  BUILDING_MANAGEMENT_WIDTHS.forEach((width) => positions.push(positions[positions.length - 1] + width));
+  return positions;
+}
+
+function drawBuildingManagementOverview(pdf: jsPDF, report: ReportData): number {
+  const daily = isDailyBuildingManagementReport(report.details.reportType);
+  let y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+  y = drawRoutinePageHeading(pdf, y, daily ? 'Daily Report Details' : 'Monthly Report Details');
+
+  const rows: Array<[string, string]> = [
+    ['Building / Scheme Name', value(report.details.buildingName)],
+    ['Strata Plan / Scheme Reference', value(report.details.strataPlan)],
+    ['Building / Site Address', value(report.details.propertyAddress)],
+    [daily ? 'Report Date' : 'Reporting Period', daily ? formatAustralianDate(report.details.inspectionDate) : value(report.details.reportingPeriod)],
+    ...(!daily ? [['Report Issue Date', formatAustralianDate(report.details.inspectionDate)] as [string, string]] : []),
+    ['Building Manager / Prepared By', value(report.details.inspectingAgent)],
+    ['Client / Council / Principal', value(report.details.clientName)],
+  ];
+
+  rows.forEach(([label, content]) => {
+    y = drawRoutineDetailRow(pdf, y, label, content);
+  });
+  return y + 4;
+}
+
+function drawBuildingManagementCategoryHeader(
+  pdf: jsPDF,
+  y: number,
+  category: string,
+  continuation = false
+): number {
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 7.2, SECTION_FILL, BORDER);
+  setFont(pdf, 6.9, 'bold');
+  setTextColor(pdf, NAVY);
+  pdf.text(
+    continuation ? `${category.toUpperCase()} (CONTINUED)` : category.toUpperCase(),
+    MARGIN_X + 1.6,
+    y + 4.7
+  );
+  return y + 7.2;
+}
+
+function drawBuildingManagementTableHeader(pdf: jsPDF, y: number, daily: boolean): number {
+  const x = buildingManagementColumnPositions();
+  const h = 9.6;
+  BUILDING_MANAGEMENT_WIDTHS.forEach((width, index) => drawBox(pdf, x[index], y, width, h, LIGHT_FILL, BORDER));
+  setFont(pdf, 5.4, 'bold');
+  setTextColor(pdf, TEXT);
+  const headings = [
+    daily ? 'Time / Party' : 'Date / Party',
+    'Reporting Item',
+    daily ? 'Brief Summary of Activities Today' : 'Brief Summary of Activities within this period',
+    'Actions',
+    'Photos',
+  ];
+  headings.forEach((heading, index) => {
+    const lines = wrapText(pdf, heading, BUILDING_MANAGEMENT_WIDTHS[index] - 2.4);
+    drawWrappedLines(
+      pdf,
+      lines,
+      x[index] + BUILDING_MANAGEMENT_WIDTHS[index] / 2,
+      y + 3.2,
+      2.1,
+      { align: 'center', maxLines: 3 }
+    );
+  });
+  return y + h;
+}
+
+function buildingManagementItemPhotos(report: ReportData, itemId: string): number {
+  return report.photos.filter((photo) => photo.itemId === itemId).length;
+}
+
+function buildingManagementPeriodText(item: InspectionItem, daily: boolean): string {
+  const when = daily
+    ? value(item.activityTime)
+    : formatAustralianDate(item.activityDate) || value(item.activityDate);
+  const party = value(item.activityParty);
+  return [when, party].filter(Boolean).join('\n');
+}
+
+function drawBuildingManagementActivityPages(
+  pdf: jsPDF,
+  report: ReportData,
+  startY: number,
+  onProgress?: (message: string) => void
+) {
+  const daily = isDailyBuildingManagementReport(report.details.reportType);
+  const template = getReportTemplate(report.details.reportType);
+  const x = buildingManagementColumnPositions();
+  const lineHeight = 2.55;
+  let y = startY;
+
+  if (y + 20 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+  y = drawRoutinePageHeading(pdf, y, template.findingsTitle);
+
+  report.areas.forEach((area, areaIndex) => {
+    onProgress?.(`Laying out Building Manager category ${areaIndex + 1} of ${report.areas.length}...`);
+
+    if (y + 20 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+    y = drawBuildingManagementCategoryHeader(pdf, y, area.name);
+    y = drawBuildingManagementTableHeader(pdf, y, daily);
+
+    if (!area.items.length) {
+      const h = 9;
+      if (y + h > BODY_BOTTOM) {
+        y = addContentPage(pdf, report, template.shortLabel);
+        y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+        y = drawBuildingManagementTableHeader(pdf, y, daily);
+      }
+      drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, undefined, LIGHT_BORDER);
+      setFont(pdf, 6, 'italic');
+      setTextColor(pdf, MUTED);
+      pdf.text('No activity recorded in this category for the reporting period.', MARGIN_X + 2, y + 5.6);
+      y += h + 2.5;
+      return;
+    }
+
+    area.items.forEach((item) => {
+      setFont(pdf, 5.9, 'normal');
+      const summaryLines = wrapText(pdf, value(item.agentComments) || 'No activity summary recorded.', BUILDING_MANAGEMENT_WIDTHS[2] - 2.6);
+      const actionLines = wrapText(pdf, value(item.actionComments) || 'No further action recorded.', BUILDING_MANAGEMENT_WIDTHS[3] - 2.6);
+      const periodLines = wrapText(pdf, buildingManagementPeriodText(item, daily) || 'Not recorded', BUILDING_MANAGEMENT_WIDTHS[0] - 2.6);
+      const itemLines = wrapText(pdf, value(item.name) || 'Untitled reporting item', BUILDING_MANAGEMENT_WIDTHS[1] - 2.6);
+      const totalContentLines = Math.max(
+        summaryLines.length,
+        actionLines.length,
+        periodLines.length,
+        itemLines.length,
+        1
+      );
+      let offset = 0;
+      let firstFragment = true;
+
+      while (offset < totalContentLines) {
+        let availableLines = Math.floor((BODY_BOTTOM - y - 3) / lineHeight);
+        if (availableLines < 2) {
+          y = addContentPage(pdf, report, template.shortLabel);
+          y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+          y = drawBuildingManagementTableHeader(pdf, y, daily);
+          availableLines = Math.floor((BODY_BOTTOM - y - 3) / lineHeight);
+        }
+
+        const chunkSize = Math.max(1, Math.min(availableLines, totalContentLines - offset));
+        const summaryChunk = summaryLines.slice(offset, offset + chunkSize);
+        const actionChunk = actionLines.slice(offset, offset + chunkSize);
+        const periodChunk = periodLines.slice(offset, offset + chunkSize);
+        const itemChunk = itemLines.slice(offset, offset + chunkSize);
+        const leftLines = periodChunk.length ? periodChunk : [''];
+        const nameLines = itemChunk.length
+          ? itemChunk
+          : firstFragment
+          ? ['Untitled reporting item']
+          : wrapText(pdf, `${value(item.name) || 'Reporting item'} (continued)`, BUILDING_MANAGEMENT_WIDTHS[1] - 2.6);
+        const rowLines = Math.max(leftLines.length, nameLines.length, summaryChunk.length, actionChunk.length, 1);
+        const h = Math.max(7, rowLines * lineHeight + 3);
+
+        if (y + h > BODY_BOTTOM) {
+          y = addContentPage(pdf, report, template.shortLabel);
+          y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+          y = drawBuildingManagementTableHeader(pdf, y, daily);
+          continue;
+        }
+
+        BUILDING_MANAGEMENT_WIDTHS.forEach((width, index) => drawBox(pdf, x[index], y, width, h, undefined, LIGHT_BORDER));
+        setFont(pdf, 5.9, 'normal');
+        setTextColor(pdf, TEXT);
+        drawWrappedLines(pdf, leftLines, x[0] + 1.3, y + 3.4, lineHeight);
+        setFont(pdf, 5.9, 'bold');
+        drawWrappedLines(pdf, nameLines, x[1] + 1.3, y + 3.4, lineHeight);
+        setFont(pdf, 5.9, 'normal');
+        drawWrappedLines(pdf, summaryChunk.length ? summaryChunk : [''], x[2] + 1.3, y + 3.4, lineHeight);
+        drawWrappedLines(pdf, actionChunk.length ? actionChunk : [''], x[3] + 1.3, y + 3.4, lineHeight);
+
+        if (firstFragment) {
+          const count = buildingManagementItemPhotos(report, item.id);
+          setFont(pdf, 5.8, 'bold');
+          setTextColor(pdf, count ? TEAL : MUTED);
+          pdf.text(String(count), x[4] + BUILDING_MANAGEMENT_WIDTHS[4] / 2, y + Math.min(h - 2, 4.2), { align: 'center' });
+        }
+
+        y += h;
+        offset += chunkSize;
+        firstFragment = false;
+      }
+    });
+
+    y += 2.5;
+  });
+}
+
+function drawBuildingManagementClosingPages(pdf: jsPDF, report: ReportData) {
+  const template = getReportTemplate(report.details.reportType);
+  let y = addContentPage(pdf, report, template.shortLabel);
+  y = drawRoutinePageHeading(pdf, y, template.finalSectionTitle);
+
+  const signoffKeys = new Set(['agentSignName', 'agentSignDate']);
+  template.summaryFields.forEach((field) => {
+    if (signoffKeys.has(String(field.key))) return;
+    const fieldValue = detailFieldValue(report, field);
+    y = field.multiline
+      ? drawNarrativeSection(pdf, report, y, field.label, fieldValue || 'No comments recorded.')
+      : drawRoutineDetailRow(pdf, y, field.label, fieldValue);
+  });
+
+  if (y + 48 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+  y = drawAgentSignoff(pdf, y, report, 'Building Manager / Prepared by');
+  y += 3;
+  drawDisclaimerSection(pdf, report, y);
+}
+
+function drawBuildingManagementReportPages(
+  pdf: jsPDF,
+  report: ReportData,
+  onProgress?: (message: string) => void
+) {
+  const overviewEnd = drawBuildingManagementOverview(pdf, report);
+  drawBuildingManagementActivityPages(pdf, report, overviewEnd, onProgress);
+}
+
 interface ExitItemFragment {
   nameLines: string[];
   agentLines: string[];
@@ -1223,9 +1455,15 @@ function drawExitConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (me
   });
 }
 
-function photoCaption(photo: ReportPhoto, total: number, ordinal: number): string {
+function photoCaption(photo: ReportPhoto, total: number, ordinal: number, report: ReportData): string {
   const area = value(photo.areaName) || 'General';
-  return `${area}: Overall (photo ${ordinal} of ${total})`;
+  const currentItem = photo.itemId
+    ? report.areas.flatMap((reportArea) => reportArea.items).find((item) => item.id === photo.itemId)
+    : undefined;
+  const item = value(currentItem?.name) || value(photo.itemName);
+  return item
+    ? `${area}: ${item} (photo ${ordinal} of ${total})`
+    : `${area}: Overall (photo ${ordinal} of ${total})`;
 }
 
 async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
@@ -1234,6 +1472,11 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
   const areaOrder = new Map(
     report.areas.map((area, index) => [area.name.trim().toLowerCase(), index])
   );
+  const itemOrder = new Map<string, number>();
+  report.areas.forEach((area) => {
+    area.items.forEach((item, index) => itemOrder.set(item.id, index));
+  });
+
   const orderedPhotos = report.photos
     .map((photo, originalIndex) => ({ photo, originalIndex }))
     .sort((a, b) => {
@@ -1243,6 +1486,11 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
       const orderB = areaOrder.get(areaB) ?? Number.MAX_SAFE_INTEGER;
       if (orderA !== orderB) return orderA - orderB;
       if (areaA !== areaB) return areaA.localeCompare(areaB);
+
+      const itemA = a.photo.itemId ? itemOrder.get(a.photo.itemId) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+      const itemB = b.photo.itemId ? itemOrder.get(b.photo.itemId) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+      if (itemA !== itemB) return itemA - itemB;
+
       const indexA = a.photo.photoIndex ?? Number.MAX_SAFE_INTEGER;
       const indexB = b.photo.photoIndex ?? Number.MAX_SAFE_INTEGER;
       if (indexA !== indexB) return indexA - indexB;
@@ -1250,16 +1498,19 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
     })
     .map(({ photo }) => photo);
 
+  const photoGroupKey = (photo: ReportPhoto) =>
+    photo.itemId || `area:${(value(photo.areaName) || 'General').toLowerCase()}`;
+
   const counts = new Map<string, number>();
   orderedPhotos.forEach((photo) => {
-    const key = (value(photo.areaName) || 'General').toLowerCase();
+    const key = photoGroupKey(photo);
     counts.set(key, (counts.get(key) || 0) + 1);
   });
 
   const ordinals = new Map<string, number>();
   const photoOrdinal = new Map<string, number>();
   orderedPhotos.forEach((photo) => {
-    const key = (value(photo.areaName) || 'General').toLowerCase();
+    const key = photoGroupKey(photo);
     const ordinal = (ordinals.get(key) || 0) + 1;
     ordinals.set(key, ordinal);
     photoOrdinal.set(photo.id, ordinal);
@@ -1280,12 +1531,19 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
     const pageNumber = Math.floor(pageStart / photosPerPage) + 1;
     const photoPageCount = Math.ceil(orderedPhotos.length / photosPerPage);
 
-    let y = addContentPage(pdf, report, 'Inspection Photos');
+    const buildingManagement = isBuildingManagementReport(report.details.reportType);
+    let y = addContentPage(pdf, report, buildingManagement ? 'Building Manager Photo Evidence' : 'Inspection Photos');
     if (pageStart === 0) {
       drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, firstTitleHeight, SECTION_FILL, BORDER);
       setFont(pdf, 7, 'bold');
       setTextColor(pdf, TEXT);
-      pdf.text(`Agent Inspection Photos (${orderedPhotos.length} photos)`, MARGIN_X + 1.5, y + 4.6);
+      pdf.text(
+        buildingManagement
+          ? `Item-linked Photo Evidence (${orderedPhotos.length} photos)`
+          : `Agent Inspection Photos (${orderedPhotos.length} photos)`,
+        MARGIN_X + 1.5,
+        y + 4.6
+      );
       y += firstTitleHeight + 2;
     }
 
@@ -1313,10 +1571,10 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
       drawBox(pdf, x, cellY, cellWidth, cellHeight, undefined, LIGHT_BORDER);
       setFont(pdf, 5.2, 'bold');
       setTextColor(pdf, TEXT);
-      const areaKey = (value(photo.areaName) || 'General').toLowerCase();
+      const groupKey = photoGroupKey(photo);
       const caption = wrapText(
         pdf,
-        photoCaption(photo, counts.get(areaKey) || 1, photoOrdinal.get(photo.id) || 1),
+        photoCaption(photo, counts.get(groupKey) || 1, photoOrdinal.get(photo.id) || 1, report),
         cellWidth - 2
       );
       drawWrappedLines(pdf, caption, x + 1, cellY + 2.6, 1.9, { maxLines: 2 });
@@ -1488,8 +1746,8 @@ export async function generateReportPdf(
   });
 
   pdf.setProperties({
-    title: `ProInspect ${report.details.reportType} Report - ${value(report.details.propertyAddress)}`,
-    subject: `${report.details.reportType} property inspection report`,
+    title: `ProInspect ${reportDisplayTitle(report.details.reportType)} - ${value(report.details.propertyAddress)}`,
+    subject: reportDisplayTitle(report.details.reportType),
     author: value(report.details.companyName) || PROINSPECT_COMPANY.name,
     creator: 'ProInspect Property Reports',
   });
@@ -1516,6 +1774,13 @@ export async function generateReportPdf(
     await drawPhotoPages(pdf, report, onProgress);
     onProgress?.('Building exit special reporting and sign-off...');
     drawFinalPage(pdf, report);
+  } else if (isBuildingManagementReport(report.details.reportType)) {
+    const template = getReportTemplate(report.details.reportType);
+    onProgress?.(`Building ${template.label}...`);
+    drawBuildingManagementReportPages(pdf, report, onProgress);
+    await drawPhotoPages(pdf, report, onProgress);
+    onProgress?.('Building Building Manager summary and sign-off...');
+    drawBuildingManagementClosingPages(pdf, report);
   } else {
     const template = getReportTemplate(report.details.reportType);
     onProgress?.(`Building ${template.label}...`);

@@ -28,14 +28,14 @@ Properties
 
 ## Report catalogue
 
-The application currently includes 20 deterministic PDF templates:
+The application currently includes 21 selectable deterministic PDF templates:
 
 - Residential: Entry Condition, Routine Inspection, Exit Condition, Property Onboarding Condition, Vacant Property Inspection, Property Handover, Annual Property Condition Summary.
 - Commercial: Commercial Ingoing Condition, Commercial Periodic Inspection, Commercial Exit / Make-Good.
 - Maintenance: Maintenance Assessment, Maintenance Completion / Verification, Cleaning / Rectification Reinspection, Contractor Works Inspection, Preventative Maintenance Inspection, Cleaning Quality Inspection, Key Safe Installation.
-- Building / Strata: Common Property Inspection, Building Management Site Report, Incident Report.
+- Building / Strata: Common Property Inspection, Building Management Daily Report, Building Management Monthly Report, Incident Report.
 
-The extended catalogue is implemented through reusable deterministic template families rather than separate DOM/screenshot renderers. This keeps cover pages, page geometry, text wrapping, pagination, photo galleries, sign-off sections and disclaimers consistent.
+The extended catalogue is implemented through reusable deterministic template families rather than separate DOM/screenshot renderers. This keeps cover pages, page geometry, text wrapping, pagination, photo galleries, sign-off sections and disclaimers consistent. Building Manager Daily and Monthly reports additionally link each uploaded photo to a specific reporting item so the activity table and photo evidence remain traceable.
 
 Google Drive, Google Sheets, Firebase, AI commentary generation and direct email sending are deliberately outside V1.
 
