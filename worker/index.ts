@@ -1078,6 +1078,32 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       }
     }
 
+    if (parts.length === 4 && parts[3] === 'publish' && request.method === 'POST') {
+      requireRole(user, 'editor');
+      const row = await getReportRow(env, reportId);
+      if (row.status !== 'completed' || !row.completed_pdf_key) {
+        throw new HttpError(
+          409,
+          'Only a completed report with a stored PDF can be published to ProInspect.',
+          'report-not-completed'
+        );
+      }
+      const completedReport = parseReport(row);
+      if (!completedReport.integrationContext) {
+        throw new HttpError(
+          400,
+          'This report was not created from a ProInspect platform handoff.',
+          'proinspect-context-missing'
+        );
+      }
+      await publishCompletedReportToPlatform(
+        env,
+        completedReport,
+        row.completed_pdf_key
+      );
+      return json({ success: true });
+    }
+
     if (parts.length === 4 && parts[3] === 'complete' && request.method === 'POST') {
       requireRole(user, 'editor');
       const row = await getReportRow(env, reportId);
