@@ -1,7 +1,8 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
-import { getReportTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
+import { getReportTemplate, isBuildingManagementTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
 import { formatAustralianDate, splitTenantNames } from './reportFormatting';
+import { assertReportReadyForPdf } from './reportValidation';
 import { InspectionArea, InspectionItem, ReportData, ReportPhoto, ReportType } from '../types/report';
 
 const PAGE_WIDTH = 210;
@@ -663,16 +664,32 @@ function drawEntryConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (m
   });
 }
 
-function drawRoutineDetailRow(pdf: jsPDF, y: number, label: string, content: string): number {
-  const h = 7.2;
+function routineDetailRowHeight(pdf: jsPDF, label: string, content: string): number {
   const labelWidth = 52;
+  const lineHeight = 2.7;
+  setFont(pdf, 6.4, 'bold');
+  const labelLines = wrapText(pdf, label, labelWidth - 3.2);
+  setFont(pdf, 6.4, 'normal');
+  const contentLines = wrapText(pdf, content || 'Not recorded', CONTENT_WIDTH - labelWidth - 3.6);
+  return Math.max(7.2, Math.max(labelLines.length, contentLines.length, 1) * lineHeight + 3.2);
+}
+
+function drawRoutineDetailRow(pdf: jsPDF, y: number, label: string, content: string): number {
+  const labelWidth = 52;
+  const lineHeight = 2.7;
+  const h = routineDetailRowHeight(pdf, label, content);
+  setFont(pdf, 6.4, 'bold');
+  const labelLines = wrapText(pdf, label, labelWidth - 3.2);
+  setFont(pdf, 6.4, 'normal');
+  const contentLines = wrapText(pdf, content || 'Not recorded', CONTENT_WIDTH - labelWidth - 3.6);
+
   drawBox(pdf, MARGIN_X, y, labelWidth, h, SECTION_FILL, LIGHT_BORDER);
   drawBox(pdf, MARGIN_X + labelWidth, y, CONTENT_WIDTH - labelWidth, h, undefined, LIGHT_BORDER);
   setFont(pdf, 6.4, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text(label, MARGIN_X + 1.6, y + 4.7);
+  drawWrappedLines(pdf, labelLines, MARGIN_X + 1.6, y + 3.8, lineHeight);
   setFont(pdf, 6.4, 'normal');
-  pdf.text(content || 'Not recorded', MARGIN_X + labelWidth + 1.8, y + 4.7);
+  drawWrappedLines(pdf, contentLines, MARGIN_X + labelWidth + 1.8, y + 3.8, lineHeight);
   return y + h;
 }
 
@@ -716,22 +733,58 @@ function drawRoutineColumnHeader(pdf: jsPDF, y: number): number {
   return y + h;
 }
 
-function drawRoutineFindingRow(pdf: jsPDF, y: number, item: InspectionItem): number {
+interface RoutineFindingFragment {
+  itemLines: string[];
+  commentLines: string[];
+  first: boolean;
+}
+
+function splitRoutineFindingFragments(
+  pdf: jsPDF,
+  item: InspectionItem,
+  emptyComment = 'No finding recorded.'
+): RoutineFindingFragment[] {
   const itemWidth = 42;
   const commentWidth = CONTENT_WIDTH - itemWidth;
+  const maxLinesPerFragment = 82;
   setFont(pdf, 6.7, 'normal');
   const itemLines = wrapText(pdf, value(item.name) || 'Overall', itemWidth - 3.2);
-  const commentLines = wrapText(pdf, value(item.agentComments) || 'No finding recorded.', commentWidth - 3.2);
+  const commentLines = wrapText(pdf, value(item.agentComments) || emptyComment, commentWidth - 3.2);
+  const lineCount = Math.max(itemLines.length, commentLines.length, 1);
+  const fragments: RoutineFindingFragment[] = [];
+
+  for (let start = 0; start < lineCount; start += maxLinesPerFragment) {
+    const first = start === 0;
+    fragments.push({
+      itemLines: first
+        ? itemLines.slice(start, start + maxLinesPerFragment)
+        : wrapText(pdf, `${value(item.name) || 'Overall'} (continued)`, itemWidth - 3.2),
+      commentLines: commentLines.slice(start, start + maxLinesPerFragment),
+      first,
+    });
+  }
+
+  return fragments;
+}
+
+function routineFindingFragmentHeight(fragment: RoutineFindingFragment): number {
   const lineHeight = 2.7;
-  const h = Math.max(7, Math.max(itemLines.length, commentLines.length) * lineHeight + 3);
+  return Math.max(7, Math.max(fragment.itemLines.length, fragment.commentLines.length, 1) * lineHeight + 3);
+}
+
+function drawRoutineFindingFragment(pdf: jsPDF, y: number, fragment: RoutineFindingFragment): number {
+  const itemWidth = 42;
+  const commentWidth = CONTENT_WIDTH - itemWidth;
+  const lineHeight = 2.7;
+  const h = routineFindingFragmentHeight(fragment);
 
   drawBox(pdf, MARGIN_X, y, itemWidth, h, undefined, LIGHT_BORDER);
   drawBox(pdf, MARGIN_X + itemWidth, y, commentWidth, h, undefined, LIGHT_BORDER);
   setFont(pdf, 6.6, 'bold');
   setTextColor(pdf, TEXT);
-  drawWrappedLines(pdf, itemLines, MARGIN_X + 1.6, y + 3.8, lineHeight);
+  drawWrappedLines(pdf, fragment.itemLines, MARGIN_X + 1.6, y + 3.8, lineHeight);
   setFont(pdf, 6.7, 'normal');
-  drawWrappedLines(pdf, commentLines, MARGIN_X + itemWidth + 1.6, y + 3.8, lineHeight);
+  drawWrappedLines(pdf, fragment.commentLines, MARGIN_X + itemWidth + 1.6, y + 3.8, lineHeight);
   return y + h;
 }
 
@@ -750,6 +803,11 @@ function drawRoutineFindingsPages(pdf: jsPDF, report: ReportData, onProgress?: (
     ['Tenant/s', value(details.tenants)],
   ];
   rows.forEach(([label, content]) => {
+    const rowHeight = routineDetailRowHeight(pdf, label, content);
+    if (y + rowHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, 'Routine Inspection Report');
+      y = drawRoutinePageHeading(pdf, y, 'Inspection Summary (continued)');
+    }
     y = drawRoutineDetailRow(pdf, y, label, content);
   });
 
@@ -759,14 +817,11 @@ function drawRoutineFindingsPages(pdf: jsPDF, report: ReportData, onProgress?: (
   report.areas.forEach((area, areaIndex) => {
     onProgress?.(`Laying out routine inspection area ${areaIndex + 1} of ${report.areas.length}...`);
     const count = areaPhotoCount(report, area);
-    const firstItem = area.items[0];
-    let firstHeight = 7;
-    if (firstItem) {
-      setFont(pdf, 6.7, 'normal');
-      const itemLines = wrapText(pdf, value(firstItem.name) || 'Overall', 38.8);
-      const commentLines = wrapText(pdf, value(firstItem.agentComments) || 'No finding recorded.', 148.8);
-      firstHeight = Math.max(7, Math.max(itemLines.length, commentLines.length) * 2.7 + 3);
-    }
+    const items = area.items.length
+      ? area.items
+      : [{ id: `${area.id}-empty`, name: 'Overall', agentComments: 'No inspection finding recorded.' } as InspectionItem];
+    const firstFragment = splitRoutineFindingFragments(pdf, items[0], 'No inspection finding recorded.')[0];
+    const firstHeight = firstFragment ? routineFindingFragmentHeight(firstFragment) : 7;
 
     if (y + 7.2 + 6.2 + firstHeight > BODY_BOTTOM) {
       y = addContentPage(pdf, report, 'Routine Inspection Report');
@@ -776,24 +831,24 @@ function drawRoutineFindingsPages(pdf: jsPDF, report: ReportData, onProgress?: (
     y = drawRoutineAreaHeader(pdf, y, area, count, false);
     y = drawRoutineColumnHeader(pdf, y);
 
-    const items = area.items.length
-      ? area.items
-      : [{ id: `${area.id}-empty`, name: 'Overall', agentComments: 'No inspection finding recorded.' } as InspectionItem];
-
     items.forEach((item) => {
-      setFont(pdf, 6.7, 'normal');
-      const itemLines = wrapText(pdf, value(item.name) || 'Overall', 38.8);
-      const commentLines = wrapText(pdf, value(item.agentComments) || 'No finding recorded.', 148.8);
-      const h = Math.max(7, Math.max(itemLines.length, commentLines.length) * 2.7 + 3);
-
-      if (y + h > BODY_BOTTOM) {
-        y = addContentPage(pdf, report, 'Routine Inspection Report');
-        y = drawRoutinePageHeading(pdf, y, 'Inspection Findings (continued)');
-        y = drawRoutineAreaHeader(pdf, y, area, count, true);
-        y = drawRoutineColumnHeader(pdf, y);
-      }
-
-      y = drawRoutineFindingRow(pdf, y, item);
+      const fragments = splitRoutineFindingFragments(pdf, item, 'No inspection finding recorded.');
+      fragments.forEach((fragment, fragmentIndex) => {
+        const h = routineFindingFragmentHeight(fragment);
+        if (y + h > BODY_BOTTOM) {
+          y = addContentPage(pdf, report, 'Routine Inspection Report');
+          y = drawRoutinePageHeading(pdf, y, 'Inspection Findings (continued)');
+          y = drawRoutineAreaHeader(pdf, y, area, count, true);
+          y = drawRoutineColumnHeader(pdf, y);
+        }
+        y = drawRoutineFindingFragment(pdf, y, fragment);
+        if (fragmentIndex < fragments.length - 1 && y > BODY_BOTTOM - 20) {
+          y = addContentPage(pdf, report, 'Routine Inspection Report');
+          y = drawRoutinePageHeading(pdf, y, 'Inspection Findings (continued)');
+          y = drawRoutineAreaHeader(pdf, y, area, count, true);
+          y = drawRoutineColumnHeader(pdf, y);
+        }
+      });
     });
 
     y += 2.5;
@@ -930,7 +985,10 @@ function drawGenericOverview(pdf: jsPDF, report: ReportData): number {
   const template = getReportTemplate(report.details.reportType);
   let y = addContentPage(pdf, report, template.shortLabel);
   y = drawRoutinePageHeading(pdf, y, template.summaryTitle);
-  y = drawRoutineDetailRow(pdf, y, 'Property / Site Address', value(report.details.propertyAddress));
+  const addressValue = value(report.details.propertyAddress);
+  const addressHeight = routineDetailRowHeight(pdf, 'Property / Site Address', addressValue);
+  if (y + addressHeight > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+  y = drawRoutineDetailRow(pdf, y, 'Property / Site Address', addressValue);
   template.detailFields.forEach((field) => {
     const fieldValue = detailFieldValue(report, field);
     if (field.multiline) {
@@ -939,7 +997,8 @@ function drawGenericOverview(pdf: jsPDF, report: ReportData): number {
       }
       y = drawNarrativeSection(pdf, report, y, field.label, fieldValue || 'Not recorded.');
     } else {
-      if (y + 7.2 > BODY_BOTTOM) {
+      const rowHeight = routineDetailRowHeight(pdf, field.label, fieldValue);
+      if (y + rowHeight > BODY_BOTTOM) {
         y = addContentPage(pdf, report, template.shortLabel);
       }
       y = drawRoutineDetailRow(pdf, y, field.label, fieldValue);
@@ -967,11 +1026,8 @@ function drawGenericFindingsPages(
       ? area.items
       : [{ id: `${area.id}-empty`, name: 'Overall', agentComments: 'No observation recorded.' } as InspectionItem];
 
-    const first = items[0];
-    setFont(pdf, 6.7, 'normal');
-    const firstItemLines = wrapText(pdf, value(first.name) || 'Overall', 38.8);
-    const firstCommentLines = wrapText(pdf, value(first.agentComments) || 'No observation recorded.', 148.8);
-    const firstHeight = Math.max(7, Math.max(firstItemLines.length, firstCommentLines.length) * 2.7 + 3);
+    const firstFragment = splitRoutineFindingFragments(pdf, items[0], 'No observation recorded.')[0];
+    const firstHeight = firstFragment ? routineFindingFragmentHeight(firstFragment) : 7;
 
     if (y + 7.2 + 6.2 + firstHeight > BODY_BOTTOM) {
       y = addContentPage(pdf, report, template.shortLabel);
@@ -982,18 +1038,17 @@ function drawGenericFindingsPages(
     y = drawRoutineColumnHeader(pdf, y);
 
     items.forEach((item) => {
-      setFont(pdf, 6.7, 'normal');
-      const itemLines = wrapText(pdf, value(item.name) || 'Overall', 38.8);
-      const commentLines = wrapText(pdf, value(item.agentComments) || 'No observation recorded.', 148.8);
-      const height = Math.max(7, Math.max(itemLines.length, commentLines.length) * 2.7 + 3);
-
-      if (y + height > BODY_BOTTOM) {
-        y = addContentPage(pdf, report, template.shortLabel);
-        y = drawRoutinePageHeading(pdf, y, `${template.findingsTitle} (continued)`);
-        y = drawRoutineAreaHeader(pdf, y, area, count, true);
-        y = drawRoutineColumnHeader(pdf, y);
-      }
-      y = drawRoutineFindingRow(pdf, y, item);
+      const fragments = splitRoutineFindingFragments(pdf, item, 'No observation recorded.');
+      fragments.forEach((fragment) => {
+        const height = routineFindingFragmentHeight(fragment);
+        if (y + height > BODY_BOTTOM) {
+          y = addContentPage(pdf, report, template.shortLabel);
+          y = drawRoutinePageHeading(pdf, y, `${template.findingsTitle} (continued)`);
+          y = drawRoutineAreaHeader(pdf, y, area, count, true);
+          y = drawRoutineColumnHeader(pdf, y);
+        }
+        y = drawRoutineFindingFragment(pdf, y, fragment);
+      });
     });
     y += 2.5;
   });
@@ -1039,7 +1094,8 @@ function drawGenericClosingPages(pdf: jsPDF, report: ReportData) {
     if (field.multiline) {
       y = drawNarrativeSection(pdf, report, y, field.label, fieldValue || 'No comments recorded.');
     } else {
-      if (y + 7.2 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+      const rowHeight = routineDetailRowHeight(pdf, field.label, fieldValue);
+      if (y + rowHeight > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
       y = drawRoutineDetailRow(pdf, y, field.label, fieldValue);
     }
   });
@@ -1058,10 +1114,6 @@ function drawExtendedReportPages(pdf: jsPDF, report: ReportData, onProgress?: (m
   } else {
     drawGenericFindingsPages(pdf, report, overviewEnd, onProgress);
   }
-}
-
-function isBuildingManagementReport(type: ReportType): boolean {
-  return ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(type);
 }
 
 function isDailyBuildingManagementReport(type: ReportType): boolean {
@@ -1092,6 +1144,11 @@ function drawBuildingManagementOverview(pdf: jsPDF, report: ReportData): number 
   ];
 
   rows.forEach(([label, content]) => {
+    const rowHeight = routineDetailRowHeight(pdf, label, content);
+    if (y + rowHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = drawRoutinePageHeading(pdf, y, daily ? 'Daily Report Details (continued)' : 'Monthly Report Details (continued)');
+    }
     y = drawRoutineDetailRow(pdf, y, label, content);
   });
   return y + 4;
@@ -1531,7 +1588,7 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
     const pageNumber = Math.floor(pageStart / photosPerPage) + 1;
     const photoPageCount = Math.ceil(orderedPhotos.length / photosPerPage);
 
-    const buildingManagement = isBuildingManagementReport(report.details.reportType);
+    const buildingManagement = isBuildingManagementTemplate(report.details.reportType);
     let y = addContentPage(pdf, report, buildingManagement ? 'Building Manager Photo Evidence' : 'Inspection Photos');
     if (pageStart === 0) {
       drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, firstTitleHeight, SECTION_FILL, BORDER);
@@ -1737,6 +1794,8 @@ export async function generateReportPdf(
   report: ReportData,
   onProgress?: (message: string) => void
 ): Promise<Blob> {
+  assertReportReadyForPdf(report);
+
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -1774,7 +1833,7 @@ export async function generateReportPdf(
     await drawPhotoPages(pdf, report, onProgress);
     onProgress?.('Building exit special reporting and sign-off...');
     drawFinalPage(pdf, report);
-  } else if (isBuildingManagementReport(report.details.reportType)) {
+  } else if (isBuildingManagementTemplate(report.details.reportType)) {
     const template = getReportTemplate(report.details.reportType);
     onProgress?.(`Building ${template.label}...`);
     drawBuildingManagementReportPages(pdf, report, onProgress);
