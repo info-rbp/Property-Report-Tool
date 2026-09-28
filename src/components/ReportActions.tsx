@@ -31,7 +31,12 @@ export const ReportActions: React.FC<Props> = ({
   const prepareEmail = () => {
     const label = reportLabel(details.reportType);
     const subject = `${label} - ${details.propertyAddress || 'Property'}`;
-    const body = `Please find attached the completed ${label.toLowerCase()} for ${details.propertyAddress || 'the property'}, inspected on ${details.inspectionDate || 'the recorded inspection date'}.
+    const body = isKeyReceiptTemplate(details.reportType)
+      ? `Please find attached the completed ${label.toLowerCase()} for ${details.propertyAddress || 'the property'}, recording the key handover on ${details.inspectionDate || 'the recorded receipt date'}.
+
+Regards,
+ProInspect`
+      : `Please find attached the completed ${label.toLowerCase()} for ${details.propertyAddress || 'the property'}, inspected on ${details.inspectionDate || 'the recorded inspection date'}.
 
 Regards,
 ProInspect`;
