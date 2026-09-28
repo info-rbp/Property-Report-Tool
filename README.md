@@ -25,6 +25,9 @@ Properties
 - Cloudflare Access for staff authentication.
 - IndexedDB as a local draft cache only.
 - Browser-side deterministic PDF generation using `jsPDF` directly from report data; final PDFs do not depend on DOM screenshots or Tailwind rendering.
+- Versioned report JSON with an explicit migration pipeline for future report-schema changes.
+- Shared structural/finalisation validation across the browser and Worker, including photo-area and Building Manager photo-item integrity.
+- Version-aware draft saves reject stale cross-device edits instead of silently overwriting newer cloud data.
 
 ## Report catalogue
 
