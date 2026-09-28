@@ -190,6 +190,10 @@ export function validateReportForFinalization(report: ReportData): ReportValidat
     issues.push({ code: 'inspector-required', message: 'Inspector / prepared-by name is required.' });
   }
 
+  if (report.details.reportType === 'Custom' && !requiredText(report.details.formName)) {
+    issues.push({ code: 'custom-report-title-required', message: 'Enter a report title for the Custom Report.' });
+  }
+
   const areas = report.areas || [];
   const itemCount = areas.reduce((total, area) => total + (area.items?.length || 0), 0);
   if (!areas.length) {
@@ -197,6 +201,16 @@ export function validateReportForFinalization(report: ReportData): ReportValidat
   }
   if (itemCount === 0 && !isKeyReceiptTemplate(report.details.reportType)) {
     issues.push({ code: 'items-required', message: 'The report must contain at least one completed reporting item.' });
+  }
+
+  if (
+    report.details.reportType === 'Custom' &&
+    !areas.some((area) => (area.items || []).some((item) => requiredText(item.agentComments)))
+  ) {
+    issues.push({
+      code: 'custom-report-content-required',
+      message: 'Add at least one written observation or narrative item to the Custom Report.',
+    });
   }
 
   if (isBuildingManagementTemplate(report.details.reportType)) {
