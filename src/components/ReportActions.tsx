@@ -28,7 +28,7 @@ export const ReportActions: React.FC<Props> = ({
   const details = report.details;
   const completed = report.status === 'completed';
   const superseded = report.status === 'superseded';
-  const validationIssues = completed ? [] : validateReportForFinalization(report);
+  const validationIssues = report.status === 'draft' ? validateReportForFinalization(report) : [];
   const validationMessages = Array.from(new Set(validationIssues.map((issue) => issue.message)));
   const keyItemCount = report.areas.reduce((total, area) => total + area.items.length, 0);
 
