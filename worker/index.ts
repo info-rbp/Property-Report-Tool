@@ -4,7 +4,7 @@ import { normalizeAreaName } from '../src/lib/reportFormatting';
 import { migrateReportData } from '../src/lib/reportMigration';
 import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
 import { CURRENT_REPORT_SCHEMA_VERSION, isReportType } from '../src/types/report';
-import type { ReportData, ReportPhoto, ReportStatus, ReportType, UserRole } from '../src/types/report';
+import type { ProInspectIntegrationContext, ReportData, ReportPhoto, ReportStatus, ReportType, UserRole } from '../src/types/report';
 
 interface Env {
   DB: D1Database;
@@ -18,6 +18,9 @@ interface Env {
   EDITOR_EMAILS?: string;
   VIEWER_EMAILS?: string;
   DEFAULT_ROLE?: string;
+  PROINSPECT_HANDOFF_SIGNING_KEY?: string;
+  PROINSPECT_INGEST_URL?: string;
+  PROINSPECT_INGEST_TOKEN?: string;
 }
 
 interface PropertyRow {
@@ -84,6 +87,173 @@ function resolveRole(email: string, env: Env): UserRole {
   if (emailSet(env.VIEWER_EMAILS).has(normalized)) return 'viewer';
   if (emailSet(env.EDITOR_EMAILS).has(normalized)) return 'editor';
   return normalizeRole(env.DEFAULT_ROLE) || 'editor';
+}
+
+function decodeBase64Url(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function verifyProInspectHandoffToken(
+  token: string,
+  env: Env
+): Promise<ProInspectIntegrationContext> {
+  const signingKey = env.PROINSPECT_HANDOFF_SIGNING_KEY?.trim();
+  if (!signingKey) {
+    throw new HttpError(
+      503,
+      'ProInspect platform handoff is not configured.',
+      'proinspect-handoff-not-configured'
+    );
+  }
+
+  const [payloadPart, signaturePart, extra] = token.split('.');
+  if (!payloadPart || !signaturePart || extra) {
+    throw new HttpError(400, 'Invalid ProInspect handoff token.', 'invalid-proinspect-handoff');
+  }
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(signingKey),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+  const valid = await crypto.subtle.verify(
+    'HMAC',
+    key,
+    decodeBase64Url(signaturePart),
+    new TextEncoder().encode(payloadPart)
+  );
+  if (!valid) {
+    throw new HttpError(403, 'ProInspect handoff signature is invalid.', 'invalid-proinspect-handoff');
+  }
+
+  let payload: ProInspectIntegrationContext;
+  try {
+    payload = JSON.parse(
+      new TextDecoder().decode(decodeBase64Url(payloadPart))
+    ) as ProInspectIntegrationContext;
+  } catch {
+    throw new HttpError(400, 'ProInspect handoff payload is invalid.', 'invalid-proinspect-handoff');
+  }
+
+  if (
+    payload.v !== 1 ||
+    payload.iss !== 'proinspect-platform' ||
+    !payload.propertyId ||
+    !payload.propertyAddress ||
+    !isReportType(payload.reportType) ||
+    !Number.isFinite(payload.exp) ||
+    payload.exp * 1000 < Date.now()
+  ) {
+    throw new HttpError(400, 'ProInspect handoff is invalid or has expired.', 'invalid-proinspect-handoff');
+  }
+
+  const allowedAudiences = new Set(['client', 'tenant', 'staff']);
+  payload.audiences = Array.isArray(payload.audiences)
+    ? payload.audiences.filter(
+        (audience): audience is 'client' | 'tenant' | 'staff' =>
+          allowedAudiences.has(audience)
+      )
+    : ['client', 'staff'];
+
+  return payload;
+}
+
+function reportDocumentCategory(
+  reportType: ReportType
+): 'property_condition_report' | 'inspection_report' | 'property_report' {
+  if (['Entry', 'Exit', 'PropertyOnboarding'].includes(reportType)) {
+    return 'property_condition_report';
+  }
+  if (
+    [
+      'Routine',
+      'CommercialIngoing',
+      'CommercialPeriodic',
+      'CommercialExit',
+      'CommonProperty',
+      'BuildingManagement',
+      'BuildingManagementDaily',
+      'BuildingManagementMonthly',
+      'VacantProperty',
+    ].includes(reportType)
+  ) {
+    return 'inspection_report';
+  }
+  return 'property_report';
+}
+
+async function publishCompletedReportToPlatform(
+  env: Env,
+  report: ReportData,
+  storageKey: string
+): Promise<void> {
+  const context = report.integrationContext;
+  if (!context) return;
+
+  const ingestUrl = env.PROINSPECT_INGEST_URL?.trim();
+  const ingestToken = env.PROINSPECT_INGEST_TOKEN?.trim();
+  if (!ingestUrl || !ingestToken) {
+    throw new HttpError(
+      503,
+      'ProInspect report publication is not configured.',
+      'proinspect-ingest-not-configured'
+    );
+  }
+
+  const object = await getStoredObject(env, storageKey);
+  if (!object) {
+    throw new HttpError(503, 'Completed PDF could not be reopened for publication.', 'proinspect-ingest-pdf-missing');
+  }
+
+  const safeAddress = (report.details.propertyAddress || 'Property')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const safeType = reportInstanceLabel(report.details)
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'Report';
+  const safeDate = (report.details.inspectionDate || '').replace(/[^0-9-]/g, '');
+  const fileName =
+    'ProInspect_' +
+    safeType +
+    '_' +
+    safeAddress +
+    (safeDate ? '_' + safeDate : '') +
+    '.pdf';
+
+  const headers = new Headers({
+    'content-type': 'application/pdf',
+    'x-report-ingest-token': ingestToken,
+    'x-report-source-id': report.id || '',
+    'x-property-id': context.propertyId,
+    'x-document-title': reportInstanceLabel(report.details),
+    'x-file-name': fileName,
+    'x-document-category': reportDocumentCategory(report.details.reportType),
+    'x-document-audiences': context.audiences.join(','),
+  });
+  if (context.tenancyId) headers.set('x-tenancy-id', context.tenancyId);
+  if (context.bookingId) headers.set('x-booking-id', context.bookingId);
+  if (context.workOrderId) headers.set('x-work-order-id', context.workOrderId);
+
+  const response = await fetch(ingestUrl, {
+    method: 'POST',
+    headers,
+    body: object.body,
+  });
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => '');
+    throw new HttpError(
+      502,
+      'Completed report could not be published back to the ProInspect platform.' +
+        (message ? ' ' + message.slice(0, 240) : ''),
+      'proinspect-ingest-failed'
+    );
+  }
 }
 
 function requireRole(user: AuthenticatedUser, minimum: 'editor' | 'admin'): void {
@@ -518,6 +688,19 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   if (request.method === 'GET' && url.pathname === '/api/me') {
     return json(user);
   }
+
+  if (
+    request.method === 'GET' &&
+    url.pathname === '/api/integrations/proinspect/handoff'
+  ) {
+    requireRole(user, 'editor');
+    const token = url.searchParams.get('token') || '';
+    if (!token) {
+      throw new HttpError(400, 'ProInspect handoff token is required.', 'invalid-proinspect-handoff');
+    }
+    return json(await verifyProInspectHandoffToken(token, env));
+  }
+
 
   if (parts[1] === 'properties') {
     if (parts.length === 2 && request.method === 'GET') {
@@ -982,6 +1165,13 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         if (!prefix || await prefix.text() !== '%PDF-') {
           throw new HttpError(400, 'Uploaded content is not a PDF document.', 'invalid-pdf');
         }
+
+        // Handoff-originated reports must publish to the canonical ProInspect
+        // document store before the local report is marked immutable. The
+        // platform uses report.id as an idempotency key so a retry cannot
+        // create duplicate property documents.
+        await publishCompletedReportToPlatform(env, report, key);
+
         completed = await updateReportData(env, row, report, userEmail, expectedRevision, 'completed', key);
       } catch (error) {
         await deleteStoragePair(env, key).catch(() => undefined);
