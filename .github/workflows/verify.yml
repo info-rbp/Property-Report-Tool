@@ -2,17 +2,25 @@ name: Verify V1
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
   push:
-    branches:
-      - main
+    branches: [main, hardening/final-application-freeze]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
@@ -24,18 +32,25 @@ jobs:
         run: bun run lint
       - name: Production build
         run: bun run build
-      - name: Worker API and storage integration
+      - name: Worker API, concurrency, authorisation and storage integration
+        timeout-minutes: 5
         run: bun run api:verify
       - name: PDF renderer regression
         run: |
           mkdir -p render-artifacts
           PDF_VERIFY_OUTPUT_DIR=render-artifacts bun run pdf:verify
+      - name: Record exact acceptance source
+        if: always()
+        run: |
+          mkdir -p render-artifacts
+          git rev-parse HEAD > render-artifacts/source-sha.txt
       - name: Upload PDF regression artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: pdf-regression-artifacts
-          path: render-artifacts/*.pdf
+          path: render-artifacts/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - name: Wrangler deployment dry run
         run: bunx wrangler deploy --dry-run --outdir .wrangler-dry
