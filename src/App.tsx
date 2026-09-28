@@ -23,7 +23,7 @@ import { ReportDocument } from './components/ReportDocument';
 import { isBuildingManagementTemplate, isKeyReceiptTemplate, reportInstanceLabel, reportLabel } from './data/reportCatalogue';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
 import { api, ApiError } from './lib/api';
-import { cacheReport, getCachedReport, pruneCachedReports, removeCachedReport } from './lib/cache';
+import { cacheReport, getCachedReport, pruneCachedReports, removeCachedReport, setCacheIdentity } from './lib/cache';
 import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
 import { processInspectionImage } from './lib/imageProcessor';
 import { normalizeAreaName } from './lib/reportFormatting';
@@ -130,8 +130,9 @@ export default function App() {
     let active = true;
     (async () => {
       try {
-        await pruneCachedReports().catch(() => undefined);
         const me = await api.me();
+        setCacheIdentity(me.email);
+        await pruneCachedReports().catch(() => undefined);
         const list = await api.listProperties(me.role === 'admin');
         if (!active) return;
         setUserEmail(me.email);
@@ -344,7 +345,14 @@ export default function App() {
       await cacheReport(cloudReport);
       setViewMode('preview');
     } catch (error: any) {
-      const cached = await getCachedReport(id).catch(() => null);
+      const mayUseCache = error instanceof TypeError || (error instanceof ApiError && error.status >= 500);
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        setCacheIdentity('');
+        await pruneCachedReports().catch(() => undefined);
+        setReport(null);
+        setUserRole('viewer');
+      }
+      const cached = mayUseCache ? await getCachedReport(id).catch(() => null) : null;
       if (cached) {
         const normalizedCached = normalizeReport(cached);
         if (normalizedCached.id) {

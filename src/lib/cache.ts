@@ -5,7 +5,9 @@ const DB_VERSION = 1;
 const REPORT_STORE = 'reports';
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-type CachedReport = ReportData & { _cachedAt?: number };
+let cacheIdentity = '';
+export function setCacheIdentity(email: string): void { cacheIdentity = email.trim().toLowerCase(); }
+type CachedReport = ReportData & { _cachedAt?: number; _cacheIdentity?: string };
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -22,13 +24,13 @@ function openDatabase(): Promise<IDBDatabase> {
 }
 
 export async function cacheReport(report: ReportData): Promise<void> {
-  if (!report.id) return;
+  if (!report.id || !cacheIdentity) return;
   if (report.status === 'completed' || report.status === 'superseded') {
     await removeCachedReport(report.id);
     return;
   }
   const db = await openDatabase();
-  const cached: CachedReport = { ...report, _cachedAt: Date.now() };
+  const cached: CachedReport = { ...report, _cachedAt: Date.now(), _cacheIdentity: cacheIdentity };
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(REPORT_STORE, 'readwrite');
     tx.objectStore(REPORT_STORE).put(cached);
@@ -48,13 +50,13 @@ export async function getCachedReport(id: string): Promise<ReportData | null> {
   db.close();
   if (!value) return null;
 
-  const expired = !value._cachedAt || Date.now() - value._cachedAt > CACHE_TTL_MS;
+  const expired = !cacheIdentity || value._cacheIdentity !== cacheIdentity || !value._cachedAt || Date.now() - value._cachedAt > CACHE_TTL_MS;
   if (expired || value.status === 'completed' || value.status === 'superseded') {
     await removeCachedReport(id).catch(() => undefined);
     return null;
   }
 
-  const { _cachedAt, ...report } = value;
+  const { _cachedAt, _cacheIdentity, ...report } = value;
   return report;
 }
 
@@ -82,7 +84,7 @@ export async function pruneCachedReports(): Promise<void> {
       const cursor = request.result;
       if (!cursor) return;
       const value = cursor.value as CachedReport;
-      const expired = !value._cachedAt || now - value._cachedAt > CACHE_TTL_MS;
+      const expired = !cacheIdentity || value._cacheIdentity !== cacheIdentity || !value._cachedAt || now - value._cachedAt > CACHE_TTL_MS;
       if (expired || value.status === 'completed' || value.status === 'superseded') {
         cursor.delete();
       }

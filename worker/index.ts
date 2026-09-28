@@ -336,6 +336,16 @@ async function deleteStoragePair(env: Env, key: string): Promise<void> {
   ]);
 }
 
+// Wait for both writes to settle before cleanup so a late write cannot recreate an orphan.
+async function mirrorWrites(env: Env, key: string, writes: Promise<R2Object | null>[]): Promise<(R2Object | null)[]> {
+  const results = await Promise.allSettled(writes);
+  if (results.some((result) => result.status === 'rejected' || !result.value)) {
+    await deleteStoragePair(env, key).catch(() => undefined);
+    throw new HttpError(503, 'The file could not be saved to both storage copies. Retry the operation.', 'storage-mirror-failed');
+  }
+  return results.map((result) => result.status === 'fulfilled' ? result.value : null);
+}
+
 async function deleteObjectPrefix(bucket: R2Bucket, prefix: string): Promise<void> {
   let cursor: string | undefined;
   do {
@@ -371,7 +381,10 @@ async function copyPhotoForReport(
   userEmail: string
 ): Promise<ReportPhoto> {
   const sourceStoredPhoto = sourceReport.photos.find((photo) => photo.id === sourcePhoto.id);
-  const sourceKey = sourcePhoto.storageKey || sourceStoredPhoto?.storageKey;
+  const sourceKey = sourceStoredPhoto?.storageKey;
+  if (!sourceStoredPhoto || (sourcePhoto.storageKey && sourcePhoto.storageKey !== sourceKey)) {
+    throw new HttpError(409, 'Reload the source report before copying its stored photos.', 'photo-manifest-conflict');
+  }
   if (!sourceKey) {
     return { ...sourcePhoto, dataUrl: undefined, url: undefined, storageKey: undefined };
   }
@@ -393,7 +406,7 @@ async function copyPhotoForReport(
     customMetadata: { reportId: newReportId, photoId: sourcePhoto.id, uploadedBy: userEmail },
   };
 
-  await Promise.all([
+  await mirrorWrites(env, newKey, [
     env.REPORT_STORAGE.put(newKey, bytes, metadata),
     env.REPORT_RECOVERY_STORAGE.put(recoveryKey(newKey), bytes, metadata),
   ]);
@@ -491,6 +504,12 @@ async function ensureCorrectionSourceSuperseded(
 }
 
 async function handleApi(request: Request, env: Env): Promise<Response> {
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+    const origin = request.headers.get('origin');
+    if ((origin && origin !== new URL(request.url).origin) || request.headers.get('sec-fetch-site') === 'cross-site') {
+      throw new HttpError(403, 'Cross-origin mutations are not permitted.', 'invalid-origin');
+    }
+  }
   const user = await authenticate(request, env);
   const userEmail = user.email;
   const url = new URL(request.url);
@@ -609,6 +628,9 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       }
 
       const id = body.report.id || crypto.randomUUID();
+      if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
+        throw new HttpError(400, 'Invalid report identifier.', 'invalid-report-id');
+      }
       const now = new Date().toISOString();
       const report: ReportData = {
         ...migrateReportData(body.report),
@@ -659,7 +681,23 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         throw new HttpError(409, 'The report type cannot be changed after the report has been created.', 'report-type-immutable');
       }
 
-      return json(await updateReportData(env, row, body.report, userEmail, Number(body.expectedRevision)));
+      if (Number(body.expectedRevision) !== row.revision) {
+        throw new HttpError(409, 'Reload the latest report before saving.', 'report-revision-conflict');
+      }
+      const incoming = body.report.photos;
+      const ids = new Set((incoming || []).map((photo) => photo.id));
+      if (!Array.isArray(incoming) || incoming.length !== current.photos.length || ids.size !== incoming.length ||
+          current.photos.some((photo) => !ids.has(photo.id))) {
+        throw new HttpError(409, 'Use the photo upload/delete workflow to change the photo manifest.', 'photo-manifest-conflict');
+      }
+      const photos = incoming.map((photo) => {
+        const stored = current.photos.find((item) => item.id === photo.id)!;
+        if (photo.storageKey && photo.storageKey !== stored.storageKey) {
+          throw new HttpError(400, 'Stored photo references cannot be changed by the browser.', 'photo-storage-invalid');
+        }
+        return { ...photo, storageKey: stored.storageKey, url: undefined, dataUrl: undefined };
+      });
+      return json(await updateReportData(env, row, { ...body.report, photos }, userEmail, Number(body.expectedRevision)));
     }
 
     if (parts.length === 3 && request.method === 'DELETE') {
@@ -752,13 +790,16 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       const isCover = String(form.get('isCover') || 'false') === 'true';
       const expectedRevision = Number(form.get('expectedRevision'));
 
-      if (!(file instanceof File) || !photoId || !name) {
+      if (!(file instanceof File) || !/^[A-Za-z0-9_-]{1,128}$/.test(photoId) || !name) {
         throw new HttpError(400, 'Photo file and metadata are required.', 'photo-data-required');
       }
       if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
         throw new HttpError(400, 'A valid report revision is required for photo uploads.', 'report-revision-required');
       }
-      if (!file.type.startsWith('image/')) throw new HttpError(400, 'Only image uploads are allowed.', 'invalid-photo-type');
+      if (expectedRevision !== row.revision) {
+        throw new HttpError(409, 'Reload the latest report before uploading photos.', 'report-revision-conflict');
+      }
+      if (file.type !== 'image/jpeg') throw new HttpError(400, 'Upload a processed JPEG image.', 'invalid-photo-type');
       if (file.size > 5 * 1024 * 1024) throw new HttpError(413, 'Processed image exceeds the 5 MB upload limit.', 'photo-too-large');
 
       const report = parseReport(row);
@@ -778,14 +819,18 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         throw new HttpError(400, 'Building Manager photos must be linked to a reporting item.', 'building-photo-item-required');
       }
 
-      const key = 'reports/' + reportId + '/photos/' + photoId + '.jpg';
+      const key = 'reports/' + reportId + '/photos/' + photoId + '/' + crypto.randomUUID() + '.jpg';
       const bytes = await file.arrayBuffer();
+      const signature = new Uint8Array(bytes, 0, Math.min(3, bytes.byteLength));
+      if (signature.length < 3 || signature[0] !== 255 || signature[1] !== 216 || signature[2] !== 255) {
+        throw new HttpError(400, 'The uploaded file is not a JPEG image.', 'invalid-photo-type');
+      }
       const metadata = {
         httpMetadata: { contentType: 'image/jpeg' },
         customMetadata: { reportId, photoId, uploadedBy: userEmail },
       };
 
-      await Promise.all([
+      await mirrorWrites(env, key, [
         env.REPORT_STORAGE.put(key, bytes, metadata),
         env.REPORT_RECOVERY_STORAGE.put(recoveryKey(key), bytes, metadata),
       ]);
@@ -807,7 +852,10 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         : [...photos, photo];
 
       try {
-        return json(await updateReportData(env, row, { ...report, photos: updatedPhotos }, userEmail, expectedRevision));
+        const saved = await updateReportData(env, row, { ...report, photos: updatedPhotos }, userEmail, expectedRevision);
+        const replaced = report.photos.find((item) => item.id === photoId)?.storageKey;
+        if (replaced && replaced !== key) await deleteStoragePair(env, replaced).catch(() => undefined);
+        return json(saved);
       } catch (error) {
         await deleteStoragePair(env, key).catch(() => undefined);
         throw error;
@@ -827,7 +875,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         const headers = new Headers();
         object.writeHttpMetadata(headers);
         headers.set('ETag', object.httpEtag);
-        headers.set('Cache-Control', 'private, max-age=3600');
+        headers.set('Cache-Control', 'private, no-store');
         return new Response(object.body, { headers: securityHeaders(headers) });
       }
 
@@ -903,14 +951,14 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         }
       }
 
-      const key = 'reports/' + reportId + '/completed/report.pdf';
+      const key = 'reports/' + reportId + '/completed/' + crypto.randomUUID() + '.pdf';
       const streams = request.body.tee();
       const metadata = {
         httpMetadata: { contentType: 'application/pdf' },
         customMetadata: { reportId, completedBy: userEmail, revision: String(expectedRevision) },
       };
 
-      const results = await Promise.all([
+      const results = await mirrorWrites(env, key, [
         env.REPORT_STORAGE.put(key, streams[0], metadata),
         env.REPORT_RECOVERY_STORAGE.put(recoveryKey(key), streams[1], metadata),
       ]);

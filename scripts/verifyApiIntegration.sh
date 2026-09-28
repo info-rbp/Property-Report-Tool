@@ -113,6 +113,7 @@ race_report=$(curl -fsS -X POST "${BASE_URL}/api/properties/${property_id}/repor
   --data "${create_report_body}")
 race_report_id=$(printf '%s' "${race_report}" | json_field "['id']")
 
+race_pids=()
 for slot in 1 2; do
   (
     curl -sS -o "/tmp/proinspect-race-${slot}.json" -w "%{http_code}" \
@@ -121,10 +122,11 @@ for slot in 1 2; do
       --data "${save_report_body_rev1}" \
       >"/tmp/proinspect-race-${slot}.status"
   ) &
+  race_pids+=("$!")
 done
-wait
+for race_pid in "${race_pids[@]}"; do wait "${race_pid}"; done
 
-race_statuses=$(cat /tmp/proinspect-race-1.status /tmp/proinspect-race-2.status | sort | tr '\n' ' ')
+race_statuses=$(printf '%s\n' "$(cat /tmp/proinspect-race-1.status)" "$(cat /tmp/proinspect-race-2.status)" | sort | tr '\n' ' ')
 [[ "${race_statuses}" == "200 409 " ]]
 race_current=$(curl -fsS "${BASE_URL}/api/reports/${race_report_id}")
 [[ "$(printf '%s' "${race_current}" | json_field "['revision']")" == "2" ]]
@@ -143,7 +145,7 @@ photo_response=$(curl -fsS -X POST "${BASE_URL}/api/reports/${report_id}/photos"
 revision=$(printf '%s' "${photo_response}" | json_field "['revision']")
 [[ "${revision}" == "3" ]]
 
-bunx wrangler r2 object delete "proinspect-property-reports-data/reports/${report_id}/photos/photo-1.jpg" \
+bunx wrangler r2 object delete "proinspect-property-reports-data/$(printf '%s' "${photo_response}" | json_field "['photos'][0]['storageKey']")" \
   --local --persist-to "${STATE_DIR}" --force
 assert_status 200 "${BASE_URL}/api/reports/${report_id}/photos/photo-1"
 
@@ -171,9 +173,9 @@ completed=$(curl -fsS -X POST "${BASE_URL}/api/reports/${report_id}/complete?exp
 
 assert_status 409 -X PUT "${BASE_URL}/api/reports/${report_id}" \
   -H "Content-Type: application/json" \
-  --data "{"report":${report_payload},"expectedRevision":5}"
+  --data "${save_report_body_rev1}"
 
-bunx wrangler r2 object delete "proinspect-property-reports-data/reports/${report_id}/completed/report.pdf" \
+bunx wrangler r2 object delete "proinspect-property-reports-data/$(printf '%s' "${completed}" | json_field "['completedPdfKey']")" \
   --local --persist-to "${STATE_DIR}" --force
 assert_status 200 "${BASE_URL}/api/reports/${report_id}/pdf"
 
@@ -196,6 +198,8 @@ all_list=$(curl -fsS "${BASE_URL}/api/properties?includeArchived=true")
 [[ "$(printf '%s' "${all_list}" | python3 -c "import json,sys; print(any(p['id']=='${property_id}' and p.get('archivedAt') for p in json.load(sys.stdin)))")" == "True" ]]
 curl -fsS -X POST "${BASE_URL}/api/properties/${property_id}/restore" >/dev/null
 
+API_TEST_BASE_URL="${BASE_URL}" API_TEST_PROPERTY_ID="${property_id}" bun scripts/verifyStorageRaces.ts
+
 start_worker viewer
 viewer_me=$(curl -fsS "${BASE_URL}/api/me")
 [[ "$(printf '%s' "${viewer_me}" | json_field "['role']")" == "viewer" ]]
@@ -203,5 +207,8 @@ assert_status 403 -X POST "${BASE_URL}/api/properties" \
   -H "Content-Type: application/json" \
   --data '{"address":"Viewer Must Not Create"}'
 [[ "$(json_field "['code']" </tmp/proinspect-api-response.json)" == "insufficient-role" ]]
+assert_status 403 -X POST "${BASE_URL}/api/reports/${report_id}/correction"
+assert_status 403 -X DELETE "${BASE_URL}/api/reports/${race_report_id}?expectedRevision=2"
+assert_status 403 -X POST "${BASE_URL}/api/properties/${property_id}/archive"
 
 echo "Worker/API integration verification passed."
