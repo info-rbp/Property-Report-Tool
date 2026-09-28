@@ -1196,7 +1196,13 @@ function drawBuildingManagementActivityPages(
       const actionLines = wrapText(pdf, value(item.actionComments) || 'No further action recorded.', BUILDING_MANAGEMENT_WIDTHS[3] - 2.6);
       const periodLines = wrapText(pdf, buildingManagementPeriodText(item, daily) || 'Not recorded', BUILDING_MANAGEMENT_WIDTHS[0] - 2.6);
       const itemLines = wrapText(pdf, value(item.name) || 'Untitled reporting item', BUILDING_MANAGEMENT_WIDTHS[1] - 2.6);
-      const totalContentLines = Math.max(summaryLines.length, actionLines.length, 1);
+      const totalContentLines = Math.max(
+        summaryLines.length,
+        actionLines.length,
+        periodLines.length,
+        itemLines.length,
+        1
+      );
       let offset = 0;
       let firstFragment = true;
 
@@ -1212,8 +1218,14 @@ function drawBuildingManagementActivityPages(
         const chunkSize = Math.max(1, Math.min(availableLines, totalContentLines - offset));
         const summaryChunk = summaryLines.slice(offset, offset + chunkSize);
         const actionChunk = actionLines.slice(offset, offset + chunkSize);
-        const leftLines = firstFragment ? periodLines : [''];
-        const nameLines = firstFragment ? itemLines : wrapText(pdf, `${value(item.name) || 'Reporting item'} (continued)`, BUILDING_MANAGEMENT_WIDTHS[1] - 2.6);
+        const periodChunk = periodLines.slice(offset, offset + chunkSize);
+        const itemChunk = itemLines.slice(offset, offset + chunkSize);
+        const leftLines = periodChunk.length ? periodChunk : [''];
+        const nameLines = itemChunk.length
+          ? itemChunk
+          : firstFragment
+          ? ['Untitled reporting item']
+          : wrapText(pdf, `${value(item.name) || 'Reporting item'} (continued)`, BUILDING_MANAGEMENT_WIDTHS[1] - 2.6);
         const rowLines = Math.max(leftLines.length, nameLines.length, summaryChunk.length, actionChunk.length, 1);
         const h = Math.max(7, rowLines * lineHeight + 3);
 
