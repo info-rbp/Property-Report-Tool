@@ -519,6 +519,34 @@ export const REPORT_TEMPLATES: ReportTemplateDefinition[] = [
     specializedLayout: 'key-receipt',
   },
   {
+    type: 'Custom',
+    category: 'Custom',
+    family: 'operations',
+    label: 'Custom Report',
+    shortLabel: 'Custom',
+    purpose: 'Create a flexible ProInspect report using manually entered sections, observations, photographs, summary and recommendations.',
+    findingsTitle: 'Custom Report Content',
+    summaryTitle: 'Custom Report Details',
+    finalSectionTitle: 'Summary, Recommendations & Sign-off',
+    defaultAreas: ['Report Content'],
+    detailFields: [
+      { key: 'formName', label: 'Report Title', placeholder: 'e.g. Special Property Inspection Report' },
+      { key: 'inspectionDate', label: 'Report / Attendance Date', placeholder: 'DD/MM/YYYY' },
+      { key: 'inspectingAgent', label: 'Prepared By' },
+      { key: 'clientName', label: 'Client / Principal' },
+      { key: 'referenceNumber', label: 'Reference' },
+      { key: 'inspectionPurpose', label: 'Purpose / Background', multiline: true, rows: 5 },
+    ],
+    summaryFields: [
+      { key: 'additionalComments', label: 'Summary / Additional Comments', multiline: true, rows: 6 },
+      { key: 'recommendedAction', label: 'Recommendations / Next Steps', multiline: true, rows: 6 },
+      { key: 'actionRequired', label: 'Actions Required', multiline: true, rows: 5 },
+      { key: 'agentSignName', label: 'Prepared / Signed By' },
+      { key: 'agentSignDate', label: 'Sign-off Date', placeholder: 'DD/MM/YYYY' },
+    ],
+    disclaimer: verificationDisclaimer('custom report'),
+  },
+  {
     type: 'KeySafeInstallation',
     category: 'Maintenance',
     family: 'event',
@@ -596,8 +624,14 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
   'Commercial',
   'Maintenance',
   'Building / Strata',
+  'Custom',
 ];
 
 export function reportLabel(type: ReportType): string {
   return getReportTemplate(type).label;
+}
+
+export function reportInstanceLabel(details: Pick<TenancyDetails, 'reportType' | 'formName'>): string {
+  const customTitle = details.reportType === 'Custom' ? details.formName?.trim() : '';
+  return customTitle || reportLabel(details.reportType);
 }

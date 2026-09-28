@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Download, Mail } from 'lucide-react';
-import { isKeyReceiptTemplate, reportLabel } from '../data/reportCatalogue';
+import { isKeyReceiptTemplate, reportInstanceLabel } from '../data/reportCatalogue';
 import { validateReportForFinalization } from '../lib/reportValidation';
 import { ReportData } from '../types/report';
 
@@ -29,7 +29,7 @@ export const ReportActions: React.FC<Props> = ({
   const keyItemCount = report.areas.reduce((total, area) => total + area.items.length, 0);
 
   const prepareEmail = () => {
-    const label = reportLabel(details.reportType);
+    const label = reportInstanceLabel(details);
     const subject = `${label} - ${details.propertyAddress || 'Property'}`;
     const body = isKeyReceiptTemplate(details.reportType)
       ? `Please find attached the completed ${label.toLowerCase()} for ${details.propertyAddress || 'the property'}, recording the key handover on ${details.inspectionDate || 'the recorded receipt date'}.

@@ -287,6 +287,66 @@ for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', '
   await verifyPdf(template.type, extended, template.family === 'condition' ? 4 : 3, 3_500);
 }
 
+const customReport = createBlankReport('Custom', {
+  id: 'custom-report-property',
+  address: '19 Bonnard Crescent Ashby WA 6065',
+});
+customReport.details.formName = 'Special Property Investigation and Detailed Observation Report';
+customReport.details.inspectingAgent = 'Custom Report Regression Test';
+customReport.details.clientName = 'ProInspect Test Client';
+customReport.details.referenceNumber = 'CUSTOM-001';
+customReport.details.inspectionPurpose =
+  'This manually entered report tests flexible custom content, including long narrative text and sections that do not rely on a predefined inspection checklist. '.repeat(8);
+customReport.details.additionalComments =
+  'Custom report summary with deliberately extended narrative to verify multi-page narrative pagination remains bounded within the A4 page geometry. '.repeat(14);
+customReport.details.recommendedAction =
+  'Recommended actions and next steps are entered directly by the report author and may contain detailed instructions. '.repeat(12);
+customReport.details.actionRequired =
+  'Actions required are recorded here and must remain readable even when the content extends over more than one page. '.repeat(10);
+customReport.details.agentSignName = 'Custom Report Regression Test';
+customReport.areas = [
+  {
+    id: 'custom-section-1',
+    name: 'Background and Site Observations',
+    items: [
+      {
+        id: 'custom-item-1',
+        name: 'Detailed observation',
+        agentComments: extremelyLongComment,
+      },
+      {
+        id: 'custom-item-2',
+        name: 'Additional manually entered matter',
+        agentComments:
+          'This custom narrative was entered directly and should use the same deterministic wrapping and continuation-page logic as the hardened report catalogue.',
+      },
+    ],
+  },
+  {
+    id: 'custom-section-2',
+    name: 'Special Findings and Supporting Information',
+    items: Array.from({ length: 12 }, (_, index) => ({
+      id: `custom-finding-${index + 1}`,
+      name: `Custom finding ${index + 1}`,
+      agentComments:
+        `Manually entered custom finding ${index + 1}. The renderer must maintain stable table widths, wrapping, continuation headings and page margins.`,
+    })),
+  },
+];
+const customValidationIssues = validateReportForFinalization(customReport);
+if (customValidationIssues.length !== 0) {
+  throw new Error(
+    `Valid Custom Report failed finalization validation: ${customValidationIssues.map((issue) => issue.message).join(' ')}`
+  );
+}
+await verifyPdf('CustomLongContent', customReport, 6, 8_000);
+
+const invalidCustomReport = structuredClone(customReport);
+invalidCustomReport.details.formName = '';
+if (!validateReportForFinalization(invalidCustomReport).some((issue) => issue.code === 'custom-report-title-required')) {
+  throw new Error('Custom Report title validation regression detected.');
+}
+
 const keyReceipt = createBlankReport('KeyReceipt', {
   id: 'key-receipt-property',
   address: '19 Bonnard Crescent Ashby WA 6065',

@@ -112,6 +112,10 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
   const template = getReportTemplate(report.details.reportType);
   const cover = report.photos.find((photo) => photo.isCover) || report.photos[0];
   const conditionFamily = template.family === 'condition';
+  const displayTitle =
+    report.details.reportType === 'Custom' && report.details.formName?.trim()
+      ? report.details.formName.trim()
+      : template.label;
 
   return (
     <div id="report-print-container" className="flex flex-col items-center gap-8 bg-neutral-200/80 p-4 md:p-8">
@@ -127,7 +131,7 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
         </div>
 
         <div className="mt-24 text-center">
-          <h1 className="text-3xl font-extrabold tracking-tight">{template.label}</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">{displayTitle}</h1>
           <p className="mt-4 text-xl font-bold text-[#0a2540]">{report.details.propertyAddress || 'Property / Site Address'}</p>
         </div>
 

@@ -20,7 +20,7 @@ import { PropertiesDashboard } from './components/PropertiesDashboard';
 import { ReportActions } from './components/ReportActions';
 import { ReportDashboard } from './components/ReportDashboard';
 import { ReportDocument } from './components/ReportDocument';
-import { isBuildingManagementTemplate, isKeyReceiptTemplate, reportLabel } from './data/reportCatalogue';
+import { isBuildingManagementTemplate, isKeyReceiptTemplate, reportInstanceLabel, reportLabel } from './data/reportCatalogue';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
 import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
@@ -41,7 +41,7 @@ function pdfFilename(report: ReportData): string {
     .replace(/^_+|_+$/g, '');
   const safeDate = (report.details.inspectionDate || new Date().toISOString().slice(0, 10))
     .replace(/[^0-9-]/g, '');
-  const safeType = reportLabel(report.details.reportType).replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const safeType = reportInstanceLabel(report.details).replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   return `ProInspect_${safeType}_${safeAddress}_${safeDate}.pdf`;
 }
 
@@ -520,7 +520,7 @@ export default function App() {
           <div className="hidden sm:block border-l border-neutral-300 pl-4 min-w-0">
             <h1 className="text-sm font-bold text-neutral-800 truncate">{report.details.propertyAddress}</h1>
             <p className="text-[11px] text-neutral-500 font-medium">
-              {reportLabel(report.details.reportType)} • {completed ? 'Completed' : 'Draft'}
+              {reportInstanceLabel(report.details)} • {completed ? 'Completed' : 'Draft'}
             </p>
           </div>
         </div>
@@ -647,7 +647,7 @@ export default function App() {
               <span>
                 {report.details.reportType === 'Entry'
                   ? 'Layout: Western Australia Form 1'
-                  : `Layout: ProInspect ${reportLabel(report.details.reportType)}`}
+                  : `Layout: ProInspect ${reportInstanceLabel(report.details)}`}
               </span>
               <span>Screen preview • Download PDF uses the deterministic production renderer</span>
             </div>
