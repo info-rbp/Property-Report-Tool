@@ -1,5 +1,6 @@
 import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate } from '../data/reportCatalogue';
 import { normalizeAreaName } from './reportFormatting';
+import { isValidReportDate } from './dateUtils';
 import { ReportData } from '../types/report';
 
 export interface ReportValidationIssue {
@@ -29,6 +30,7 @@ export function validateReportStructure(report: ReportData): ReportValidationIss
 
   const areaIds = new Set<string>();
   const areaNames = new Map<string, string>();
+  const areasById = new Map<string, { id: string; name: string }>();
   const itemIds = new Set<string>();
   const itemAreaById = new Map<string, string>();
 
@@ -43,6 +45,7 @@ export function validateReportStructure(report: ReportData): ReportValidationIss
       });
     } else {
       areaIds.add(area.id);
+      areasById.set(area.id, { id: area.id, name: area.name });
     }
 
     const normalizedName = normalizeAreaName(area.name);
@@ -117,7 +120,10 @@ export function validateReportStructure(report: ReportData): ReportValidationIss
 
     if (photo.isCover) coverPhotoCount += 1;
 
-    const areaKey = normalizeAreaName(photo.areaName);
+    const linkedArea = photo.areaId ? areasById.get(photo.areaId) : undefined;
+    const areaKey = linkedArea
+      ? normalizeAreaName(linkedArea.name)
+      : normalizeAreaName(photo.areaName);
     if (!areaKey || !areaNames.has(areaKey)) {
       issues.push({
         code: 'photo-area-missing',
@@ -185,10 +191,39 @@ export function validateReportForFinalization(report: ReportData): ReportValidat
   }
   if (!requiredText(report.details.inspectionDate)) {
     issues.push({ code: 'inspection-date-required', message: 'Inspection / report date is required.' });
+  } else if (!isValidReportDate(report.details.inspectionDate)) {
+    issues.push({
+      code: 'inspection-date-invalid',
+      message: 'Inspection / report date must be a valid date in YYYY-MM-DD or DD/MM/YYYY format.',
+    });
   }
   if (!requiredText(report.details.inspectingAgent)) {
     issues.push({ code: 'inspector-required', message: 'Inspector / prepared-by name is required.' });
   }
+
+  const optionalDateFields: Array<[string, string | undefined]> = [
+    ['Tenancy commencement date', report.details.tenancyStartDate],
+    ['Lease expiry date', report.details.leaseExpiryDate],
+    ['Rent review date', report.details.rentReviewDate],
+    ['Tenant received date', report.details.tenantReceivedDate],
+    ['Report return date', report.details.reportReturnDate],
+    ['External painting date', report.details.paintingPremisesExternalDate],
+    ['Internal painting date', report.details.paintingPremisesInternalDate],
+    ['Floor coverings laid date', report.details.floorcoveringsLaidDate],
+    ['Floor coverings cleaned date', report.details.floorcoveringsCleanedDate],
+    ['Completion date', report.details.completionDate],
+    ['Incident date', report.details.incidentDate],
+    ['Next review date', report.details.nextReviewDate],
+    ['Sign-off date', report.details.agentSignDate],
+  ];
+  optionalDateFields.forEach(([label, value]) => {
+    if (requiredText(value) && !isValidReportDate(value)) {
+      issues.push({
+        code: 'invalid-date',
+        message: `${label} must be a valid date in YYYY-MM-DD or DD/MM/YYYY format.`,
+      });
+    }
+  });
 
   if (report.details.reportType === 'Custom' && !requiredText(report.details.formName)) {
     issues.push({ code: 'custom-report-title-required', message: 'Enter a report title for the Custom Report.' });
