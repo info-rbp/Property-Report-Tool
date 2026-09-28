@@ -367,6 +367,12 @@ if (customValidationIssues.length !== 0) {
 }
 await verifyPdf('CustomLongContent', customReport, 6, 8_000);
 
+const customLongTitle = structuredClone(customReport);
+customLongTitle.id = 'custom-report-long-title';
+customLongTitle.details.formName =
+  'Special Property Investigation, Detailed Observation, Rectification Verification and Multi-Party Follow-Up Report for Complex Property Matters';
+await verifyPdf('CustomLongTitle', customLongTitle, 6, 8_000);
+
 const invalidCustomReport = structuredClone(customReport);
 invalidCustomReport.details.formName = '';
 if (!validateReportForFinalization(invalidCustomReport).some((issue) => issue.code === 'custom-report-title-required')) {
