@@ -152,6 +152,12 @@ function reportRunningTitle(reportType: ReportType): string {
   return getReportTemplate(reportType).shortLabel;
 }
 
+function resolvedRunningTitle(report: ReportData): string {
+  return report.details.reportType === 'Custom'
+    ? reportInstanceTitle(report)
+    : reportRunningTitle(report.details.reportType);
+}
+
 function drawRunningHeader(pdf: jsPDF, report: ReportData, rightTitle?: string) {
   setFont(pdf, 6.8, 'bold');
   setTextColor(pdf, TEXT);
@@ -165,7 +171,7 @@ function drawRunningHeader(pdf: jsPDF, report: ReportData, rightTitle?: string) 
   );
   const title = truncateTextToWidth(
     pdf,
-    rightTitle || (report.details.reportType === 'Custom' ? reportInstanceTitle(report) : reportRunningTitle(report.details.reportType)),
+    rightTitle || resolvedRunningTitle(report),
     rightWidth
   );
   pdf.text(address, MARGIN_X, HEADER_Y);
@@ -315,6 +321,25 @@ function containRect(imageWidth: number, imageHeight: number, boxWidth: number, 
   };
 }
 
+function coverTitleLayout(pdf: jsPDF, title: string): { lines: string[]; fontSize: number; lineHeight: number } {
+  const sizes = [18, 17, 16, 15, 14, 13, 12];
+  for (const fontSize of sizes) {
+    setFont(pdf, fontSize, 'bold');
+    const lines = wrapText(pdf, title, 165);
+    if (lines.length <= 3) {
+      return { lines, fontSize, lineHeight: fontSize * 0.4 };
+    }
+  }
+
+  setFont(pdf, 12, 'bold');
+  const wrapped = wrapText(pdf, title, 165);
+  const lines = wrapped.slice(0, 3);
+  if (wrapped.length > 3) {
+    lines[2] = truncateTextToWidth(pdf, wrapped.slice(2).join(' '), 165);
+  }
+  return { lines, fontSize: 12, lineHeight: 4.8 };
+}
+
 async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
   const details = report.details;
   drawBrand(pdf, 14, 15, 1);
@@ -332,15 +357,15 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
   ].filter(Boolean);
   companyLines.forEach((line, index) => pdf.text(line, PAGE_WIDTH - 14, 21 + (index * 3.4), { align: 'right' }));
 
-  setFont(pdf, 18, 'bold');
+  const titleLayout = coverTitleLayout(pdf, reportInstanceTitle(report));
+  setFont(pdf, titleLayout.fontSize, 'bold');
   setTextColor(pdf, TEXT);
-  const titleLines = wrapText(pdf, reportInstanceTitle(report), 165);
-  drawWrappedLines(pdf, titleLines, PAGE_WIDTH / 2, 58, 7.2, { align: 'center', maxLines: 3 });
+  drawWrappedLines(pdf, titleLayout.lines, PAGE_WIDTH / 2, 58, titleLayout.lineHeight, { align: 'center' });
 
   const address = value(details.propertyAddress) || 'Property address not recorded';
   setFont(pdf, 10.5, 'bold');
   const addressLines = wrapText(pdf, address, 150);
-  const addressY = 69 + Math.max(0, titleLines.length - 1) * 4.5;
+  const addressY = 69 + Math.max(0, titleLayout.lines.length - 1) * 4.5;
   drawWrappedLines(pdf, addressLines, PAGE_WIDTH / 2, addressY, 4.6, { align: 'center' });
 
   const cover = details.coverPhotoUrl
@@ -912,7 +937,7 @@ function drawNarrativeSection(
   while (offset < allLines.length) {
     const minimumBlock = 22;
     if (y + minimumBlock > BODY_BOTTOM) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
     }
 
     const available = BODY_BOTTOM - y;
@@ -935,7 +960,7 @@ function drawNarrativeSection(
     offset += chunk.length;
     continuation = true;
     if (offset < allLines.length) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
     }
   }
 
@@ -989,7 +1014,7 @@ function drawDisclaimerSection(pdf: jsPDF, report: ReportData, y: number): numbe
 
   while (offset < lines.length) {
     if (y + 12 > BODY_BOTTOM) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
     }
 
     setFont(pdf, 6.2, 'bold');
@@ -1006,7 +1031,7 @@ function drawDisclaimerSection(pdf: jsPDF, report: ReportData, y: number): numbe
     continuation = true;
 
     if (offset < lines.length) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
     }
   }
 
@@ -1192,7 +1217,7 @@ function buildingManagementColumnPositions(): number[] {
 
 function drawBuildingManagementOverview(pdf: jsPDF, report: ReportData): number {
   const daily = isDailyBuildingManagementReport(report.details.reportType);
-  let y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+  let y = addContentPage(pdf, report, resolvedRunningTitle(report));
   y = drawRoutinePageHeading(pdf, y, daily ? 'Daily Report Details' : 'Monthly Report Details');
 
   const rows: Array<[string, string]> = [
@@ -1208,7 +1233,7 @@ function drawBuildingManagementOverview(pdf: jsPDF, report: ReportData): number 
   rows.forEach(([label, content]) => {
     const rowHeight = routineDetailRowHeight(pdf, label, content);
     if (y + rowHeight > BODY_BOTTOM) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
       y = drawRoutinePageHeading(pdf, y, daily ? 'Daily Report Details (continued)' : 'Monthly Report Details (continued)');
     }
     y = drawRoutineDetailRow(pdf, y, label, content);
