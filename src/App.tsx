@@ -62,12 +62,44 @@ export default function App() {
 
   const csvInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<number | null>(null);
+  const serverVersionsRef = useRef<Record<string, string | undefined>>({});
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const queuedSaveCountRef = useRef(0);
 
   const loadProperties = async () => {
     const list = await api.listProperties();
     setProperties(list);
     return list;
   };
+
+  const persistDraft = (draft: ReportData): Promise<ReportData> => {
+    if (!draft.id || draft.status === 'completed') return Promise.resolve(draft);
+    const reportId = draft.id;
+    queuedSaveCountRef.current += 1;
+    setIsSaving(true);
+
+    return new Promise<ReportData>((resolve, reject) => {
+      saveQueueRef.current = saveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            const expectedUpdatedAt = serverVersionsRef.current[reportId] || draft.updatedAt;
+            const saved = normalizeReport(await api.saveReport(draft, expectedUpdatedAt));
+            serverVersionsRef.current[reportId] = saved.updatedAt;
+            setLastSavedTime(
+              new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            );
+            resolve(saved);
+          } catch (error) {
+            reject(error);
+          } finally {
+            queuedSaveCountRef.current = Math.max(0, queuedSaveCountRef.current - 1);
+            setIsSaving(queuedSaveCountRef.current > 0);
+          }
+        });
+    });
+  };
+
 
   useEffect(() => {
     let active = true;
@@ -103,19 +135,13 @@ export default function App() {
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
 
     saveTimerRef.current = window.setTimeout(async () => {
-      setIsSaving(true);
       try {
-        await api.saveReport(report);
-        setLastSavedTime(
-          new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        );
+        await persistDraft(report);
       } catch (error: any) {
         setStatusMessage({
           text: `${error.message || 'Cloud save failed.'} The latest draft remains cached on this device.`,
           type: 'error',
         });
-      } finally {
-        setIsSaving(false);
       }
     }, 700);
 
@@ -165,24 +191,16 @@ export default function App() {
     if (!draft.id || draft.status === 'completed') return draft;
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     await cacheReport(draft).catch(() => undefined);
-    setIsSaving(true);
-    try {
-      const saved = normalizeReport(await api.saveReport(draft));
-      setLastSavedTime(
-        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      );
-      return saved;
-    } finally {
-      setIsSaving(false);
-    }
+    return persistDraft(draft);
   };
 
   const handleCreateReport = async (type: ReportType) => {
     if (!selectedProperty) return;
     try {
       const blank = createBlankReport(type, selectedProperty);
-      const created = await api.createReport(selectedProperty.id, type, blank);
-      setReport(normalizeReport(created));
+      const created = normalizeReport(await api.createReport(selectedProperty.id, type, blank));
+      if (created.id) serverVersionsRef.current[created.id] = created.updatedAt;
+      setReport(created);
       setViewMode('commentary');
       await cacheReport(created);
       await refreshSelectedProperty();
@@ -196,13 +214,16 @@ export default function App() {
     try {
       setIsLoading(true);
       const cloudReport = normalizeReport(await api.getReport(id));
+      if (cloudReport.id) serverVersionsRef.current[cloudReport.id] = cloudReport.updatedAt;
       setReport(cloudReport);
       await cacheReport(cloudReport);
       setViewMode('preview');
     } catch (error: any) {
       const cached = await getCachedReport(id).catch(() => null);
       if (cached) {
-        setReport(normalizeReport(cached));
+        const normalizedCached = normalizeReport(cached);
+        if (normalizedCached.id) serverVersionsRef.current[normalizedCached.id] = normalizedCached.updatedAt;
+        setReport(normalizedCached);
         setViewMode('preview');
         setStatusMessage({
           text: 'Cloud storage was unavailable. This device is showing the last cached draft.',
@@ -315,7 +336,7 @@ export default function App() {
         const name = item
           ? `${areaName}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
           : `${areaName}: Overall (photo ${photoIndex})`;
-        current = await api.uploadPhoto(current.id!, processed.blob, {
+        current = normalizeReport(await api.uploadPhoto(current.id!, processed.blob, {
           id: photoId,
           name,
           areaName,
@@ -323,8 +344,9 @@ export default function App() {
           itemName: item?.name,
           photoIndex,
           isCover: current.photos.length === 0,
-        });
-        setReport(normalizeReport(current));
+        }));
+        if (current.id) serverVersionsRef.current[current.id] = current.updatedAt;
+        setReport(current);
         await cacheReport(current).catch(() => undefined);
       }
 
@@ -343,8 +365,9 @@ export default function App() {
     if (!report?.id || report.status === 'completed') return;
     try {
       const savedDraft = await saveDraftImmediately(report);
-      const updated = await api.deletePhoto(savedDraft.id!, photoId);
-      setReport(normalizeReport(updated));
+      const updated = normalizeReport(await api.deletePhoto(savedDraft.id!, photoId));
+      if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
+      setReport(updated);
       setStatusMessage({ text: 'Photo deleted.', type: 'info' });
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to delete photo.', type: 'error' });
@@ -397,6 +420,7 @@ export default function App() {
       }
       setExportProgressText('Storing completed PDF...');
       const completed = normalizeReport(await api.completeReport(savedDraft.id!, blob));
+      if (completed.id) serverVersionsRef.current[completed.id] = completed.updatedAt;
       setReport(completed);
       await cacheReport(completed);
       downloadPdfBlob(blob, pdfFilename(completed));
