@@ -32,6 +32,8 @@ jobs:
         run: bun run lint
       - name: Production build
         run: bun run build
+      - name: Production authentication boundary
+        run: bun scripts/verifyWorkerBoundary.ts
       - name: Worker API, concurrency, authorisation and storage integration
         timeout-minutes: 5
         run: bun run api:verify
@@ -51,6 +53,6 @@ jobs:
           name: pdf-regression-artifacts
           path: render-artifacts/
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 14
       - name: Wrangler deployment dry run
         run: bunx wrangler deploy --dry-run --outdir .wrangler-dry
