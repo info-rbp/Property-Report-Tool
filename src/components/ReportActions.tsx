@@ -31,6 +31,7 @@ export const ReportActions: React.FC<Props> = ({
   const validationIssues = report.status === 'draft' ? validateReportForFinalization(report) : [];
   const validationMessages = Array.from(new Set(validationIssues.map((issue) => issue.message)));
   const keyItemCount = report.areas.reduce((total, area) => total + area.items.length, 0);
+  const statusLabel = superseded ? 'Superseded' : completed ? 'Completed' : 'Draft';
 
   const prepareEmail = () => {
     const label = reportInstanceLabel(details);
@@ -53,8 +54,8 @@ ProInspect`;
         <h3 className="font-bold text-neutral-900">Review & send</h3>
         <p className="text-xs text-neutral-500 mt-1">
           {isKeyReceiptTemplate(report.details.reportType)
-            ? `${keyItemCount} key/access item${keyItemCount === 1 ? '' : 's'} • ${completed ? 'Completed' : 'Draft'}`
-            : `${report.areas.length} areas • ${report.photos.length} photos • ${completed ? 'Completed' : 'Draft'}`}
+            ? `${keyItemCount} key/access item${keyItemCount === 1 ? '' : 's'} • ${statusLabel}`
+            : `${report.areas.length} areas • ${report.photos.length} photos • ${statusLabel}`}
         </p>
       </div>
 
