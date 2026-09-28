@@ -7,6 +7,9 @@ import { CURRENT_REPORT_SCHEMA_VERSION, ReportData } from '../types/report';
  * schema versioning plus optional Building Manager activity/photo-link fields.
  * Version 3 adds the Key Receipt report type and optional key quantity /
  * identifier fields used by receipt line items.
+ * Version 4 registers the Custom Report type. It adds no new structural fields,
+ * but marks persisted data as requiring an application version that understands
+ * the Custom Report catalogue entry.
  *
  * Future schema changes must add an explicit migration step here before
  * CURRENT_REPORT_SCHEMA_VERSION is increased.
@@ -45,6 +48,18 @@ export function migrateReportData(input: ReportData): ReportData {
         ...area,
         items: (area.items || []).map((item) => ({ ...item })),
       })),
+    };
+  }
+
+  if ((migrated.schemaVersion || 1) < 4) {
+    migrated = {
+      ...migrated,
+      schemaVersion: 4,
+      areas: migrated.areas.map((area) => ({
+        ...area,
+        items: (area.items || []).map((item) => ({ ...item })),
+      })),
+      photos: migrated.photos.map((photo) => ({ ...photo })),
     };
   }
 

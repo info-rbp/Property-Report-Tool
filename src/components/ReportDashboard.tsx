@@ -89,7 +89,7 @@ export const ReportDashboard: React.FC<Props> = ({
                   >
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-neutral-500 shrink-0" />
-                      <span className="font-bold text-neutral-900">{reportLabel(report.reportType)}</span>
+                      <span className="font-bold text-neutral-900">{report.title || reportLabel(report.reportType)}</span>
                       <span className={`text-[10px] uppercase font-bold rounded-full px-2 py-0.5 ${
                         report.status === 'completed'
                           ? 'bg-emerald-100 text-emerald-800'
@@ -99,7 +99,7 @@ export const ReportDashboard: React.FC<Props> = ({
                       </span>
                     </div>
                     <div className="text-xs text-neutral-500 mt-1 ml-6">
-                      {isKeyReceiptTemplate(report.reportType) ? 'Receipt' : 'Inspection'} {report.inspectionDate || 'date not set'} • Updated {new Date(report.updatedAt).toLocaleString()}
+                      {isKeyReceiptTemplate(report.reportType) ? 'Receipt' : report.reportType === 'Custom' ? 'Report' : 'Inspection'} {report.inspectionDate || 'date not set'} • Updated {new Date(report.updatedAt).toLocaleString()}
                     </div>
                   </button>
 

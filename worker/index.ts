@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { isBuildingManagementTemplate } from '../src/data/reportCatalogue';
+import { isBuildingManagementTemplate, reportInstanceLabel } from '../src/data/reportCatalogue';
 import { normalizeAreaName } from '../src/lib/reportFormatting';
 import { migrateReportData } from '../src/lib/reportMigration';
 import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
@@ -140,6 +140,7 @@ function reportSummary(row: ReportRow) {
     id: row.id,
     propertyId: row.property_id,
     reportType: report.details?.reportType || row.report_type,
+    title: report.details ? reportInstanceLabel(report.details) : undefined,
     status: row.status,
     inspectionDate: report.details?.inspectionDate || '',
     completedPdfKey: row.completed_pdf_key || undefined,
@@ -559,7 +560,12 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       const safeAddress = (report.details.propertyAddress || 'Property')
         .replace(/[^a-zA-Z0-9]+/g, '_')
         .replace(/^_+|_+$/g, '');
-      const filename = `ProInspect_${report.details.reportType}_Report_${safeAddress}.pdf`;
+      const safeType = reportInstanceLabel(report.details)
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'Report';
+      const safeDate = (report.details.inspectionDate || '')
+        .replace(/[^0-9-]/g, '');
+      const filename = `ProInspect_${safeType}_${safeAddress}${safeDate ? `_${safeDate}` : ''}.pdf`;
       const headers = new Headers();
       object.writeHttpMetadata(headers);
       headers.set('Content-Disposition', `attachment; filename="${filename}"`);

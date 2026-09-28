@@ -152,6 +152,12 @@ function reportRunningTitle(reportType: ReportType): string {
   return getReportTemplate(reportType).shortLabel;
 }
 
+function resolvedRunningTitle(report: ReportData): string {
+  return report.details.reportType === 'Custom'
+    ? reportInstanceTitle(report)
+    : reportRunningTitle(report.details.reportType);
+}
+
 function drawRunningHeader(pdf: jsPDF, report: ReportData, rightTitle?: string) {
   setFont(pdf, 6.8, 'bold');
   setTextColor(pdf, TEXT);
@@ -165,7 +171,7 @@ function drawRunningHeader(pdf: jsPDF, report: ReportData, rightTitle?: string) 
   );
   const title = truncateTextToWidth(
     pdf,
-    rightTitle || (report.details.reportType === 'Custom' ? reportInstanceTitle(report) : reportRunningTitle(report.details.reportType)),
+    rightTitle || resolvedRunningTitle(report),
     rightWidth
   );
   pdf.text(address, MARGIN_X, HEADER_Y);
@@ -218,7 +224,7 @@ function drawBox(
 }
 
 async function yieldToBrowser() {
-  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 async function fetchImageSource(source: string, label: string): Promise<Blob> {
@@ -239,12 +245,66 @@ async function canvasToJpeg(canvas: HTMLCanvasElement, quality: number, label: s
   });
 }
 
+function inlineJpeg(source: string): PdfImage | null {
+  const prefix = 'data:image/jpeg;base64,';
+  if (!source.startsWith(prefix)) return null;
+
+  try {
+    const binary = atob(source.slice(prefix.length));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+
+    if (bytes.length < 10 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+
+    const startOfFrame = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+    let offset = 2;
+    while (offset + 8 < bytes.length) {
+      if (bytes[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+
+      while (offset < bytes.length && bytes[offset] === 0xff) offset += 1;
+      if (offset >= bytes.length) break;
+
+      const marker = bytes[offset];
+      offset += 1;
+      if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (offset + 1 >= bytes.length) break;
+
+      const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+      if (segmentLength < 2 || offset + segmentLength > bytes.length) break;
+
+      if (startOfFrame.has(marker) && segmentLength >= 7) {
+        const height = (bytes[offset + 3] << 8) | bytes[offset + 4];
+        const width = (bytes[offset + 5] << 8) | bytes[offset + 6];
+        if (width > 0 && height > 0) return { bytes, width, height };
+        break;
+      }
+      offset += segmentLength;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 async function prepareImageForPdf(
   source: string,
   label: string,
   maxDimension = 720,
   targetBytes = 45_000
 ): Promise<PdfImage> {
+  const embedded = inlineJpeg(source);
+  if (
+    embedded &&
+    embedded.bytes.length <= targetBytes &&
+    Math.max(embedded.width, embedded.height) <= maxDimension
+  ) {
+    return embedded;
+  }
+
   const sourceBlob = await fetchImageSource(source, label);
   let bitmap: ImageBitmap;
   try {
@@ -315,6 +375,25 @@ function containRect(imageWidth: number, imageHeight: number, boxWidth: number, 
   };
 }
 
+function coverTitleLayout(pdf: jsPDF, title: string): { lines: string[]; fontSize: number; lineHeight: number } {
+  const sizes = [18, 17, 16, 15, 14, 13, 12];
+  for (const fontSize of sizes) {
+    setFont(pdf, fontSize, 'bold');
+    const lines = wrapText(pdf, title, 165);
+    if (lines.length <= 3) {
+      return { lines, fontSize, lineHeight: fontSize * 0.4 };
+    }
+  }
+
+  setFont(pdf, 12, 'bold');
+  const wrapped = wrapText(pdf, title, 165);
+  const lines = wrapped.slice(0, 3);
+  if (wrapped.length > 3) {
+    lines[2] = truncateTextToWidth(pdf, wrapped.slice(2).join(' '), 165);
+  }
+  return { lines, fontSize: 12, lineHeight: 4.8 };
+}
+
 async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
   const details = report.details;
   drawBrand(pdf, 14, 15, 1);
@@ -332,15 +411,15 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
   ].filter(Boolean);
   companyLines.forEach((line, index) => pdf.text(line, PAGE_WIDTH - 14, 21 + (index * 3.4), { align: 'right' }));
 
-  setFont(pdf, 18, 'bold');
+  const titleLayout = coverTitleLayout(pdf, reportInstanceTitle(report));
+  setFont(pdf, titleLayout.fontSize, 'bold');
   setTextColor(pdf, TEXT);
-  const titleLines = wrapText(pdf, reportInstanceTitle(report), 165);
-  drawWrappedLines(pdf, titleLines, PAGE_WIDTH / 2, 58, 7.2, { align: 'center', maxLines: 3 });
+  drawWrappedLines(pdf, titleLayout.lines, PAGE_WIDTH / 2, 58, titleLayout.lineHeight, { align: 'center' });
 
   const address = value(details.propertyAddress) || 'Property address not recorded';
   setFont(pdf, 10.5, 'bold');
   const addressLines = wrapText(pdf, address, 150);
-  const addressY = 69 + Math.max(0, titleLines.length - 1) * 4.5;
+  const addressY = 69 + Math.max(0, titleLayout.lines.length - 1) * 4.5;
   drawWrappedLines(pdf, addressLines, PAGE_WIDTH / 2, addressY, 4.6, { align: 'center' });
 
   const cover = details.coverPhotoUrl
@@ -851,6 +930,23 @@ function drawRoutineFindingsPages(pdf: jsPDF, report: ReportData, onProgress?: (
     y = drawRoutineDetailRow(pdf, y, label, content);
   });
 
+  const firstRoutineArea = report.areas[0];
+  if (firstRoutineArea) {
+    const firstRoutineItems = firstRoutineArea.items.length
+      ? firstRoutineArea.items
+      : [{ id: `${firstRoutineArea.id}-empty`, name: 'Overall', agentComments: 'No inspection finding recorded.' } as InspectionItem];
+    const firstRoutineFragment = splitRoutineFindingFragments(
+      pdf,
+      firstRoutineItems[0],
+      'No inspection finding recorded.'
+    )[0];
+    const firstRoutineHeight = firstRoutineFragment ? routineFindingFragmentHeight(firstRoutineFragment) : 7;
+    const firstRoutineBlockHeight = 4 + 10 + 7.2 + 6.2 + firstRoutineHeight;
+    if (y + firstRoutineBlockHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, 'Routine Inspection Report');
+    }
+  }
+
   y += 4;
   y = drawRoutinePageHeading(pdf, y, 'Inspection Findings');
 
@@ -912,7 +1008,7 @@ function drawNarrativeSection(
   while (offset < allLines.length) {
     const minimumBlock = 22;
     if (y + minimumBlock > BODY_BOTTOM) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
     }
 
     const available = BODY_BOTTOM - y;
@@ -935,7 +1031,7 @@ function drawNarrativeSection(
     offset += chunk.length;
     continuation = true;
     if (offset < allLines.length) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
     }
   }
 
@@ -989,7 +1085,7 @@ function drawDisclaimerSection(pdf: jsPDF, report: ReportData, y: number): numbe
 
   while (offset < lines.length) {
     if (y + 12 > BODY_BOTTOM) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
     }
 
     setFont(pdf, 6.2, 'bold');
@@ -1006,7 +1102,7 @@ function drawDisclaimerSection(pdf: jsPDF, report: ReportData, y: number): numbe
     continuation = true;
 
     if (offset < lines.length) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
     }
   }
 
@@ -1045,23 +1141,24 @@ function detailFieldValue(report: ReportData, field: ReportFieldDefinition): str
 
 function drawGenericOverview(pdf: jsPDF, report: ReportData): number {
   const template = getReportTemplate(report.details.reportType);
-  let y = addContentPage(pdf, report, template.shortLabel);
+  const runningTitle = resolvedRunningTitle(report);
+  let y = addContentPage(pdf, report, runningTitle);
   y = drawRoutinePageHeading(pdf, y, template.summaryTitle);
   const addressValue = value(report.details.propertyAddress);
   const addressHeight = routineDetailRowHeight(pdf, 'Property / Site Address', addressValue);
-  if (y + addressHeight > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+  if (y + addressHeight > BODY_BOTTOM) y = addContentPage(pdf, report, runningTitle);
   y = drawRoutineDetailRow(pdf, y, 'Property / Site Address', addressValue);
   template.detailFields.forEach((field) => {
     const fieldValue = detailFieldValue(report, field);
     if (field.multiline) {
       if (y + 22 > BODY_BOTTOM) {
-        y = addContentPage(pdf, report, template.shortLabel);
+        y = addContentPage(pdf, report, runningTitle);
       }
       y = drawNarrativeSection(pdf, report, y, field.label, fieldValue || 'Not recorded.');
     } else {
       const rowHeight = routineDetailRowHeight(pdf, field.label, fieldValue);
       if (y + rowHeight > BODY_BOTTOM) {
-        y = addContentPage(pdf, report, template.shortLabel);
+        y = addContentPage(pdf, report, runningTitle);
       }
       y = drawRoutineDetailRow(pdf, y, field.label, fieldValue);
     }
@@ -1076,8 +1173,24 @@ function drawGenericFindingsPages(
   onProgress?: (message: string) => void
 ) {
   const template = getReportTemplate(report.details.reportType);
+  const runningTitle = resolvedRunningTitle(report);
   let y = startY;
-  if (y + 18 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+
+  const firstArea = report.areas[0];
+  if (firstArea) {
+    const firstItems = firstArea.items.length
+      ? firstArea.items
+      : [{ id: `${firstArea.id}-empty`, name: 'Overall', agentComments: 'No observation recorded.' } as InspectionItem];
+    const firstFragment = splitRoutineFindingFragments(pdf, firstItems[0], 'No observation recorded.')[0];
+    const firstHeight = firstFragment ? routineFindingFragmentHeight(firstFragment) : 7;
+    const firstFindingsBlockHeight = 3 + 10 + 7.2 + 6.2 + firstHeight;
+    if (y + firstFindingsBlockHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, runningTitle);
+    }
+  } else if (y + 18 > BODY_BOTTOM) {
+    y = addContentPage(pdf, report, runningTitle);
+  }
+
   y += 3;
   y = drawRoutinePageHeading(pdf, y, template.findingsTitle);
 
@@ -1092,7 +1205,7 @@ function drawGenericFindingsPages(
     const firstHeight = firstFragment ? routineFindingFragmentHeight(firstFragment) : 7;
 
     if (y + 7.2 + 6.2 + firstHeight > BODY_BOTTOM) {
-      y = addContentPage(pdf, report, template.shortLabel);
+      y = addContentPage(pdf, report, runningTitle);
       y = drawRoutinePageHeading(pdf, y, `${template.findingsTitle} (continued)`);
     }
 
@@ -1104,7 +1217,7 @@ function drawGenericFindingsPages(
       fragments.forEach((fragment) => {
         const height = routineFindingFragmentHeight(fragment);
         if (y + height > BODY_BOTTOM) {
-          y = addContentPage(pdf, report, template.shortLabel);
+          y = addContentPage(pdf, report, runningTitle);
           y = drawRoutinePageHeading(pdf, y, `${template.findingsTitle} (continued)`);
           y = drawRoutineAreaHeader(pdf, y, area, count, true);
           y = drawRoutineColumnHeader(pdf, y);
@@ -1118,7 +1231,8 @@ function drawGenericFindingsPages(
 
 function drawGenericConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
   const template = getReportTemplate(report.details.reportType);
-  let y = addContentPage(pdf, report, template.shortLabel);
+  const runningTitle = resolvedRunningTitle(report);
+  let y = addContentPage(pdf, report, runningTitle);
 
   report.areas.forEach((area, areaIndex) => {
     onProgress?.(`Laying out ${template.shortLabel} condition area ${areaIndex + 1} of ${report.areas.length}...`);
@@ -1128,7 +1242,7 @@ function drawGenericConditionPages(pdf: jsPDF, report: ReportData, onProgress?: 
     );
     const firstHeight = fragments.length ? exitFragmentHeight(fragments[0].fragment) : 7;
     if (y + 7.8 + (count > 0 ? 5.8 : 0) + firstHeight > BODY_BOTTOM) {
-      y = addContentPage(pdf, report, template.shortLabel);
+      y = addContentPage(pdf, report, runningTitle);
     }
     y = drawExitAreaHeader(pdf, y, area.name, false);
     if (count > 0) y = drawExitOverallRow(pdf, y, count);
@@ -1136,7 +1250,7 @@ function drawGenericConditionPages(pdf: jsPDF, report: ReportData, onProgress?: 
     fragments.forEach(({ item, fragment }) => {
       const height = exitFragmentHeight(fragment);
       if (y + height > BODY_BOTTOM) {
-        y = addContentPage(pdf, report, template.shortLabel);
+        y = addContentPage(pdf, report, runningTitle);
         y = drawExitAreaHeader(pdf, y, area.name, true);
       }
       y = drawExitItemRow(pdf, y, item, fragment);
@@ -1146,7 +1260,8 @@ function drawGenericConditionPages(pdf: jsPDF, report: ReportData, onProgress?: 
 
 function drawGenericClosingPages(pdf: jsPDF, report: ReportData) {
   const template = getReportTemplate(report.details.reportType);
-  let y = addContentPage(pdf, report, template.shortLabel);
+  const runningTitle = resolvedRunningTitle(report);
+  let y = addContentPage(pdf, report, runningTitle);
   y = drawRoutinePageHeading(pdf, y, template.finalSectionTitle);
 
   const signoffKeys = new Set(['agentSignName', 'agentSignDate']);
@@ -1157,12 +1272,12 @@ function drawGenericClosingPages(pdf: jsPDF, report: ReportData) {
       y = drawNarrativeSection(pdf, report, y, field.label, fieldValue || 'No comments recorded.');
     } else {
       const rowHeight = routineDetailRowHeight(pdf, field.label, fieldValue);
-      if (y + rowHeight > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+      if (y + rowHeight > BODY_BOTTOM) y = addContentPage(pdf, report, runningTitle);
       y = drawRoutineDetailRow(pdf, y, field.label, fieldValue);
     }
   });
 
-  if (y + 48 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+  if (y + 48 > BODY_BOTTOM) y = addContentPage(pdf, report, runningTitle);
   y = drawAgentSignoff(pdf, y, report, 'Prepared by / Report sign-off');
   y += 3;
   drawDisclaimerSection(pdf, report, y);
@@ -1192,7 +1307,7 @@ function buildingManagementColumnPositions(): number[] {
 
 function drawBuildingManagementOverview(pdf: jsPDF, report: ReportData): number {
   const daily = isDailyBuildingManagementReport(report.details.reportType);
-  let y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+  let y = addContentPage(pdf, report, resolvedRunningTitle(report));
   y = drawRoutinePageHeading(pdf, y, daily ? 'Daily Report Details' : 'Monthly Report Details');
 
   const rows: Array<[string, string]> = [
@@ -1208,7 +1323,7 @@ function drawBuildingManagementOverview(pdf: jsPDF, report: ReportData): number 
   rows.forEach(([label, content]) => {
     const rowHeight = routineDetailRowHeight(pdf, label, content);
     if (y + rowHeight > BODY_BOTTOM) {
-      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+      y = addContentPage(pdf, report, resolvedRunningTitle(report));
       y = drawRoutinePageHeading(pdf, y, daily ? 'Daily Report Details (continued)' : 'Monthly Report Details (continued)');
     }
     y = drawRoutineDetailRow(pdf, y, label, content);
@@ -1277,24 +1392,25 @@ function drawBuildingManagementActivityPages(
 ) {
   const daily = isDailyBuildingManagementReport(report.details.reportType);
   const template = getReportTemplate(report.details.reportType);
+  const runningTitle = template.shortLabel;
   const x = buildingManagementColumnPositions();
   const lineHeight = 2.55;
   let y = startY;
 
-  if (y + 20 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+  if (y + 20 > BODY_BOTTOM) y = addContentPage(pdf, report, runningTitle);
   y = drawRoutinePageHeading(pdf, y, template.findingsTitle);
 
   report.areas.forEach((area, areaIndex) => {
     onProgress?.(`Laying out Building Manager category ${areaIndex + 1} of ${report.areas.length}...`);
 
-    if (y + 20 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+    if (y + 20 > BODY_BOTTOM) y = addContentPage(pdf, report, runningTitle);
     y = drawBuildingManagementCategoryHeader(pdf, y, area.name);
     y = drawBuildingManagementTableHeader(pdf, y, daily);
 
     if (!area.items.length) {
       const h = 9;
       if (y + h > BODY_BOTTOM) {
-        y = addContentPage(pdf, report, template.shortLabel);
+        y = addContentPage(pdf, report, runningTitle);
         y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
         y = drawBuildingManagementTableHeader(pdf, y, daily);
       }
@@ -1325,7 +1441,7 @@ function drawBuildingManagementActivityPages(
       while (offset < totalContentLines) {
         let availableLines = Math.floor((BODY_BOTTOM - y - 3) / lineHeight);
         if (availableLines < 2) {
-          y = addContentPage(pdf, report, template.shortLabel);
+          y = addContentPage(pdf, report, runningTitle);
           y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
           y = drawBuildingManagementTableHeader(pdf, y, daily);
           availableLines = Math.floor((BODY_BOTTOM - y - 3) / lineHeight);
@@ -1346,7 +1462,7 @@ function drawBuildingManagementActivityPages(
         const h = Math.max(7, rowLines * lineHeight + 3);
 
         if (y + h > BODY_BOTTOM) {
-          y = addContentPage(pdf, report, template.shortLabel);
+          y = addContentPage(pdf, report, runningTitle);
           y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
           y = drawBuildingManagementTableHeader(pdf, y, daily);
           continue;
@@ -1381,7 +1497,8 @@ function drawBuildingManagementActivityPages(
 
 function drawBuildingManagementClosingPages(pdf: jsPDF, report: ReportData) {
   const template = getReportTemplate(report.details.reportType);
-  let y = addContentPage(pdf, report, template.shortLabel);
+  const runningTitle = template.shortLabel;
+  let y = addContentPage(pdf, report, runningTitle);
   y = drawRoutinePageHeading(pdf, y, template.finalSectionTitle);
 
   const signoffKeys = new Set(['agentSignName', 'agentSignDate']);
@@ -1393,7 +1510,7 @@ function drawBuildingManagementClosingPages(pdf: jsPDF, report: ReportData) {
       : drawRoutineDetailRow(pdf, y, field.label, fieldValue);
   });
 
-  if (y + 48 > BODY_BOTTOM) y = addContentPage(pdf, report, template.shortLabel);
+  if (y + 48 > BODY_BOTTOM) y = addContentPage(pdf, report, runningTitle);
   y = drawAgentSignoff(pdf, y, report, 'Building Manager / Prepared by');
   y += 3;
   drawDisclaimerSection(pdf, report, y);

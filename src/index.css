@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
-/* 
-  Custom styles for report print and PDF export
-  Providing standard hex fallbacks for html2canvas compatibility
+/*
+  Shared styles for the on-screen report preview.
+  Issued PDFs are generated independently by the deterministic jsPDF renderer.
 */
 .pdf-page {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
