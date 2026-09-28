@@ -13,7 +13,16 @@ cleanup() {
     wait "${PID}" >/dev/null 2>&1 || true
   fi
 }
+
+on_error() {
+  local status=$?
+  echo "API integration test failed. Worker log follows:" >&2
+  cat "${LOG_FILE}" >&2 || true
+  exit "${status}"
+}
+
 trap cleanup EXIT
+trap on_error ERR
 
 json_field() {
   local field="$1"
