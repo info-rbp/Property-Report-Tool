@@ -139,6 +139,13 @@ function reportDisplayTitle(reportType: ReportType): string {
   return getReportTemplate(reportType).label;
 }
 
+function reportInstanceTitle(report: ReportData): string {
+  if (report.details.reportType === 'Custom') {
+    return value(report.details.formName) || getReportTemplate('Custom').label;
+  }
+  return reportDisplayTitle(report.details.reportType);
+}
+
 function reportRunningTitle(reportType: ReportType): string {
   if (reportType === 'Entry') return 'Entry Condition Report';
   if (reportType === 'Exit') return 'Exit Condition Report';
@@ -158,7 +165,7 @@ function drawRunningHeader(pdf: jsPDF, report: ReportData, rightTitle?: string) 
   );
   const title = truncateTextToWidth(
     pdf,
-    rightTitle || reportRunningTitle(report.details.reportType),
+    rightTitle || (report.details.reportType === 'Custom' ? reportInstanceTitle(report) : reportRunningTitle(report.details.reportType)),
     rightWidth
   );
   pdf.text(address, MARGIN_X, HEADER_Y);
@@ -327,7 +334,7 @@ async function drawCoverPage(pdf: jsPDF, report: ReportData, onProgress?: (messa
 
   setFont(pdf, 18, 'bold');
   setTextColor(pdf, TEXT);
-  const titleLines = wrapText(pdf, reportDisplayTitle(details.reportType), 165);
+  const titleLines = wrapText(pdf, reportInstanceTitle(report), 165);
   drawWrappedLines(pdf, titleLines, PAGE_WIDTH / 2, 58, 7.2, { align: 'center', maxLines: 3 });
 
   const address = value(details.propertyAddress) || 'Property address not recorded';
@@ -2151,8 +2158,8 @@ export async function generateReportPdf(
   });
 
   pdf.setProperties({
-    title: `ProInspect ${reportDisplayTitle(report.details.reportType)} - ${value(report.details.propertyAddress)}`,
-    subject: reportDisplayTitle(report.details.reportType),
+    title: `ProInspect ${reportInstanceTitle(report)} - ${value(report.details.propertyAddress)}`,
+    subject: reportInstanceTitle(report),
     author: value(report.details.companyName) || PROINSPECT_COMPANY.name,
     creator: 'ProInspect Property Reports',
   });
