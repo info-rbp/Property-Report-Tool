@@ -54,6 +54,18 @@ invariant(
   worker.includes("'x-report-source-id': report.id || ''")
 );
 invariant(
+  'Completed reports have an explicit platform publication retry path',
+  worker.includes("parts[3] === 'publish'") &&
+    api.includes('publishCompletedReport') &&
+    app.includes('handleSyncPlatform') &&
+    app.includes('Sync to ProInspect')
+);
+invariant(
+  'Post-finalisation platform outages retain completed state for recovery',
+  app.includes("error.code === 'proinspect-ingest-failed'") &&
+    app.includes('Report finalised and the immutable PDF is stored')
+);
+invariant(
   'Platform integration secrets are server-side Worker configuration',
   env.includes('PROINSPECT_HANDOFF_SIGNING_KEY') &&
     env.includes('PROINSPECT_INGEST_URL') &&
