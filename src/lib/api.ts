@@ -176,6 +176,12 @@ export const api = {
     return response.json() as Promise<ReportData>;
   },
 
+  publishCompletedReport: (reportId: string) =>
+    apiRequest<{ success: true }>(
+      `/api/reports/${encodeURIComponent(reportId)}/publish`,
+      { method: 'POST' }
+    ),
+
   completedPdfUrl: (reportId: string) =>
     `/api/reports/${encodeURIComponent(reportId)}/pdf`,
 };
