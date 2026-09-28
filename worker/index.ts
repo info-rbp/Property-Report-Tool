@@ -2,7 +2,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { isBuildingManagementTemplate } from '../src/data/reportCatalogue';
 import { normalizeAreaName } from '../src/lib/reportFormatting';
 import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
-import { CURRENT_REPORT_SCHEMA_VERSION } from '../src/types/report';
+import { CURRENT_REPORT_SCHEMA_VERSION, isReportType } from '../src/types/report';
 import type { ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
 
 interface Env {
@@ -333,8 +333,10 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     if (parts.length === 4 && parts[3] === 'reports' && request.method === 'POST') {
       const propertyId = parts[2];
       const property = await getPropertyRow(env, propertyId);
-      const body = await request.json() as { reportType?: ReportType; report?: ReportData };
-      if (!body.report || !body.reportType) throw new HttpError(400, 'Report data is required.');
+      const body = await request.json() as { reportType?: unknown; report?: ReportData };
+      if (!body.report || !isReportType(body.reportType)) {
+        throw new HttpError(400, 'A valid report type and report data are required.');
+      }
 
       const id = body.report.id || crypto.randomUUID();
       const now = new Date().toISOString();
@@ -375,8 +377,24 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     if (parts.length === 3 && request.method === 'PUT') {
       const row = await getReportRow(env, reportId);
       if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be edited.');
-      const body = await request.json() as { report?: ReportData };
+      const body = await request.json() as { report?: ReportData; expectedUpdatedAt?: string };
       if (!body.report) throw new HttpError(400, 'Report data is required.');
+      if (!isReportType(body.report.details?.reportType)) {
+        throw new HttpError(400, 'The report contains an unknown report type.');
+      }
+
+      const current = parseReport(row);
+      if (body.report.details.reportType !== current.details.reportType) {
+        throw new HttpError(409, 'The report type cannot be changed after the report has been created.');
+      }
+
+      if (body.expectedUpdatedAt && body.expectedUpdatedAt !== row.updated_at) {
+        throw new HttpError(
+          409,
+          'This draft changed in another browser or device. Reopen the report to load the latest cloud version before continuing.'
+        );
+      }
+
       return json(await updateReportData(env, row, body.report, userEmail));
     }
 
