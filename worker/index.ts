@@ -4,7 +4,7 @@ import { normalizeAreaName } from '../src/lib/reportFormatting';
 import { migrateReportData } from '../src/lib/reportMigration';
 import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
 import { CURRENT_REPORT_SCHEMA_VERSION, isReportType } from '../src/types/report';
-import type { ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
+import type { ReportData, ReportPhoto, ReportStatus, ReportType, UserRole } from '../src/types/report';
 
 interface Env {
   DB: D1Database;
@@ -12,6 +12,11 @@ interface Env {
   TEAM_DOMAIN?: string;
   POLICY_AUD?: string;
   DEV_USER_EMAIL?: string;
+  DEV_USER_ROLE?: string;
+  ADMIN_EMAILS?: string;
+  EDITOR_EMAILS?: string;
+  VIEWER_EMAILS?: string;
+  DEFAULT_ROLE?: string;
 }
 
 interface PropertyRow {
@@ -19,6 +24,7 @@ interface PropertyRow {
   address: string;
   reference: string | null;
   notes: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
   created_by: string | null;
@@ -30,8 +36,12 @@ interface ReportRow {
   property_id: string;
   report_type: ReportType;
   status: ReportStatus;
+  revision: number;
   report_data: string;
   completed_pdf_key: string | null;
+  supersedes_report_id: string | null;
+  superseded_by_report_id: string | null;
+  superseded_at: string | null;
   created_at: string;
   updated_at: string;
   created_by: string | null;
@@ -39,8 +49,46 @@ interface ReportRow {
 }
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+    public code?: string,
+    public details?: Record<string, unknown>
+  ) {
     super(message);
+  }
+}
+
+interface AuthenticatedUser {
+  email: string;
+  role: UserRole;
+}
+
+function emailSet(value?: string): Set<string> {
+  return new Set(
+    (value || '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function normalizeRole(value?: string): UserRole | null {
+  return value === 'viewer' || value === 'editor' || value === 'admin' ? value : null;
+}
+
+function resolveRole(email: string, env: Env): UserRole {
+  const normalized = email.toLowerCase();
+  if (emailSet(env.ADMIN_EMAILS).has(normalized)) return 'admin';
+  if (emailSet(env.VIEWER_EMAILS).has(normalized)) return 'viewer';
+  if (emailSet(env.EDITOR_EMAILS).has(normalized)) return 'editor';
+  return normalizeRole(env.DEFAULT_ROLE) || 'editor';
+}
+
+function requireRole(user: AuthenticatedUser, minimum: 'editor' | 'admin'): void {
+  const rank: Record<UserRole, number> = { viewer: 0, editor: 1, admin: 2 };
+  if (rank[user.role] < rank[minimum]) {
+    throw new HttpError(403, 'Your account does not have permission to perform this action.', 'insufficient-role');
   }
 }
 
@@ -79,7 +127,7 @@ function unexpectedErrorResponse(error: unknown): Response {
     );
   }
 
-  return json({ error: 'Unexpected server error.' }, 500);
+  return json({ error: 'Unexpected server error.', code: 'unexpected-server-error' }, 500);
 }
 
 let cachedJwksDomain = '';
@@ -100,6 +148,7 @@ function mapProperty(row: PropertyRow) {
     address: row.address,
     reference: row.reference || undefined,
     notes: row.notes || undefined,
+    archivedAt: row.archived_at || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     createdBy: row.created_by || undefined,
@@ -114,7 +163,11 @@ function parseReport(row: ReportRow): ReportData {
     id: row.id,
     propertyId: row.property_id,
     status: row.status,
+    revision: row.revision,
     completedPdfKey: row.completed_pdf_key || undefined,
+    supersedesReportId: row.supersedes_report_id || undefined,
+    supersededByReportId: row.superseded_by_report_id || undefined,
+    supersededAt: row.superseded_at || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     photos: (parsed.photos || []).map((photo) => ({
@@ -125,13 +178,8 @@ function parseReport(row: ReportRow): ReportData {
   };
 }
 
-function storageReportType(reportType: ReportType): 'Entry' | 'Routine' | 'Exit' {
-  if (reportType === 'Entry') return 'Entry';
-  if (reportType === 'Exit') return 'Exit';
-  // The initial D1 schema constrains report_type to Entry/Routine/Exit. All extended
-  // report types retain their canonical type in report_data and use Routine as the
-  // compatibility value for this legacy indexed column.
-  return 'Routine';
+function storageReportType(reportType: ReportType): ReportType {
+  return reportType;
 }
 
 function reportSummary(row: ReportRow) {
@@ -142,8 +190,12 @@ function reportSummary(row: ReportRow) {
     reportType: report.details?.reportType || row.report_type,
     title: report.details ? reportInstanceLabel(report.details) : undefined,
     status: row.status,
+    revision: row.revision,
     inspectionDate: report.details?.inspectionDate || '',
     completedPdfKey: row.completed_pdf_key || undefined,
+    supersedesReportId: row.supersedes_report_id || undefined,
+    supersededByReportId: row.superseded_by_report_id || undefined,
+    supersededAt: row.superseded_at || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     createdBy: row.created_by || undefined,
@@ -151,10 +203,13 @@ function reportSummary(row: ReportRow) {
   };
 }
 
-async function authenticate(request: Request, env: Env): Promise<string> {
+async function authenticate(request: Request, env: Env): Promise<AuthenticatedUser> {
   const hostname = new URL(request.url).hostname;
   if ((hostname === 'localhost' || hostname === '127.0.0.1') && env.DEV_USER_EMAIL) {
-    return env.DEV_USER_EMAIL;
+    return {
+      email: env.DEV_USER_EMAIL,
+      role: normalizeRole(env.DEV_USER_ROLE) || 'admin',
+    };
   }
 
   if (!env.TEAM_DOMAIN || !env.POLICY_AUD) {
@@ -179,7 +234,7 @@ async function authenticate(request: Request, env: Env): Promise<string> {
     });
     const email = typeof payload.email === 'string' ? payload.email : undefined;
     if (!email) throw new Error('Access token does not include an email address.');
-    return email;
+    return { email, role: resolveRole(email, env) };
   } catch {
     throw new HttpError(403, 'Cloudflare Access token validation failed.');
   }
