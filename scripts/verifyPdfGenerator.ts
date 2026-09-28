@@ -2,7 +2,8 @@ import { REPORT_TEMPLATES } from '../src/data/reportCatalogue';
 import { createBlankReport } from '../src/data/reportTemplates';
 import { formatAustralianDate, renumberPhotosByArea, splitTenantNames } from '../src/lib/reportFormatting';
 import { generateReportPdf } from '../src/lib/reportPdf';
-import { ReportData } from '../src/types/report';
+import { validateReportForFinalization, validateReportStructure } from '../src/lib/reportValidation';
+import { CURRENT_REPORT_SCHEMA_VERSION, ReportData } from '../src/types/report';
 
 if (formatAustralianDate('2026-09-27') !== '27/09/2026') {
   throw new Error('Australian date formatting regression detected.');
@@ -140,7 +141,7 @@ const routineReport: ReportData = {
     leaseExpiryDate: '2027-05-02',
     rentReviewDate: '2027-02-02',
     currentRentalAmount: '$560 per week',
-    tenants: 'Routine Tenant',
+    tenants: 'Routine Tenant with a deliberately extended display name used to verify that summary rows wrap safely instead of overflowing the fixed detail column',
     tenantReceivedDate: '',
     reportReturnDate: '',
     additionalComments:
@@ -160,8 +161,7 @@ const routineReport: ReportData = {
         {
           id: 'routine-exterior-overall',
           name: 'Overall',
-          agentComments:
-            'The front yard appears tidy. Paved areas are clean. Vegetation near the gutters should be monitored and trimmed as required.',
+          agentComments: longComment,
         },
       ],
     },
@@ -368,4 +368,75 @@ buildingMonthly.areas[6].items = Array.from({ length: 18 }, (_, index) => ({
 }));
 await verifyPdf('BuildingManagementMonthlyFilled', buildingMonthly, 6, 10_000);
 
-console.log(`All ${REPORT_TEMPLATES.length} catalogue templates plus filled Building Manager stress fixtures passed.`);
+const commonPropertyStress = createBlankReport('CommonProperty', {
+  id: 'common-property-stress',
+  address: 'A deliberately long common property address used to confirm that detail rows wrap correctly without crossing the report margin, Perth WA 6000',
+});
+commonPropertyStress.details.inspectingAgent = 'Catalogue Layout Stress Test';
+commonPropertyStress.details.clientName =
+  'A deliberately long client or council name that must wrap inside the metadata table rather than extend beyond the page boundary';
+commonPropertyStress.details.agentSignName = 'Catalogue Layout Stress Test';
+commonPropertyStress.areas = commonPropertyStress.areas.slice(0, 2);
+commonPropertyStress.areas[0].items = [
+  {
+    id: 'common-stress-item',
+    name: 'Common property observation with an intentionally extended item description to exercise item-column wrapping',
+    agentComments: longComment,
+  },
+];
+await verifyPdf('CommonPropertyLongContent', commonPropertyStress, 4, 6_000);
+
+const validBuildingManager = createBlankReport('BuildingManagementDaily', {
+  id: 'validation-building-manager',
+  address: '15-17 Freeman Loop, North Fremantle WA',
+});
+validBuildingManager.details.buildingName = 'Validation Building';
+validBuildingManager.details.inspectingAgent = 'Validation User';
+validBuildingManager.areas[0].items = [
+  {
+    id: 'validation-bm-item',
+    name: 'Validation activity',
+    activityTime: '10:00 am',
+    agentComments: 'Validation activity completed.',
+    actionComments: 'No further action.',
+  },
+];
+validBuildingManager.photos = [
+  {
+    id: 'validation-photo',
+    name: 'Validation evidence',
+    areaName: validBuildingManager.areas[0].name,
+    itemId: 'validation-bm-item',
+    itemName: 'Validation activity',
+    photoIndex: 1,
+    storageKey: 'reports/validation/photos/validation-photo.jpg',
+  },
+];
+if (validateReportForFinalization(validBuildingManager).length !== 0) {
+  throw new Error('Valid Building Manager report failed finalization validation.');
+}
+
+const invalidBuildingManager = structuredClone(validBuildingManager);
+invalidBuildingManager.photos[0].itemId = undefined;
+const invalidIssues = validateReportForFinalization(invalidBuildingManager);
+if (!invalidIssues.some((issue) => issue.code === 'building-photo-item-required')) {
+  throw new Error('Building Manager photo-link validation regression detected.');
+}
+
+const duplicateAreaReport = createBlankReport('VacantProperty', {
+  id: 'validation-duplicate-area',
+  address: '19 Bonnard Crescent Ashby WA 6065',
+});
+duplicateAreaReport.areas.push({
+  ...duplicateAreaReport.areas[0],
+  id: 'duplicate-area-id',
+});
+if (!validateReportStructure(duplicateAreaReport).some((issue) => issue.code === 'duplicate-area-name')) {
+  throw new Error('Duplicate area-name validation regression detected.');
+}
+
+if (createBlankReport('Routine').schemaVersion !== CURRENT_REPORT_SCHEMA_VERSION) {
+  throw new Error('New reports are not being stamped with the current report schema version.');
+}
+
+console.log(`All ${REPORT_TEMPLATES.length} catalogue templates, rendering stress fixtures and report-integrity checks passed.`);
