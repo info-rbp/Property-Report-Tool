@@ -32,6 +32,16 @@ For any new or materially changed template:
 
 The permanent CI regression suite also generates every registered report definition plus long-content stress fixtures.
 
+## Key Receipt
+
+For the Key Receipt:
+
+- Record at least one key or access device with a positive whole-number quantity.
+- Confirm tenant/recipient name, tenancy commencement date, receipt date and issuing staff member are present before finalisation.
+- Generate a normal receipt and confirm the tenant acknowledgement and signature lines appear on the same page when space permits.
+- Generate a long receipt with enough key/access-device rows to require continuation and confirm the table heading repeats cleanly.
+- Confirm CSV commentary import and photo controls are not shown for this template.
+
 ## Building Manager reports
 
 For Daily and Monthly Building Manager reports:
