@@ -257,17 +257,27 @@ async function updateReportData(
   row: ReportRow,
   report: ReportData,
   userEmail: string,
+  expectedRevision: number,
   status: ReportStatus = row.status,
   completedPdfKey: string | null = row.completed_pdf_key
 ): Promise<ReportData> {
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
+    throw new HttpError(400, 'A valid report revision is required.', 'report-revision-required');
+  }
+
   const now = new Date().toISOString();
+  const nextRevision = expectedRevision + 1;
   const stored: ReportData = {
     ...migrateReportData(report),
     schemaVersion: CURRENT_REPORT_SCHEMA_VERSION,
     id: row.id,
     propertyId: row.property_id,
     status,
+    revision: nextRevision,
     completedPdfKey: completedPdfKey || undefined,
+    supersedesReportId: row.supersedes_report_id || undefined,
+    supersededByReportId: row.superseded_by_report_id || undefined,
+    supersededAt: row.superseded_at || undefined,
     createdAt: row.created_at,
     updatedAt: now,
     photos: (report.photos || []).map((photo) => ({
@@ -277,45 +287,64 @@ async function updateReportData(
     })),
   };
 
-  await env.DB.prepare(
+  const result = await env.DB.prepare(
     `UPDATE reports
-     SET report_type = ?, status = ?, report_data = ?, completed_pdf_key = ?, updated_at = ?, updated_by = ?
-     WHERE id = ?`
+     SET report_type = ?, status = ?, revision = ?, report_data = ?, completed_pdf_key = ?, updated_at = ?, updated_by = ?
+     WHERE id = ? AND revision = ? AND status = ?`
   )
     .bind(
       storageReportType(stored.details.reportType),
       status,
+      nextRevision,
       JSON.stringify(stored),
       completedPdfKey,
       now,
       userEmail,
-      row.id
+      row.id,
+      expectedRevision,
+      row.status
     )
     .run();
 
-  return parseReport({
-    ...row,
-    report_type: storageReportType(stored.details.reportType),
-    status,
-    report_data: JSON.stringify(stored),
-    completed_pdf_key: completedPdfKey,
-    updated_at: now,
-    updated_by: userEmail,
-  });
+  if ((result.meta?.changes || 0) !== 1) {
+    throw new HttpError(
+      409,
+      'This report changed in another browser or device. Resolve the conflict before continuing.',
+      'report-revision-conflict',
+      { expectedRevision }
+    );
+  }
+
+  return parseReport(await getReportRow(env, row.id));
 }
 
-async function deleteReportObjects(env: Env, reportId: string): Promise<void> {
+function recoveryKey(key: string): string {
+  return key.startsWith('reports/') ? `recovery/${key}` : `recovery/${key}`;
+}
+
+async function getStoredObject(env: Env, key: string): Promise<R2ObjectBody | null> {
+  const primary = await env.REPORT_STORAGE.get(key);
+  if (primary) return primary;
+  return env.REPORT_STORAGE.get(recoveryKey(key));
+}
+
+async function deleteStoragePair(env: Env, key: string): Promise<void> {
+  await env.REPORT_STORAGE.delete([key, recoveryKey(key)]);
+}
+
+async function deleteObjectPrefix(env: Env, prefix: string): Promise<void> {
   let cursor: string | undefined;
   do {
-    const listed = await env.REPORT_STORAGE.list({
-      prefix: `reports/${reportId}/`,
-      cursor,
-      limit: 1000,
-    });
+    const listed = await env.REPORT_STORAGE.list({ prefix, cursor, limit: 1000 });
     const keys = listed.objects.map((object) => object.key);
     if (keys.length) await env.REPORT_STORAGE.delete(keys);
     cursor = listed.truncated ? listed.cursor : undefined;
   } while (cursor);
+}
+
+async function deleteReportObjects(env: Env, reportId: string): Promise<void> {
+  await deleteObjectPrefix(env, `reports/${reportId}/`);
+  await deleteObjectPrefix(env, `recovery/reports/${reportId}/`);
 }
 
 async function handleApi(request: Request, env: Env): Promise<Response> {
