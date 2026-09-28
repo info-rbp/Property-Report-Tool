@@ -1904,6 +1904,7 @@ export async function generateReportPdf(
   addFooters(pdf, report);
 
   const photoPageMinimum = report.photos.length ? Math.ceil(report.photos.length / 12) : 0;
+  const template = getReportTemplate(report.details.reportType);
   const expectedMinimumPages =
     report.details.reportType === 'Entry'
       ? 3 + (report.areas.length ? 1 : 0) + photoPageMinimum
@@ -1911,6 +1912,8 @@ export async function generateReportPdf(
       ? 3 + photoPageMinimum
       : report.details.reportType === 'Exit'
       ? 2 + (report.areas.length ? 1 : 0) + photoPageMinimum
+      : template.family === 'condition'
+      ? 3 + (report.areas.length ? 1 : 0) + photoPageMinimum
       : 3 + photoPageMinimum;
 
   if (pdf.getNumberOfPages() < expectedMinimumPages) {
