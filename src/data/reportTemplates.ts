@@ -1,6 +1,6 @@
 import { PROINSPECT_COMPANY } from '../config/company';
 import { migrateReportData } from '../lib/reportMigration';
-import { getReportTemplate, isBuildingManagementTemplate } from './reportCatalogue';
+import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate } from './reportCatalogue';
 import { CURRENT_REPORT_SCHEMA_VERSION, InspectionArea, ReportData, ReportType } from '../types/report';
 
 const COMPANY = {
@@ -13,7 +13,7 @@ const COMPANY = {
 
 function makeDefaultAreas(reportType: ReportType): InspectionArea[] {
   const definition = getReportTemplate(reportType);
-  const emptyActivitySections = isBuildingManagementTemplate(reportType);
+  const emptyActivitySections = isBuildingManagementTemplate(reportType) || isKeyReceiptTemplate(reportType);
   return definition.defaultAreas.map((name) => ({
     id: `area-${crypto.randomUUID()}`,
     name,
@@ -109,6 +109,7 @@ export function createBlankReport(
         : '',
       nextReviewDate: '',
       annualSummaryPeriod: '',
+      keyReceiptTime: '',
       agentSignName: '',
       agentSignDate: date,
       disclaimerText: template.disclaimer,
