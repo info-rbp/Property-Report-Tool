@@ -937,18 +937,33 @@ function drawDisclaimerSection(pdf: jsPDF, report: ReportData, y: number): numbe
   setFont(pdf, 6, 'italic');
   const lines = wrapText(pdf, value(report.details.disclaimerText) || 'No disclaimer recorded.', CONTENT_WIDTH);
   const lineHeight = 2.5;
-  const height = (lines.length * lineHeight) + 8;
-  if (y + height > BODY_BOTTOM) {
-    y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+  let offset = 0;
+  let continuation = false;
+
+  while (offset < lines.length) {
+    if (y + 12 > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+    }
+
+    setFont(pdf, 6.2, 'bold');
+    setTextColor(pdf, TEXT);
+    pdf.text(continuation ? 'DISCLAIMER (CONTINUED):' : 'DISCLAIMER:', MARGIN_X, y + 1.5);
+
+    const availableLines = Math.max(1, Math.floor((BODY_BOTTOM - y - 6) / lineHeight));
+    const chunk = lines.slice(offset, offset + availableLines);
+    setFont(pdf, 6, 'italic');
+    setTextColor(pdf, MUTED);
+    drawWrappedLines(pdf, chunk, MARGIN_X, y + 5.2, lineHeight);
+    y += 6 + (chunk.length * lineHeight);
+    offset += chunk.length;
+    continuation = true;
+
+    if (offset < lines.length) {
+      y = addContentPage(pdf, report, reportRunningTitle(report.details.reportType));
+    }
   }
 
-  setFont(pdf, 6.2, 'bold');
-  setTextColor(pdf, TEXT);
-  pdf.text('DISCLAIMER:', MARGIN_X, y + 1.5);
-  setFont(pdf, 6, 'italic');
-  setTextColor(pdf, MUTED);
-  drawWrappedLines(pdf, lines, MARGIN_X, y + 5.2, lineHeight);
-  return y + height;
+  return y;
 }
 
 function drawRoutineClosingPages(pdf: jsPDF, report: ReportData) {
