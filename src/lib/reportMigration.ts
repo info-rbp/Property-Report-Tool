@@ -5,8 +5,8 @@ import { CURRENT_REPORT_SCHEMA_VERSION, ReportData } from '../types/report';
  *
  * Version 1 is the original unversioned report JSON. Version 2 adds explicit
  * schema versioning plus optional Building Manager activity/photo-link fields.
- * Those fields are backward-compatible, so the v1 -> v2 migration only needs
- * to normalize collections and stamp the version.
+ * Version 3 adds the Key Receipt report type and optional key quantity /
+ * identifier fields used by receipt line items.
  *
  * Future schema changes must add an explicit migration step here before
  * CURRENT_REPORT_SCHEMA_VERSION is increased.
@@ -34,6 +34,17 @@ export function migrateReportData(input: ReportData): ReportData {
         items: area.items || [],
       })),
       photos: migrated.photos.map((photo) => ({ ...photo })),
+    };
+  }
+
+  if ((migrated.schemaVersion || 1) < 3) {
+    migrated = {
+      ...migrated,
+      schemaVersion: 3,
+      areas: migrated.areas.map((area) => ({
+        ...area,
+        items: (area.items || []).map((item) => ({ ...item })),
+      })),
     };
   }
 
