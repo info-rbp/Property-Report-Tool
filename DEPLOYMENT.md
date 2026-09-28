@@ -165,7 +165,7 @@ Completed PDFs are streamed from the Worker request directly into R2 instead of 
 
 ## Backups and retention
 
-See `DATA_RETENTION.md`.
+See `DATA_RETENTION.md`. The report-template and deterministic-renderer freeze baseline is recorded in `docs/REPORT_FUNCTIONALITY_FREEZE.md`.
 
 D1 exports can be created with:
 
