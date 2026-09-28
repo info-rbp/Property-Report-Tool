@@ -19,7 +19,7 @@ import { PropertiesDashboard } from './components/PropertiesDashboard';
 import { ReportActions } from './components/ReportActions';
 import { ReportDashboard } from './components/ReportDashboard';
 import { ReportDocument } from './components/ReportDocument';
-import { reportLabel } from './data/reportCatalogue';
+import { isBuildingManagementTemplate, reportLabel } from './data/reportCatalogue';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
 import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
@@ -27,6 +27,7 @@ import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
 import { processInspectionImage } from './lib/imageProcessor';
 import { normalizeAreaName } from './lib/reportFormatting';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
+import { reportValidationMessage, validateReportForFinalization } from './lib/reportValidation';
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
 
 type ViewMode = 'preview' | 'commentary' | 'photos' | 'actions';
@@ -230,6 +231,14 @@ export default function App() {
     event.target.value = '';
     if (!file || !report || report.status === 'completed') return;
 
+    if (isBuildingManagementTemplate(report.details.reportType)) {
+      setStatusMessage({
+        text: 'Building Manager reports use item-linked activities. Add activities in the report editor rather than replacing them with the generic CSV importer.',
+        type: 'error',
+      });
+      return;
+    }
+
     try {
       const parsed = await parseCsvFile(file);
       setReport((current) => current ? { ...current, areas: parsed.areas } : current);
@@ -335,28 +344,14 @@ export default function App() {
     setIsCompleting(true);
     setExportProgressText('Saving final report data...');
     try {
-      if (report.areas.length > 0 && report.photos.length > 0) {
-        const validAreaKeys = new Set(report.areas.map((area) => normalizeAreaName(area.name)));
-        const unmappedPhotos = report.photos.filter(
-          (photo) => !validAreaKeys.has(normalizeAreaName(photo.areaName || 'General'))
-        );
-        if (unmappedPhotos.length > 0) {
+      const validationIssues = validateReportForFinalization(report);
+      if (validationIssues.length > 0) {
+        if (validationIssues.some((issue) => issue.code.startsWith('photo-') || issue.code.includes('photo'))) {
           setViewMode('photos');
-          throw new Error(
-            `${unmappedPhotos.length} photo${unmappedPhotos.length === 1 ? ' is' : 's are'} not assigned to a current report area. Review the red photo-area filter and reassign before finalising.`
-          );
+        } else {
+          setViewMode('commentary');
         }
-
-        if (['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(report.details.reportType)) {
-          const validItemIds = new Set(report.areas.flatMap((area) => area.items.map((item) => item.id)));
-          const unlinked = report.photos.filter((photo) => !photo.itemId || !validItemIds.has(photo.itemId));
-          if (unlinked.length > 0) {
-            setViewMode('photos');
-            throw new Error(
-              `${unlinked.length} Building Manager photo${unlinked.length === 1 ? ' is' : 's are'} not linked to a current reporting item. Link each photo to the exact activity it supports before finalising.`
-            );
-          }
-        }
+        throw new Error(reportValidationMessage(validationIssues, 'Report cannot be finalised'));
       }
 
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
@@ -531,7 +526,7 @@ export default function App() {
           </button>
         </div>
 
-        {!completed && (
+        {!completed && !isBuildingManagementTemplate(report.details.reportType) && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => csvInputRef.current?.click()}
@@ -603,7 +598,7 @@ export default function App() {
                 onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
                 onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
               />
-            ) : ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(report.details.reportType) ? (
+            ) : isBuildingManagementTemplate(report.details.reportType) ? (
               <BuildingManagementReportEditor
                 details={report.details}
                 areas={report.areas}
@@ -631,7 +626,7 @@ export default function App() {
               onUploadPhotos={handleUploadPhotos}
               onUpdatePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
               onDeletePhoto={handleDeletePhoto}
-              linkToItems={['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(report.details.reportType)}
+              linkToItems={isBuildingManagementTemplate(report.details.reportType)}
             />
           </div>
         )}
