@@ -42,8 +42,8 @@ Completed:
 
 Production renderer status:
 - The deterministic renderer has passed the large Entry-report production test and the Entry/Routine/Exit template regressions.
-- All 23 report definitions, including the hidden legacy Building Management compatibility template, are generated in CI on every verification run. There are 22 selectable report templates in the application.
-- CI includes deliberately oversized Routine and generic findings, long metadata, filled Building Manager Daily/Monthly reports, schema-migration checks and structural validation checks.
+- All 24 report definitions, including the hidden legacy Building Management compatibility template, are generated in CI on every verification run. There are 23 selectable report templates in the application, including the manually configurable Custom Report.
+- CI includes deliberately oversized Routine and generic findings, a long-content Custom Report, long metadata, filled Building Manager Daily/Monthly reports, schema-migration checks and structural validation checks.
 - Representative hardened PDFs have been rendered and visually reviewed after the full rendering audit, including Entry, Exit, Routine continuation pages, generic inspection/maintenance reports, filled Building Manager reports and the dedicated Key Receipt (including multi-page key-list stress output).
 - Screen previews are non-authoritative summaries. The downloaded deterministic PDF is the acceptance output for pagination and issued-report layout.
 - Real-world operational acceptance remains appropriate as each materially changed template is first used with live data, particularly for device-supplied photographs.
