@@ -1,4 +1,4 @@
-export const CURRENT_REPORT_SCHEMA_VERSION = 3;
+export const CURRENT_REPORT_SCHEMA_VERSION = 4;
 
 export const REPORT_TYPES = [
   'Entry',
