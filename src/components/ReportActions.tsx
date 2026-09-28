@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Download, Mail } from 'lucide-react';
+import { CheckCircle2, Download, Mail, RefreshCw } from 'lucide-react';
 import { isKeyReceiptTemplate, reportInstanceLabel } from '../data/reportCatalogue';
 import { validateReportForFinalization } from '../lib/reportValidation';
 import { ReportData } from '../types/report';
@@ -9,8 +9,10 @@ interface Props {
   onDownload: () => void;
   onComplete: () => void;
   onDownloadCompleted: () => void;
+  onSyncPlatform?: () => void;
   isExporting: boolean;
   isCompleting: boolean;
+  isSyncingPlatform?: boolean;
   canEdit: boolean;
 }
 
@@ -19,8 +21,10 @@ export const ReportActions: React.FC<Props> = ({
   onDownload,
   onComplete,
   onDownloadCompleted,
+  onSyncPlatform,
   isExporting,
   isCompleting,
+  isSyncingPlatform = false,
   canEdit,
 }) => {
   const [recipient, setRecipient] = useState('');
@@ -73,12 +77,24 @@ ProInspect`;
 
       <div className="flex flex-wrap gap-2">
         {completed || superseded ? (
-          <button
-            onClick={onDownloadCompleted}
-            className="px-4 py-2 bg-[#0a2540] text-white rounded-lg text-sm font-bold flex items-center gap-2"
-          >
-            <Download className="w-4 h-4" /> Download Saved PDF
-          </button>
+          <>
+            <button
+              onClick={onDownloadCompleted}
+              className="px-4 py-2 bg-[#0a2540] text-white rounded-lg text-sm font-bold flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" /> Download Saved PDF
+            </button>
+            {completed && report.integrationContext && onSyncPlatform && (
+              <button
+                onClick={onSyncPlatform}
+                disabled={isSyncingPlatform}
+                className="px-4 py-2 border border-neutral-300 bg-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncingPlatform ? 'animate-spin' : ''}`} />
+                {isSyncingPlatform ? 'Syncing…' : 'Sync to ProInspect'}
+              </button>
+            )}
+          </>
         ) : (
           <>
             <button
