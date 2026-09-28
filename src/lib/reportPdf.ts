@@ -1752,6 +1752,13 @@ export async function generateReportPdf(
     await drawPhotoPages(pdf, report, onProgress);
     onProgress?.('Building exit special reporting and sign-off...');
     drawFinalPage(pdf, report);
+  } else if (isBuildingManagementReport(report.details.reportType)) {
+    const template = getReportTemplate(report.details.reportType);
+    onProgress?.(`Building ${template.label}...`);
+    drawBuildingManagementReportPages(pdf, report, onProgress);
+    await drawPhotoPages(pdf, report, onProgress);
+    onProgress?.('Building Building Manager summary and sign-off...');
+    drawBuildingManagementClosingPages(pdf, report);
   } else {
     const template = getReportTemplate(report.details.reportType);
     onProgress?.(`Building ${template.label}...`);
