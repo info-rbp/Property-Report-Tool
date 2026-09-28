@@ -1,6 +1,7 @@
 import { REPORT_TEMPLATES } from '../src/data/reportCatalogue';
 import { createBlankReport } from '../src/data/reportTemplates';
 import { formatAustralianDate, renumberPhotosByArea, splitTenantNames } from '../src/lib/reportFormatting';
+import { migrateReportData } from '../src/lib/reportMigration';
 import { generateReportPdf } from '../src/lib/reportPdf';
 import { validateReportForFinalization, validateReportStructure } from '../src/lib/reportValidation';
 import { CURRENT_REPORT_SCHEMA_VERSION, ReportData } from '../src/types/report';
@@ -442,4 +443,21 @@ if (createBlankReport('Routine').schemaVersion !== CURRENT_REPORT_SCHEMA_VERSION
   throw new Error('New reports are not being stamped with the current report schema version.');
 }
 
-console.log(`All ${REPORT_TEMPLATES.length} catalogue templates, rendering stress fixtures and report-integrity checks passed.`);
+const legacyReport = structuredClone(routineReport);
+delete legacyReport.schemaVersion;
+const migratedLegacyReport = migrateReportData(legacyReport);
+if (migratedLegacyReport.schemaVersion !== CURRENT_REPORT_SCHEMA_VERSION) {
+  throw new Error('Legacy report schema migration regression detected.');
+}
+
+let futureSchemaRejected = false;
+try {
+  migrateReportData({ ...routineReport, schemaVersion: CURRENT_REPORT_SCHEMA_VERSION + 1 });
+} catch {
+  futureSchemaRejected = true;
+}
+if (!futureSchemaRejected) {
+  throw new Error('Future report schema versions must be rejected until the application supports them.');
+}
+
+console.log(`All ${REPORT_TEMPLATES.length} catalogue templates, rendering stress fixtures, schema migrations and report-integrity checks passed.`);
