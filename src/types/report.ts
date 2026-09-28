@@ -191,6 +191,7 @@ export interface ReportSummary {
   id: string;
   propertyId: string;
   reportType: ReportType;
+  title?: string;
   status: ReportStatus;
   inspectionDate?: string;
   completedPdfKey?: string;
