@@ -686,9 +686,11 @@ export default function App() {
         <PropertiesDashboard
           properties={properties}
           userEmail={userEmail}
+          userRole={userRole}
           isLoading={isLoading}
           onCreate={handleCreateProperty}
           onOpen={handleOpenProperty}
+          onRestore={handleRestoreProperty}
         />
       </div>
     );
@@ -715,17 +717,22 @@ export default function App() {
         <ReportDashboard
           property={selectedProperty}
           reports={reportSummaries}
+          userRole={userRole}
           onBack={handleBackToProperties}
           onCreate={handleCreateReport}
           onOpen={handleOpenReport}
           onDelete={handleDeleteReport}
           onDownloadCompleted={handleDownloadCompleted}
+          onCreateCorrection={handleCreateCorrection}
+          onUpdateProperty={handleUpdateProperty}
+          onArchiveProperty={handleArchiveProperty}
         />
       </div>
     );
   }
 
-  const completed = report.status === 'completed';
+  const completed = report.status !== 'draft';
+  const editable = report.status === 'draft' && userRole !== 'viewer';
 
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col text-neutral-900 font-sans">
@@ -735,13 +742,13 @@ export default function App() {
           <div className="hidden sm:block border-l border-neutral-300 pl-4 min-w-0">
             <h1 className="text-sm font-bold text-neutral-800 truncate">{report.details.propertyAddress}</h1>
             <p className="text-[11px] text-neutral-500 font-medium">
-              {reportInstanceLabel(report.details)} • {completed ? 'Completed' : 'Draft'}
+              {reportInstanceLabel(report.details)} • {report.status === 'superseded' ? 'Superseded' : completed ? 'Completed' : 'Draft'}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {!completed && (
+          {editable && (
             <span className="hidden lg:inline text-[11px] text-neutral-500">
               {isSaving ? 'Saving to cloud...' : lastSavedTime ? `Saved ${lastSavedTime}` : 'Cloud draft'}
             </span>
@@ -774,7 +781,7 @@ export default function App() {
             <Eye className="w-3.5 h-3.5" /> Preview
           </button>
 
-          {!completed && (
+          {editable && (
             <>
               <button
                 onClick={() => setViewMode('commentary')}
@@ -807,7 +814,7 @@ export default function App() {
           </button>
         </div>
 
-        {!completed && !isBuildingManagementTemplate(report.details.reportType) && !isKeyReceiptTemplate(report.details.reportType) && (
+        {editable && !isBuildingManagementTemplate(report.details.reportType) && !isKeyReceiptTemplate(report.details.reportType) && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => csvInputRef.current?.click()}
@@ -831,6 +838,39 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {draftConflict && report.id === draftConflict.local.id && (
+        <div className="px-4 py-3 border-b border-red-300 bg-red-50 text-red-950">
+          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold">Draft conflict detected</div>
+              <div className="text-xs mt-1">
+                {draftConflict.message} Your local changes have been preserved and will not overwrite the newer cloud copy automatically.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleReloadCloudConflict}
+                className="px-3 py-1.5 text-xs font-bold border border-red-300 rounded-lg bg-white"
+              >
+                Load Cloud Version
+              </button>
+              <button
+                onClick={handleCloneLocalConflict}
+                className="px-3 py-1.5 text-xs font-bold bg-[#0a2540] text-white rounded-lg"
+              >
+                Preserve My Changes as New Draft
+              </button>
+              <button
+                onClick={handleDownloadLocalConflict}
+                className="px-3 py-1.5 text-xs font-bold border border-red-300 rounded-lg bg-white"
+              >
+                Download Local Backup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {statusMessage && (
         <div className={`px-4 py-2.5 text-xs flex items-center justify-between border-b ${
