@@ -41,8 +41,12 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     [reportAreaNames]
   );
   const existingAreaNames = useMemo(
-    () => Array.from(new Set(photos.map((photo) => (photo.areaName || 'General').trim() || 'General'))),
-    [photos]
+    () => Array.from(new Set(photos.map((photo) =>
+      (photo.areaId ? areaById.get(photo.areaId)?.name : undefined) ||
+      (photo.areaName || 'General').trim() ||
+      'General'
+    ))),
+    [photos, areaById]
   );
   const unmappedAreaNames = existingAreaNames.filter(
     (name) => reportAreaNames.length > 0 && !validAreaKeys.has(normalizeAreaName(name))
@@ -51,6 +55,14 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     () => new Map(areas.map((area) => [area.name, area])),
     [areas]
   );
+  const areaById = useMemo(
+    () => new Map(areas.map((area) => [area.id, area])),
+    [areas]
+  );
+  const resolvedAreaName = (photo: ReportPhoto) =>
+    (photo.areaId ? areaById.get(photo.areaId)?.name : undefined) ||
+    (photo.areaName || 'General').trim() ||
+    'General';
   const selectedAreaItems = areaByName.get(selectedUploadArea)?.items || [];
   const targetAreaItems = areaByName.get(targetUploadArea)?.items || [];
 
@@ -130,6 +142,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
       return {
         ...photo,
         areaName,
+        areaId: areaByName.get(areaName)?.id,
         itemId: linkToItems ? firstItem?.id : photo.itemId,
         itemName: linkToItems ? firstItem?.name : photo.itemName,
       };
@@ -152,9 +165,12 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
 
   const handleBulkMove = () => {
     if (!bulkMoveArea || activeAreaFilter === 'ALL') return;
+    const targetArea = areaByName.get(bulkMoveArea);
     const updated = photos.map((photo) => {
-      const currentArea = (photo.areaName || 'General').trim() || 'General';
-      return currentArea === activeAreaFilter ? { ...photo, areaName: bulkMoveArea } : photo;
+      const currentArea = resolvedAreaName(photo);
+      return currentArea === activeAreaFilter
+        ? { ...photo, areaName: bulkMoveArea, areaId: targetArea?.id }
+        : photo;
     });
     onUpdatePhotos(renumberPhotosByArea(updated));
     setActiveAreaFilter(bulkMoveArea);
@@ -162,14 +178,14 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
 
   const areaCounts: Record<string, number> = {};
   photos.forEach((photo) => {
-    const key = (photo.areaName || 'General').trim() || 'General';
+    const key = resolvedAreaName(photo);
     areaCounts[key] = (areaCounts[key] || 0) + 1;
   });
 
   const areasWithoutPhotos = reportAreaNames.filter((name) => !areaCounts[name]);
   const unmappedPhotoCount = photos.filter((photo) => {
     if (!reportAreaNames.length) return false;
-    return !validAreaKeys.has(normalizeAreaName(photo.areaName || 'General'));
+    return !validAreaKeys.has(normalizeAreaName(resolvedAreaName(photo)));
   }).length;
   const unlinkedItemPhotoCount = linkToItems
     ? photos.filter((photo) => !photo.itemId || !validItemIds.has(photo.itemId)).length
@@ -177,7 +193,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
 
   const filteredPhotos = activeAreaFilter === 'ALL'
     ? photos
-    : photos.filter((photo) => (photo.areaName || 'General') === activeAreaFilter);
+    : photos.filter((photo) => resolvedAreaName(photo) === activeAreaFilter);
 
   return (
     <div className="bg-white rounded-xl shadow-xs border border-neutral-200 overflow-hidden flex flex-col h-full">
@@ -413,13 +429,13 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
 
                 <div className="p-2.5 bg-white flex flex-col gap-1.5">
                   <select
-                    value={photo.areaName || 'General'}
+                    value={resolvedAreaName(photo)}
                     onChange={(event) => handleReassignPhotoArea(photo.id, event.target.value)}
                     className="w-full bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 font-bold text-neutral-800 text-[10px]"
                   >
-                    {!availableAreaNames.includes((photo.areaName || 'General').trim() || 'General') && (
-                      <option value={(photo.areaName || 'General').trim() || 'General'}>
-                        {(photo.areaName || 'General').trim() || 'General'} (unmapped)
+                    {!availableAreaNames.includes(resolvedAreaName(photo)) && (
+                      <option value={resolvedAreaName(photo)}>
+                        {resolvedAreaName(photo)} (unmapped)
                       </option>
                     )}
                     {availableAreaNames.map((name) => <option key={name} value={name}>{name}</option>)}
@@ -431,7 +447,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                       className="w-full bg-cyan-50 border border-cyan-200 rounded px-1.5 py-1 font-semibold text-cyan-900 text-[10px]"
                     >
                       <option value="">Select reporting item</option>
-                      {(areaByName.get(photo.areaName || '')?.items || []).map((item) => (
+                      {(areaByName.get(resolvedAreaName(photo))?.items || []).map((item) => (
                         <option key={item.id} value={item.id}>{item.name || 'Untitled reporting item'}</option>
                       ))}
                     </select>
