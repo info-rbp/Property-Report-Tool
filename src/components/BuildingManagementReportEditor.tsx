@@ -91,7 +91,9 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   };
 
   const deleteCategory = (area: InspectionArea) => {
-    const linked = photos.filter((photo) => photo.areaName === area.name).length;
+    const linked = photos.filter(
+      (photo) => photo.areaId === area.id || (!photo.areaId && photo.areaName === area.name)
+    ).length;
     if (linked > 0) {
       alert(`This category has ${linked} linked photo${linked === 1 ? '' : 's'}. Reassign or delete those photos before removing the category.`);
       return;
