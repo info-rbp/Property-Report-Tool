@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   RefreshCw,
 } from 'lucide-react';
+import { BuildingManagementReportEditor } from './components/BuildingManagementReportEditor';
 import { CommentaryEditor } from './components/CommentaryEditor';
 import { ExtendedReportEditor } from './components/ExtendedReportEditor';
 import { PhotoManager } from './components/PhotoManager';
@@ -242,7 +243,7 @@ export default function App() {
     }
   };
 
-  const handleUploadPhotos = async (files: File[], areaName: string) => {
+  const handleUploadPhotos = async (files: File[], areaName: string, itemId?: string) => {
     if (!report?.id || report.status === 'completed') return;
     setIsUploadingPhotos(true);
     setStatusMessage(null);
@@ -254,6 +255,13 @@ export default function App() {
           throw new Error('Select one of the current commentary areas before uploading photos.');
         }
       }
+      const item = itemId
+        ? report.areas.flatMap((area) => area.items).find((candidate) => candidate.id === itemId)
+        : undefined;
+      if (itemId && !item) {
+        throw new Error('The selected reporting item no longer exists. Select the item again before uploading.');
+      }
+
       let current = report;
       let nextAreaPhotoIndex = current.photos
         .filter((photo) => photo.areaName === areaName)
@@ -263,11 +271,15 @@ export default function App() {
         const processed = await processInspectionImage(file);
         const photoIndex = ++nextAreaPhotoIndex;
         const photoId = crypto.randomUUID();
-        const name = `${areaName}: Overall (photo ${photoIndex})`;
+        const name = item
+          ? `${areaName}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
+          : `${areaName}: Overall (photo ${photoIndex})`;
         current = await api.uploadPhoto(current.id!, processed.blob, {
           id: photoId,
           name,
           areaName,
+          itemId: item?.id,
+          itemName: item?.name,
           photoIndex,
           isCover: current.photos.length === 0,
         });
@@ -333,6 +345,17 @@ export default function App() {
           throw new Error(
             `${unmappedPhotos.length} photo${unmappedPhotos.length === 1 ? ' is' : 's are'} not assigned to a current report area. Review the red photo-area filter and reassign before finalising.`
           );
+        }
+
+        if (['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(report.details.reportType)) {
+          const validItemIds = new Set(report.areas.flatMap((area) => area.items.map((item) => item.id)));
+          const unlinked = report.photos.filter((photo) => !photo.itemId || !validItemIds.has(photo.itemId));
+          if (unlinked.length > 0) {
+            setViewMode('photos');
+            throw new Error(
+              `${unlinked.length} Building Manager photo${unlinked.length === 1 ? ' is' : 's are'} not linked to a current reporting item. Link each photo to the exact activity it supports before finalising.`
+            );
+          }
         }
       }
 
@@ -580,6 +603,14 @@ export default function App() {
                 onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
                 onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
               />
+            ) : ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(report.details.reportType) ? (
+              <BuildingManagementReportEditor
+                details={report.details}
+                areas={report.areas}
+                photos={report.photos}
+                onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
+                onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
+              />
             ) : (
               <ExtendedReportEditor
                 details={report.details}
@@ -600,6 +631,7 @@ export default function App() {
               onUploadPhotos={handleUploadPhotos}
               onUpdatePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
               onDeletePhoto={handleDeletePhoto}
+              linkToItems={['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(report.details.reportType)}
             />
           </div>
         )}
