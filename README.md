@@ -43,4 +43,4 @@ The extended catalogue, including the Custom Report, is implemented through reus
 
 Google Drive, Google Sheets, Firebase, AI commentary generation and direct email sending are deliberately outside V1.
 
-See `DEPLOYMENT.md`, `DATA_RETENTION.md` and `docs/WA_FORM_1_COMPLIANCE.md` for production guidance.
+See `DEPLOYMENT.md`, `DATA_RETENTION.md`, `docs/WA_FORM_1_COMPLIANCE.md` and `docs/REPORT_FUNCTIONALITY_FREEZE.md` for production guidance and the report-rendering acceptance baseline.
