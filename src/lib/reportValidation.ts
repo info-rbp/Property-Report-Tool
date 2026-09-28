@@ -1,4 +1,4 @@
-import { getReportTemplate, isBuildingManagementTemplate } from '../data/reportCatalogue';
+import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate } from '../data/reportCatalogue';
 import { normalizeAreaName } from './reportFormatting';
 import { ReportData } from '../types/report';
 
@@ -209,6 +209,37 @@ export function validateReportForFinalization(report: ReportData): ReportValidat
     ) {
       issues.push({ code: 'reporting-period-required', message: 'Reporting period is required for a monthly Building Manager report.' });
     }
+  }
+
+  if (isKeyReceiptTemplate(report.details.reportType)) {
+    if (!requiredText(report.details.tenants)) {
+      issues.push({ code: 'key-receipt-tenant-required', message: 'Tenant / recipient name is required for a Key Receipt.' });
+    }
+    if (!requiredText(report.details.tenancyStartDate)) {
+      issues.push({ code: 'key-receipt-start-date-required', message: 'Tenancy commencement date is required for a Key Receipt.' });
+    }
+
+    const keyItems = report.areas.flatMap((area) => area.items || []);
+    if (keyItems.length === 0) {
+      issues.push({ code: 'key-receipt-items-required', message: 'Record at least one key or access device before finalising the Key Receipt.' });
+    }
+
+    keyItems.forEach((item) => {
+      const quantity = (item.quantity || '').trim();
+      if (!quantity) {
+        issues.push({
+          code: 'key-receipt-quantity-required',
+          message: `Enter a quantity for "${item.name || 'key / access device'}".`,
+          itemId: item.id,
+        });
+      } else if (!/^\d+$/.test(quantity) || Number(quantity) <= 0) {
+        issues.push({
+          code: 'key-receipt-quantity-invalid',
+          message: `Quantity for "${item.name || 'key / access device'}" must be a whole number greater than zero.`,
+          itemId: item.id,
+        });
+      }
+    });
   }
 
   return issues;
