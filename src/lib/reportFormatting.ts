@@ -37,7 +37,7 @@ export function renumberPhotosByArea(photos: ReportPhoto[]): ReportPhoto[] {
   const nextIndex = new Map<string, number>();
 
   return photos.map((photo) => {
-    const key = normalizeAreaName(photo.areaName) || 'general';
+    const key = photo.areaId || normalizeAreaName(photo.areaName) || 'general';
     const photoIndex = (nextIndex.get(key) || 0) + 1;
     nextIndex.set(key, photoIndex);
 
