@@ -245,12 +245,66 @@ async function canvasToJpeg(canvas: HTMLCanvasElement, quality: number, label: s
   });
 }
 
+function inlineJpeg(source: string): PdfImage | null {
+  const prefix = 'data:image/jpeg;base64,';
+  if (!source.startsWith(prefix)) return null;
+
+  try {
+    const binary = atob(source.slice(prefix.length));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+
+    if (bytes.length < 10 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+
+    const startOfFrame = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+    let offset = 2;
+    while (offset + 8 < bytes.length) {
+      if (bytes[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+
+      while (offset < bytes.length && bytes[offset] === 0xff) offset += 1;
+      if (offset >= bytes.length) break;
+
+      const marker = bytes[offset];
+      offset += 1;
+      if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (offset + 1 >= bytes.length) break;
+
+      const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+      if (segmentLength < 2 || offset + segmentLength > bytes.length) break;
+
+      if (startOfFrame.has(marker) && segmentLength >= 7) {
+        const height = (bytes[offset + 3] << 8) | bytes[offset + 4];
+        const width = (bytes[offset + 5] << 8) | bytes[offset + 6];
+        if (width > 0 && height > 0) return { bytes, width, height };
+        break;
+      }
+      offset += segmentLength;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 async function prepareImageForPdf(
   source: string,
   label: string,
   maxDimension = 720,
   targetBytes = 45_000
 ): Promise<PdfImage> {
+  const embedded = inlineJpeg(source);
+  if (
+    embedded &&
+    embedded.bytes.length <= targetBytes &&
+    Math.max(embedded.width, embedded.height) <= maxDimension
+  ) {
+    return embedded;
+  }
+
   const sourceBlob = await fetchImageSource(source, label);
   let bitmap: ImageBitmap;
   try {
