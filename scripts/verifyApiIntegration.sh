@@ -199,6 +199,7 @@ all_list=$(curl -fsS "${BASE_URL}/api/properties?includeArchived=true")
 curl -fsS -X POST "${BASE_URL}/api/properties/${property_id}/restore" >/dev/null
 
 API_TEST_BASE_URL="${BASE_URL}" API_TEST_PROPERTY_ID="${property_id}" bun scripts/verifyStorageRaces.ts
+API_TEST_BASE_URL="${BASE_URL}" API_TEST_PROPERTY_ID="${property_id}" bun scripts/verifyPdfUpload.ts
 
 start_worker viewer
 viewer_me=$(curl -fsS "${BASE_URL}/api/me")

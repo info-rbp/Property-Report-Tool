@@ -976,6 +976,12 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 
       let completed: ReportData;
       try {
+        // Read only the PDF signature before immutable publication. MIME labels
+        // alone do not validate uploaded bytes; keep large uploads streaming.
+        const prefix = await env.REPORT_STORAGE.get(key, { range: { offset: 0, length: 5 } });
+        if (!prefix || await prefix.text() !== '%PDF-') {
+          throw new HttpError(400, 'Uploaded content is not a PDF document.', 'invalid-pdf');
+        }
         completed = await updateReportData(env, row, report, userEmail, expectedRevision, 'completed', key);
       } catch (error) {
         await deleteStoragePair(env, key).catch(() => undefined);
