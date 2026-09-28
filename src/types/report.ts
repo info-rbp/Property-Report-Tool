@@ -1,28 +1,31 @@
 export const CURRENT_REPORT_SCHEMA_VERSION = 2;
 
-export type ReportType =
-  | 'Entry'
-  | 'Routine'
-  | 'Exit'
-  | 'PropertyOnboarding'
-  | 'VacantProperty'
-  | 'MaintenanceAssessment'
-  | 'MaintenanceCompletion'
-  | 'CleaningRectification'
-  | 'CommercialIngoing'
-  | 'CommercialPeriodic'
-  | 'CommercialExit'
-  | 'CommonProperty'
-  | 'BuildingManagement'
-  | 'BuildingManagementDaily'
-  | 'BuildingManagementMonthly'
-  | 'Incident'
-  | 'ContractorWorks'
-  | 'PropertyHandover'
-  | 'PreventativeMaintenance'
-  | 'CleaningQuality'
-  | 'AnnualPropertySummary'
-  | 'KeySafeInstallation';
+export const REPORT_TYPES = [
+  'Entry',
+  'Routine',
+  'Exit',
+  'PropertyOnboarding',
+  'VacantProperty',
+  'MaintenanceAssessment',
+  'MaintenanceCompletion',
+  'CleaningRectification',
+  'CommercialIngoing',
+  'CommercialPeriodic',
+  'CommercialExit',
+  'CommonProperty',
+  'BuildingManagement',
+  'BuildingManagementDaily',
+  'BuildingManagementMonthly',
+  'Incident',
+  'ContractorWorks',
+  'PropertyHandover',
+  'PreventativeMaintenance',
+  'CleaningQuality',
+  'AnnualPropertySummary',
+  'KeySafeInstallation',
+] as const;
+
+export type ReportType = typeof REPORT_TYPES[number];
 
 export type ReportCategory = 'Residential' | 'Commercial' | 'Maintenance' | 'Building / Strata';
 export type ReportTemplateFamily =
