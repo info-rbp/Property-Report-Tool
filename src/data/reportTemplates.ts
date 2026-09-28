@@ -12,19 +12,22 @@ const COMPANY = {
 
 function makeDefaultAreas(reportType: ReportType): InspectionArea[] {
   const definition = getReportTemplate(reportType);
+  const emptyActivitySections = ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(reportType);
   return definition.defaultAreas.map((name) => ({
     id: `area-${crypto.randomUUID()}`,
     name,
-    items: [
-      {
-        id: `item-${crypto.randomUUID()}`,
-        name: 'Overall',
-        clean: definition.family === 'condition' ? null : undefined,
-        undamaged: definition.family === 'condition' ? null : undefined,
-        working: definition.family === 'condition' ? null : undefined,
-        agentComments: '',
-      },
-    ],
+    items: emptyActivitySections
+      ? []
+      : [
+          {
+            id: `item-${crypto.randomUUID()}`,
+            name: 'Overall',
+            clean: definition.family === 'condition' ? null : undefined,
+            undamaged: definition.family === 'condition' ? null : undefined,
+            working: definition.family === 'condition' ? null : undefined,
+            agentComments: '',
+          },
+        ],
   }));
 }
 
@@ -88,6 +91,9 @@ export function createBlankReport(
       keysAccessDevices: '',
       outstandingItems: '',
       buildingSummary: '',
+      buildingName: '',
+      strataPlan: '',
+      reportingPeriod: '',
       contractorAttendance: '',
       residentMatters: '',
       worksCompleted: '',
