@@ -1,4 +1,4 @@
-export const CURRENT_REPORT_SCHEMA_VERSION = 2;
+export const CURRENT_REPORT_SCHEMA_VERSION = 3;
 
 export const REPORT_TYPES = [
   'Entry',
@@ -23,6 +23,7 @@ export const REPORT_TYPES = [
   'CleaningQuality',
   'AnnualPropertySummary',
   'KeySafeInstallation',
+  'KeyReceipt',
 ] as const;
 
 export type ReportType = typeof REPORT_TYPES[number];
@@ -57,6 +58,8 @@ export interface InspectionItem {
   status?: string;
   tenantAgrees?: boolean | null;
   tenantComments?: string;
+  quantity?: string;
+  identifier?: string;
   isCustom?: boolean;
 }
 
@@ -149,6 +152,7 @@ export interface TenancyDetails {
   codeHandlingNote?: string;
   nextReviewDate?: string;
   annualSummaryPeriod?: string;
+  keyReceiptTime?: string;
 
   agentSignName: string;
   agentSignDate: string;
