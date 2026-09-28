@@ -40,6 +40,14 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     () => new Set(reportAreaNames.map((name) => normalizeAreaName(name))),
     [reportAreaNames]
   );
+  const areaByName = useMemo(
+    () => new Map(areas.map((area) => [area.name, area])),
+    [areas]
+  );
+  const areaById = useMemo(
+    () => new Map(areas.map((area) => [area.id, area])),
+    [areas]
+  );
   const existingAreaNames = useMemo(
     () => Array.from(new Set(photos.map((photo) =>
       (photo.areaId ? areaById.get(photo.areaId)?.name : undefined) ||
@@ -50,14 +58,6 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   );
   const unmappedAreaNames = existingAreaNames.filter(
     (name) => reportAreaNames.length > 0 && !validAreaKeys.has(normalizeAreaName(name))
-  );
-  const areaByName = useMemo(
-    () => new Map(areas.map((area) => [area.name, area])),
-    [areas]
-  );
-  const areaById = useMemo(
-    () => new Map(areas.map((area) => [area.id, area])),
-    [areas]
   );
   const resolvedAreaName = (photo: ReportPhoto) =>
     (photo.areaId ? areaById.get(photo.areaId)?.name : undefined) ||
