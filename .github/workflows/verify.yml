@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, hardening/final-application-freeze]
+    branches: [main, hardening/final-application-freeze, integration/platform-handoff]
 
 permissions:
   contents: read
@@ -32,6 +32,8 @@ jobs:
         run: bun run lint
       - name: Production build
         run: bun run build
+      - name: Platform handoff integration contract
+        run: bun scripts/verifyPlatformHandoff.ts
       - name: Production authentication boundary
         run: bun scripts/verifyWorkerBoundary.ts
       - name: Worker API, concurrency, authorisation and storage integration
