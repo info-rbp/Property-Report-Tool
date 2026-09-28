@@ -29,7 +29,7 @@ export interface ReportTemplateDefinition {
   summaryFields: ReportFieldDefinition[];
   disclaimer: string;
   selectable?: boolean;
-  specializedLayout?: 'building-management';
+  specializedLayout?: 'building-management' | 'key-receipt';
 }
 
 const visualInspectionDisclaimer = (subject: string) =>
@@ -493,6 +493,32 @@ export const REPORT_TEMPLATES: ReportTemplateDefinition[] = [
     disclaimer: verificationDisclaimer('annual property condition summary'),
   },
   {
+    type: 'KeyReceipt',
+    category: 'Residential',
+    family: 'event',
+    label: 'Key Receipt',
+    shortLabel: 'Key Receipt',
+    purpose: 'Record the handover of keys and access devices to a tenant at the commencement of a tenancy.',
+    findingsTitle: 'Keys & Access Devices Received',
+    summaryTitle: 'Key Handover Details',
+    finalSectionTitle: 'Tenant Acknowledgement & Signature',
+    defaultAreas: ['Keys / Access Devices Received'],
+    detailFields: [
+      { key: 'tenants', label: 'Tenant / Recipient' },
+      { key: 'tenancyStartDate', label: 'Tenancy Commencement Date', placeholder: 'DD/MM/YYYY' },
+      { key: 'inspectionDate', label: 'Date Keys / Access Devices Received', placeholder: 'DD/MM/YYYY' },
+      { key: 'keyReceiptTime', label: 'Time Received', placeholder: 'e.g. 2:30 pm' },
+      { key: 'inspectingAgent', label: 'Issued By' },
+      { key: 'referenceNumber', label: 'Reference' },
+    ],
+    summaryFields: [
+      { key: 'additionalComments', label: 'Handover Notes / Comments', multiline: true, rows: 4 },
+    ],
+    disclaimer:
+      'This receipt records the handover of the keys and access devices listed above. It does not replace or amend the tenancy agreement, property condition report or any other tenancy document.',
+    specializedLayout: 'key-receipt',
+  },
+  {
     type: 'KeySafeInstallation',
     category: 'Maintenance',
     family: 'event',
@@ -559,6 +585,10 @@ export function getReportTemplate(type: ReportType): ReportTemplateDefinition {
 
 export function isBuildingManagementTemplate(type: ReportType): boolean {
   return getReportTemplate(type).specializedLayout === 'building-management';
+}
+
+export function isKeyReceiptTemplate(type: ReportType): boolean {
+  return getReportTemplate(type).specializedLayout === 'key-receipt';
 }
 
 export const REPORT_CATEGORIES: ReportCategory[] = [
