@@ -250,7 +250,7 @@ await verifyPdf('Entry', report, 5, 10_000);
 await verifyPdf('Routine', routineReport, 3, 4_000);
 await verifyPdf('Exit', exitReport, 4);
 
-for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', 'Exit'].includes(item.type))) {
+for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', 'Exit', 'KeyReceipt'].includes(item.type))) {
   const extended = createBlankReport(template.type, {
     id: `property-${template.type}`,
     address: '19 Bonnard Crescent Ashby WA 6065',
@@ -285,6 +285,59 @@ for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', '
   }));
 
   await verifyPdf(template.type, extended, template.family === 'condition' ? 4 : 3, 3_500);
+}
+
+const keyReceipt = createBlankReport('KeyReceipt', {
+  id: 'key-receipt-property',
+  address: '19 Bonnard Crescent Ashby WA 6065',
+});
+keyReceipt.details.tenants = 'John Smith & Jane Smith';
+keyReceipt.details.tenancyStartDate = '2026-09-28';
+keyReceipt.details.inspectionDate = '2026-09-28';
+keyReceipt.details.keyReceiptTime = '2:30 pm';
+keyReceipt.details.inspectingAgent = 'ProInspect Key Handover';
+keyReceipt.details.referenceNumber = 'TEN-KEY-001';
+keyReceipt.details.additionalComments = 'Keys were handed directly to the tenants at commencement of the tenancy.';
+keyReceipt.areas[0].items = [
+  { id: 'key-front', name: 'Front Door Key', quantity: '2', identifier: 'Silver key - front entry', agentComments: '' },
+  { id: 'key-security', name: 'Security / Screen Door Key', quantity: '2', identifier: 'Front security door', agentComments: '' },
+  { id: 'key-rear', name: 'Rear Door Key', quantity: '1', identifier: '', agentComments: '' },
+  { id: 'key-mailbox', name: 'Mailbox Key', quantity: '2', identifier: 'Mailbox 19', agentComments: '' },
+  { id: 'key-remote', name: 'Garage Remote', quantity: '1', identifier: 'Black remote', agentComments: '' },
+  { id: 'key-fob', name: 'Access Fob / Swipe Card', quantity: '2', identifier: 'Blue proximity fobs', agentComments: '' },
+];
+
+const keyReceiptIssues = validateReportForFinalization(keyReceipt);
+if (keyReceiptIssues.length !== 0) {
+  throw new Error(`Valid Key Receipt failed finalization validation: ${keyReceiptIssues.map((issue) => issue.message).join(' ')}`);
+}
+await verifyPdf('KeyReceiptFilled', keyReceipt, 1, 3_000);
+
+const keyReceiptStress = structuredClone(keyReceipt);
+keyReceiptStress.id = 'key-receipt-stress';
+keyReceiptStress.details.propertyAddress =
+  'A deliberately long residential property address used to verify wrapping within the Key Receipt handover-details table, Perth WA 6000';
+keyReceiptStress.details.tenants =
+  'Alexandra Example-Smith & Christopher Example-Jones & Morgan Example-Williams';
+keyReceiptStress.details.additionalComments =
+  'This deliberately extended handover note verifies that the Key Receipt can continue safely while preserving the acknowledgement and tenant signature section. '.repeat(10);
+keyReceiptStress.areas[0].items = Array.from({ length: 24 }, (_, index) => ({
+  id: `key-stress-${index + 1}`,
+  name: index % 4 === 0
+    ? `Access Device ${index + 1} with an intentionally long description to exercise table wrapping`
+    : `Key / Access Device ${index + 1}`,
+  quantity: String((index % 3) + 1),
+  identifier:
+    `Identifier / handover note ${index + 1}. This text is deliberately extended to verify deterministic row-height calculation and continuation-page table headings.`,
+  agentComments: '',
+}));
+await verifyPdf('KeyReceiptLongList', keyReceiptStress, 2, 6_000);
+
+const invalidKeyReceipt = structuredClone(keyReceipt);
+invalidKeyReceipt.areas[0].items[0].quantity = '';
+const invalidKeyReceiptIssues = validateReportForFinalization(invalidKeyReceipt);
+if (!invalidKeyReceiptIssues.some((issue) => issue.code === 'key-receipt-quantity-required')) {
+  throw new Error('Key Receipt quantity validation regression detected.');
 }
 
 const buildingDaily = createBlankReport('BuildingManagementDaily', {

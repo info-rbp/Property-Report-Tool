@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Download, FileText, Plus, Trash2 } from 'lucide-react';
-import { REPORT_CATEGORIES, REPORT_TEMPLATES, reportLabel } from '../data/reportCatalogue';
+import { isKeyReceiptTemplate, REPORT_CATEGORIES, REPORT_TEMPLATES, reportLabel } from '../data/reportCatalogue';
 import { PropertyRecord, ReportSummary, ReportType } from '../types/report';
 
 interface Props {
@@ -99,7 +99,7 @@ export const ReportDashboard: React.FC<Props> = ({
                       </span>
                     </div>
                     <div className="text-xs text-neutral-500 mt-1 ml-6">
-                      Inspection {report.inspectionDate || 'date not set'} • Updated {new Date(report.updatedAt).toLocaleString()}
+                      {isKeyReceiptTemplate(report.reportType) ? 'Receipt' : 'Inspection'} {report.inspectionDate || 'date not set'} • Updated {new Date(report.updatedAt).toLocaleString()}
                     </div>
                   </button>
 

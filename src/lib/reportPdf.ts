@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
-import { getReportTemplate, isBuildingManagementTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
+import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
 import { formatAustralianDate, splitTenantNames } from './reportFormatting';
 import { assertReportReadyForPdf } from './reportValidation';
 import { InspectionArea, InspectionItem, ReportData, ReportPhoto, ReportType } from '../types/report';
@@ -1834,8 +1834,302 @@ function drawFinalPage(pdf: jsPDF, report: ReportData) {
   drawWrappedLines(pdf, disclaimer, MARGIN_X, y + 3.8, 2.5, { maxLines: Math.max(1, Math.floor((BODY_BOTTOM - y - 5) / 2.5)) });
 }
 
+interface KeyReceiptFragment {
+  nameLines: string[];
+  identifierLines: string[];
+  first: boolean;
+}
+
+const KEY_RECEIPT_WIDTHS = [20, 62, CONTENT_WIDTH - 82] as const;
+
+function keyReceiptColumnPositions(): number[] {
+  const positions: number[] = [MARGIN_X];
+  KEY_RECEIPT_WIDTHS.forEach((width) => positions.push(positions[positions.length - 1] + width));
+  return positions;
+}
+
+function startKeyReceiptPage(pdf: jsPDF, report: ReportData, firstPage: boolean): number {
+  if (!firstPage) pdf.addPage('a4', 'portrait');
+
+  drawBrand(pdf, MARGIN_X + 2, 9, 0.72);
+  setFont(pdf, 15, 'bold');
+  setTextColor(pdf, NAVY);
+  pdf.text('KEY RECEIPT', PAGE_WIDTH - MARGIN_X, 17, { align: 'right' });
+  setFont(pdf, 5.6, 'bold');
+  setTextColor(pdf, MUTED);
+  pdf.text('TENANCY KEY / ACCESS DEVICE HANDOVER', PAGE_WIDTH - MARGIN_X, 22, { align: 'right' });
+  pdf.setDrawColor(...TEAL);
+  pdf.setLineWidth(0.65);
+  pdf.line(MARGIN_X, 27, PAGE_WIDTH - MARGIN_X, 27);
+
+  if (!firstPage) {
+    setFont(pdf, 6.2, 'bold');
+    setTextColor(pdf, MUTED);
+    pdf.text('CONTINUATION', PAGE_WIDTH - MARGIN_X, 32, { align: 'right' });
+    return 36;
+  }
+
+  return 33;
+}
+
+function drawKeyReceiptDetails(pdf: jsPDF, report: ReportData, startY: number): number {
+  let y = startY;
+  y = drawRoutinePageHeading(pdf, y, 'Key Handover Details');
+  const details = report.details;
+  const rows: Array<[string, string]> = [
+    ['Property Address', value(details.propertyAddress)],
+    ['Tenant / Recipient', value(details.tenants)],
+    ['Tenancy Commencement Date', formatAustralianDate(details.tenancyStartDate)],
+    ['Date Keys / Access Devices Received', formatAustralianDate(details.inspectionDate)],
+    ['Time Received', value(details.keyReceiptTime)],
+    ['Issued By', value(details.inspectingAgent)],
+    ['Reference', value(details.referenceNumber)],
+  ];
+
+  rows.forEach(([label, content]) => {
+    const h = routineDetailRowHeight(pdf, label, content);
+    if (y + h > BODY_BOTTOM) {
+      y = startKeyReceiptPage(pdf, report, false);
+      y = drawRoutinePageHeading(pdf, y, 'Key Handover Details (continued)');
+    }
+    y = drawRoutineDetailRow(pdf, y, label, content);
+  });
+
+  return y + 4;
+}
+
+function drawKeyReceiptTableHeader(pdf: jsPDF, y: number, continuation: boolean): number {
+  y = drawRoutinePageHeading(
+    pdf,
+    y,
+    continuation ? 'Keys & Access Devices Received (continued)' : 'Keys & Access Devices Received'
+  );
+
+  const x = keyReceiptColumnPositions();
+  const h = 7.2;
+  KEY_RECEIPT_WIDTHS.forEach((width, index) => drawBox(pdf, x[index], y, width, h, LIGHT_FILL, BORDER));
+  setFont(pdf, 6.1, 'bold');
+  setTextColor(pdf, TEXT);
+  pdf.text('Quantity', x[0] + KEY_RECEIPT_WIDTHS[0] / 2, y + 4.7, { align: 'center' });
+  pdf.text('Key / Access Device', x[1] + 1.5, y + 4.7);
+  pdf.text('Identifier / Notes', x[2] + 1.5, y + 4.7);
+  return y + h;
+}
+
+function splitKeyReceiptFragments(pdf: jsPDF, item: InspectionItem): KeyReceiptFragment[] {
+  const maxLinesPerFragment = 68;
+  setFont(pdf, 6.8, 'normal');
+  const nameLines = wrapText(pdf, value(item.name) || 'Key / Access Device', KEY_RECEIPT_WIDTHS[1] - 3);
+  const identifierLines = wrapText(pdf, value(item.identifier), KEY_RECEIPT_WIDTHS[2] - 3);
+  const lineCount = Math.max(nameLines.length, identifierLines.length, 1);
+  const fragments: KeyReceiptFragment[] = [];
+
+  for (let start = 0; start < lineCount; start += maxLinesPerFragment) {
+    const first = start === 0;
+    fragments.push({
+      nameLines: first
+        ? nameLines.slice(start, start + maxLinesPerFragment)
+        : wrapText(pdf, `${value(item.name) || 'Key / Access Device'} (continued)`, KEY_RECEIPT_WIDTHS[1] - 3),
+      identifierLines: identifierLines.slice(start, start + maxLinesPerFragment),
+      first,
+    });
+  }
+
+  return fragments;
+}
+
+function keyReceiptFragmentHeight(fragment: KeyReceiptFragment): number {
+  const lineHeight = 2.8;
+  return Math.max(8, Math.max(fragment.nameLines.length, fragment.identifierLines.length, 1) * lineHeight + 3.2);
+}
+
+function drawKeyReceiptRow(
+  pdf: jsPDF,
+  y: number,
+  item: InspectionItem,
+  fragment: KeyReceiptFragment
+): number {
+  const x = keyReceiptColumnPositions();
+  const h = keyReceiptFragmentHeight(fragment);
+  KEY_RECEIPT_WIDTHS.forEach((width, index) => drawBox(pdf, x[index], y, width, h, undefined, LIGHT_BORDER));
+
+  setFont(pdf, 6.8, 'bold');
+  setTextColor(pdf, TEXT);
+  if (fragment.first) {
+    pdf.text(value(item.quantity), x[0] + KEY_RECEIPT_WIDTHS[0] / 2, y + 4.8, { align: 'center' });
+  }
+  setFont(pdf, 6.8, 'normal');
+  drawWrappedLines(pdf, fragment.nameLines, x[1] + 1.5, y + 4.2, 2.8);
+  drawWrappedLines(pdf, fragment.identifierLines, x[2] + 1.5, y + 4.2, 2.8);
+  return y + h;
+}
+
+function drawKeyReceiptTextBlock(
+  pdf: jsPDF,
+  report: ReportData,
+  y: number,
+  heading: string,
+  text: string
+): number {
+  setFont(pdf, 6.5, 'normal');
+  const lines = wrapText(pdf, value(text), CONTENT_WIDTH - 4);
+  const lineHeight = 2.7;
+  const chunks: string[][] = [];
+  for (let start = 0; start < lines.length; start += 78) chunks.push(lines.slice(start, start + 78));
+
+  chunks.forEach((chunk, index) => {
+    const h = Math.max(13, chunk.length * lineHeight + 5);
+    if (y + h + 8 > BODY_BOTTOM) {
+      y = startKeyReceiptPage(pdf, report, false);
+    }
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 7.2, SECTION_FILL, BORDER);
+    setFont(pdf, 6.8, 'bold');
+    setTextColor(pdf, NAVY);
+    pdf.text(index === 0 ? heading : `${heading} (continued)`, MARGIN_X + 1.7, y + 4.7);
+    y += 7.2;
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, undefined, LIGHT_BORDER);
+    setFont(pdf, 6.5, 'normal');
+    setTextColor(pdf, TEXT);
+    drawWrappedLines(pdf, chunk, MARGIN_X + 2, y + 4, lineHeight);
+    y += h + 3;
+  });
+
+  return y;
+}
+
+function keyReceiptSignatureNames(report: ReportData): string[] {
+  const parsed = splitTenantNames(report.details.tenants, 3);
+  const names = [
+    value(report.details.tenant1SignName) || parsed[0] || '',
+    value(report.details.tenant2SignName) || parsed[1] || '',
+    value(report.details.tenant3SignName) || parsed[2] || '',
+  ].filter(Boolean);
+  return names.length ? names : [''];
+}
+
+function drawKeyReceiptSignatures(pdf: jsPDF, report: ReportData, startY: number): number {
+  let y = startY;
+  const acknowledgement =
+    'I/We acknowledge that I/we have received the keys and access devices listed above for the premises stated on this receipt on the date recorded above.';
+
+  setFont(pdf, 6.5, 'normal');
+  const ackLines = wrapText(pdf, acknowledgement, CONTENT_WIDTH - 4);
+  const ackHeight = Math.max(14, ackLines.length * 2.8 + 6);
+  if (y + ackHeight + 12 > BODY_BOTTOM) y = startKeyReceiptPage(pdf, report, false);
+
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 7.2, SECTION_FILL, BORDER);
+  setFont(pdf, 6.8, 'bold');
+  setTextColor(pdf, NAVY);
+  pdf.text('Tenant Acknowledgement & Signature', MARGIN_X + 1.7, y + 4.7);
+  y += 7.2;
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, ackHeight, [236, 254, 255], LIGHT_BORDER);
+  setFont(pdf, 6.5, 'normal');
+  setTextColor(pdf, TEXT);
+  drawWrappedLines(pdf, ackLines, MARGIN_X + 2, y + 4.3, 2.8);
+  y += ackHeight + 4;
+
+  const widths = [58, 92, CONTENT_WIDTH - 150];
+  keyReceiptSignatureNames(report).forEach((name, index) => {
+    const h = 19;
+    if (y + h > BODY_BOTTOM) {
+      y = startKeyReceiptPage(pdf, report, false);
+      setFont(pdf, 6.8, 'bold');
+      setTextColor(pdf, NAVY);
+      pdf.text('Tenant Signature (continued)', MARGIN_X, y + 2);
+      y += 5;
+    }
+
+    let x = MARGIN_X;
+    widths.forEach((width) => {
+      drawBox(pdf, x, y, width, h, undefined, LIGHT_BORDER);
+      x += width;
+    });
+
+    setFont(pdf, 5.8, 'bold');
+    setTextColor(pdf, TEXT);
+    pdf.text(`Tenant ${index + 1} - Print Name`, MARGIN_X + 1.8, y + 4);
+    setFont(pdf, 7.1, 'bold');
+    const nameLines = wrapText(pdf, name, widths[0] - 3.6);
+    drawWrappedLines(pdf, nameLines, MARGIN_X + 1.8, y + 10.2, 2.9, { maxLines: 2 });
+
+    setFont(pdf, 5.8, 'bold');
+    pdf.text('Signature', MARGIN_X + widths[0] + 1.8, y + 4);
+    pdf.text('Date', MARGIN_X + widths[0] + widths[1] + 1.8, y + 4);
+    setFont(pdf, 6, 'normal');
+    pdf.text('____ / ____ / ________', MARGIN_X + widths[0] + widths[1] + 1.8, y + 13.2);
+    y += h;
+  });
+
+  return y + 4;
+}
+
+function drawKeyReceiptPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
+  let y = startKeyReceiptPage(pdf, report, true);
+  y = drawKeyReceiptDetails(pdf, report, y);
+  y = drawKeyReceiptTableHeader(pdf, y, false);
+
+  const items = report.areas.flatMap((area) => area.items || []);
+  const displayItems = items.length
+    ? items
+    : [{ id: 'key-receipt-empty', name: 'No keys / access devices recorded', quantity: '', identifier: '', agentComments: '' } as InspectionItem];
+
+  displayItems.forEach((item, itemIndex) => {
+    onProgress?.(`Laying out key handover item ${itemIndex + 1} of ${displayItems.length}...`);
+    const fragments = splitKeyReceiptFragments(pdf, item);
+    fragments.forEach((fragment) => {
+      const h = keyReceiptFragmentHeight(fragment);
+      if (y + h > BODY_BOTTOM - 6) {
+        y = startKeyReceiptPage(pdf, report, false);
+        y = drawKeyReceiptTableHeader(pdf, y, true);
+      }
+      y = drawKeyReceiptRow(pdf, y, item, fragment);
+    });
+  });
+
+  y += 5;
+  if (value(report.details.additionalComments)) {
+    y = drawKeyReceiptTextBlock(pdf, report, y, 'Handover Notes / Comments', report.details.additionalComments);
+  }
+
+  y = drawKeyReceiptSignatures(pdf, report, y);
+
+  const disclaimer = value(report.details.disclaimerText);
+  if (disclaimer) {
+    setFont(pdf, 5.7, 'italic');
+    const lines = wrapText(pdf, disclaimer, CONTENT_WIDTH);
+    const h = lines.length * 2.35 + 5;
+    if (y + h > BODY_BOTTOM) y = startKeyReceiptPage(pdf, report, false);
+    setTextColor(pdf, MUTED);
+    drawWrappedLines(pdf, lines, MARGIN_X, y + 2.5, 2.35);
+  }
+}
+
+function drawKeyReceiptFooter(pdf: jsPDF, report: ReportData, pageNumber: number, totalPages: number) {
+  pdf.setDrawColor(...LIGHT_BORDER);
+  pdf.setLineWidth(0.2);
+  pdf.line(MARGIN_X, FOOTER_LINE_Y, PAGE_WIDTH - MARGIN_X, FOOTER_LINE_Y);
+  setFont(pdf, 5.4, 'bold');
+  setTextColor(pdf, NAVY);
+  pdf.text(value(report.details.companyName) || PROINSPECT_COMPANY.name, MARGIN_X, 291.1);
+  setFont(pdf, 5.2, 'normal');
+  setTextColor(pdf, MUTED);
+  const contact = [value(report.details.companyPhone), value(report.details.companyEmail)].filter(Boolean).join(' | ');
+  if (contact) pdf.text(contact, MARGIN_X + 25, 291.1);
+  setFont(pdf, 6.2, 'bold');
+  setTextColor(pdf, TEXT);
+  pdf.text(`${pageNumber} / ${totalPages}`, PAGE_WIDTH - MARGIN_X, 291.1, { align: 'right' });
+}
+
 function addFooters(pdf: jsPDF, report: ReportData) {
   const total = pdf.getNumberOfPages();
+  if (isKeyReceiptTemplate(report.details.reportType)) {
+    for (let page = 1; page <= total; page++) {
+      pdf.setPage(page);
+      drawKeyReceiptFooter(pdf, report, page, total);
+    }
+    return;
+  }
+
   for (let page = 2; page <= total; page++) {
     pdf.setPage(page);
     drawFooter(pdf, page, total, report.details.reportType === 'Entry');
@@ -1863,10 +2157,17 @@ export async function generateReportPdf(
     creator: 'ProInspect Property Reports',
   });
 
-  onProgress?.('Building report cover...');
-  await drawCoverPage(pdf, report, onProgress);
+  if (isKeyReceiptTemplate(report.details.reportType)) {
+    onProgress?.('Building Key Receipt...');
+    drawKeyReceiptPages(pdf, report, onProgress);
+  } else {
+    onProgress?.('Building report cover...');
+    await drawCoverPage(pdf, report, onProgress);
+  }
 
-  if (report.details.reportType === 'Entry') {
+  if (isKeyReceiptTemplate(report.details.reportType)) {
+    // Dedicated Key Receipt is a compact handover form and does not use a cover page.
+  } else if (report.details.reportType === 'Entry') {
     onProgress?.('Building statutory Form 1 page...');
     drawStatutoryPage(pdf, report);
     drawEntryConditionPages(pdf, report, onProgress);
@@ -1906,7 +2207,9 @@ export async function generateReportPdf(
   const photoPageMinimum = report.photos.length ? Math.ceil(report.photos.length / 12) : 0;
   const template = getReportTemplate(report.details.reportType);
   const expectedMinimumPages =
-    report.details.reportType === 'Entry'
+    isKeyReceiptTemplate(report.details.reportType)
+      ? 1
+      : report.details.reportType === 'Entry'
       ? 3 + (report.areas.length ? 1 : 0) + photoPageMinimum
       : report.details.reportType === 'Routine'
       ? 3 + photoPageMinimum

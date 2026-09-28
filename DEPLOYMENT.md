@@ -42,9 +42,9 @@ Completed:
 
 Production renderer status:
 - The deterministic renderer has passed the large Entry-report production test and the Entry/Routine/Exit template regressions.
-- All 22 report definitions, including the hidden legacy Building Management compatibility template, are generated in CI on every verification run. There are 21 selectable report templates in the application.
+- All 23 report definitions, including the hidden legacy Building Management compatibility template, are generated in CI on every verification run. There are 22 selectable report templates in the application.
 - CI includes deliberately oversized Routine and generic findings, long metadata, filled Building Manager Daily/Monthly reports, schema-migration checks and structural validation checks.
-- Representative hardened PDFs have been rendered and visually reviewed after the full rendering audit, including Entry, Exit, Routine continuation pages, generic inspection/maintenance reports and filled Building Manager reports.
+- Representative hardened PDFs have been rendered and visually reviewed after the full rendering audit, including Entry, Exit, Routine continuation pages, generic inspection/maintenance reports, filled Building Manager reports and the dedicated Key Receipt (including multi-page key-list stress output).
 - Screen previews are non-authoritative summaries. The downloaded deterministic PDF is the acceptance output for pagination and issued-report layout.
 - Real-world operational acceptance remains appropriate as each materially changed template is first used with live data, particularly for device-supplied photographs.
 
@@ -197,10 +197,11 @@ Cloudflare-specific files are ordinary repository files and do not change the Go
 
 Included:
 - Properties as report containers.
-- 21 selectable report templates across Residential, Commercial, Maintenance and Building / Strata.
+- 22 selectable report templates across Residential, Commercial, Maintenance and Building / Strata.
 - Entry, Routine and Exit remain dedicated production templates.
 - Extended reports use catalogue-driven condition, inspection, maintenance/verification, operations and event/handover template families.
 - Building Manager Daily and Monthly reports use a dedicated Category / Reporting Item / Activity Summary / Actions / Photos layout and require photos to be linked to a current reporting item before finalisation.
+- Key Receipt uses a dedicated compact tenancy handover form with tenant details, a quantity-based key/access-device register and tenant acknowledgement/signature lines. It intentionally does not use CSV commentary import or report photos.
 - CSV commentary import.
 - Device photo upload with browser resize/compression.
 - Cross-device cloud drafts.

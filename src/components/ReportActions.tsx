@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Download, Mail } from 'lucide-react';
-import { reportLabel } from '../data/reportCatalogue';
+import { isKeyReceiptTemplate, reportLabel } from '../data/reportCatalogue';
 import { validateReportForFinalization } from '../lib/reportValidation';
 import { ReportData } from '../types/report';
 
@@ -26,11 +26,17 @@ export const ReportActions: React.FC<Props> = ({
   const completed = report.status === 'completed';
   const validationIssues = completed ? [] : validateReportForFinalization(report);
   const validationMessages = Array.from(new Set(validationIssues.map((issue) => issue.message)));
+  const keyItemCount = report.areas.reduce((total, area) => total + area.items.length, 0);
 
   const prepareEmail = () => {
     const label = reportLabel(details.reportType);
     const subject = `${label} - ${details.propertyAddress || 'Property'}`;
-    const body = `Please find attached the completed ${label.toLowerCase()} for ${details.propertyAddress || 'the property'}, inspected on ${details.inspectionDate || 'the recorded inspection date'}.
+    const body = isKeyReceiptTemplate(details.reportType)
+      ? `Please find attached the completed ${label.toLowerCase()} for ${details.propertyAddress || 'the property'}, recording the key handover on ${details.inspectionDate || 'the recorded receipt date'}.
+
+Regards,
+ProInspect`
+      : `Please find attached the completed ${label.toLowerCase()} for ${details.propertyAddress || 'the property'}, inspected on ${details.inspectionDate || 'the recorded inspection date'}.
 
 Regards,
 ProInspect`;
@@ -42,7 +48,9 @@ ProInspect`;
       <div>
         <h3 className="font-bold text-neutral-900">Review & send</h3>
         <p className="text-xs text-neutral-500 mt-1">
-          {report.areas.length} areas • {report.photos.length} photos • {completed ? 'Completed' : 'Draft'}
+          {isKeyReceiptTemplate(report.details.reportType)
+            ? `${keyItemCount} key/access item${keyItemCount === 1 ? '' : 's'} • ${completed ? 'Completed' : 'Draft'}`
+            : `${report.areas.length} areas • ${report.photos.length} photos • ${completed ? 'Completed' : 'Draft'}`}
         </p>
       </div>
 

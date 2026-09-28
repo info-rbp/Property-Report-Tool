@@ -1,8 +1,9 @@
 import React from 'react';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { ReportData, InspectionArea, InspectionItem } from '../types/report';
-import { isBuildingManagementTemplate } from '../data/reportCatalogue';
+import { isBuildingManagementTemplate, isKeyReceiptTemplate } from '../data/reportCatalogue';
 import { ProInspectLogo } from './ProInspectLogo';
+import { KeyReceiptDocument } from './KeyReceiptDocument';
 import { BuildingManagementReportDocument } from './BuildingManagementReportDocument';
 import { ExtendedReportDocument } from './ExtendedReportDocument';
 import { SimpleReportDocument } from './SimpleReportDocument';
@@ -81,6 +82,9 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
     photos[0]?.url;
 
   if (details.reportType !== 'Entry') {
+    if (isKeyReceiptTemplate(details.reportType)) {
+      return <KeyReceiptDocument report={report} />;
+    }
     if (isBuildingManagementTemplate(details.reportType)) {
       return <BuildingManagementReportDocument report={report} />;
     }
