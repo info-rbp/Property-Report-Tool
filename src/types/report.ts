@@ -1,3 +1,5 @@
+export const CURRENT_REPORT_SCHEMA_VERSION = 2;
+
 export type ReportType =
   | 'Entry'
   | 'Routine'
@@ -150,6 +152,7 @@ export interface TenancyDetails {
 }
 
 export interface ReportData {
+  schemaVersion?: number;
   id?: string;
   propertyId?: string;
   status?: ReportStatus;
