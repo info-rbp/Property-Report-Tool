@@ -56,7 +56,7 @@ export const ReportDashboard: React.FC<Props> = ({
             >
               {REPORT_CATEGORIES.map((category) => (
                 <optgroup key={category} label={category}>
-                  {REPORT_TEMPLATES.filter((template) => template.category === category).map((template) => (
+                  {REPORT_TEMPLATES.filter((template) => template.category === category && template.selectable !== false).map((template) => (
                     <option key={template.type} value={template.type}>{template.label}</option>
                   ))}
                 </optgroup>
