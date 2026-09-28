@@ -1,0 +1,71 @@
+name: Stage 1 isolated report repair
+
+on:
+  push:
+    branches: [hardening/final-application-freeze]
+    paths: [scripts/stage1-repair.py, .github/workflows/stage1-repair.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/hardening/final-application-freeze'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply reviewed exact replacements on this branch only
+        id: commit
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/hardening/final-application-freeze
+          git merge-base --is-ancestor cc6bdaed35727e3778424b00a77f82c55bacf8c6 HEAD
+          python3 scripts/stage1-repair.py
+          bash -n scripts/verifyApiIntegration.sh
+          git diff --check
+          git add worker/index.ts src/App.tsx src/lib/cache.ts scripts/verifyApiIntegration.sh scripts/verifyStorageRaces.ts
+          git rm scripts/stage1-repair.py
+          git -c user.name='ProInspect branch maintenance' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: isolate report storage writes, enforce photo manifests and repair regression harness'
+          git push origin HEAD:refs/heads/hardening/final-application-freeze
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.apply.outputs.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run build
+      - name: Local D1/R2 API and security regression
+        timeout-minutes: 5
+        run: bun run api:verify
+      - name: Deterministic PDF regression
+        run: |
+          mkdir -p render-artifacts
+          PDF_VERIFY_OUTPUT_DIR=render-artifacts bun run pdf:verify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stage1-report-pdfs
+          path: render-artifacts/*.pdf
+          retention-days: 3
+          if-no-files-found: ignore
+      - run: bunx wrangler deploy --dry-run --outdir .wrangler-dry
+      - run: bun run security:verify
+      - name: Record verified source
+        if: always()
+        run: git rev-parse HEAD
