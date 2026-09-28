@@ -283,4 +283,89 @@ for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', '
   await verifyPdf(template.type, extended, template.family === 'condition' ? 4 : 3, 3_500);
 }
 
-console.log(`All ${REPORT_TEMPLATES.length} report-template PDF regression checks passed.`);
+const buildingDaily = createBlankReport('BuildingManagementDaily', {
+  id: 'bm-daily-property',
+  address: '15-17 Freeman Loop, North Fremantle WA',
+});
+buildingDaily.details.buildingName = 'Meridian';
+buildingDaily.details.strataPlan = 'Strata Plan 69776';
+buildingDaily.details.clientName = 'Council of Owners';
+buildingDaily.details.inspectingAgent = 'Building Manager Regression Test';
+buildingDaily.details.agentSignName = 'Building Manager Regression Test';
+buildingDaily.details.buildingSummary = 'Daily building-management activities completed and recorded by category.';
+buildingDaily.areas[0].items = [
+  {
+    id: 'bm-daily-maintenance-1',
+    name: 'Fire stairwell light sensor',
+    activityTime: '09:15 am',
+    activityParty: 'Electrical contractor',
+    agentComments: 'Investigated the light sensor in the fire stairwell and completed fault finding to determine why the light was not activating.',
+    actionComments: 'Replacement sensor recommended. Contractor to confirm parts availability and return date.',
+  },
+  {
+    id: 'bm-daily-maintenance-2',
+    name: 'Roof waterproofing preparation',
+    activityTime: '11:30 am',
+    activityParty: 'Roofing contractor',
+    agentComments: longComment,
+    actionComments: 'Testing completed. Product compatibility and next-stage works are to be confirmed before commencement.',
+  },
+];
+buildingDaily.areas[6].items = [
+  {
+    id: 'bm-daily-waste-1',
+    name: 'Waste and recycling service',
+    activityTime: '02:00 pm',
+    activityParty: 'Building Manager',
+    agentComments: 'Collected bins, cleaned recycling and general waste bins with degreaser, and returned clean bins to the designated storage and carousel locations.',
+    actionComments: 'No further action required.',
+  },
+];
+await verifyPdf('BuildingManagementDailyFilled', buildingDaily, 4, 6_000);
+
+const buildingMonthly = createBlankReport('BuildingManagementMonthly', {
+  id: 'bm-monthly-property',
+  address: '15-17 Freeman Loop, North Fremantle WA',
+});
+buildingMonthly.details.buildingName = 'Meridian';
+buildingMonthly.details.strataPlan = 'Strata Plan 69776';
+buildingMonthly.details.reportingPeriod = 'April 2026';
+buildingMonthly.details.clientName = 'Council of Owners';
+buildingMonthly.details.inspectingAgent = 'Building Manager Regression Test';
+buildingMonthly.details.agentSignName = 'Building Manager Regression Test';
+buildingMonthly.details.buildingSummary = 'Monthly building-management activity summary covering maintenance, security, cleaning, grounds, resident movements, inductions, waste, other matters, leave plans and issues.';
+buildingMonthly.areas[0].items = Array.from({ length: 14 }, (_, index) => ({
+  id: `bm-monthly-maintenance-${index + 1}`,
+  name: index % 2 === 0 ? 'Roof waterproofing works' : 'Electrical / services attendance',
+  activityDate: `2026-04-${String(Math.min(30, index + 1)).padStart(2, '0')}`,
+  activityParty: index % 2 === 0 ? 'ASR' : 'Rescom Electrical',
+  agentComments:
+    index === 6
+      ? longComment
+      : `Monthly building-management activity ${index + 1}. Contractor attendance, inspection and works were recorded for the reporting period.`,
+  actionComments:
+    index % 3 === 0
+      ? 'Follow-up required. Building Manager to monitor progress and confirm completion.'
+      : 'Completed / no further action recorded.',
+}));
+buildingMonthly.areas[1].items = [
+  {
+    id: 'bm-monthly-security-1',
+    name: 'Apartment access programming',
+    activityDate: '2026-04-15',
+    activityParty: 'Apartment 404',
+    agentComments: 'Programmed one remote and one swipe access credential.',
+    actionComments: 'Completed.',
+  },
+];
+buildingMonthly.areas[6].items = Array.from({ length: 18 }, (_, index) => ({
+  id: `bm-monthly-waste-${index + 1}`,
+  name: index % 2 === 0 ? 'General waste' : 'Recycling / FOGO',
+  activityDate: `2026-04-${String(Math.min(30, index + 1)).padStart(2, '0')}`,
+  activityParty: 'Building Manager',
+  agentComments: 'Bins collected, washed and returned; waste streams consolidated and collection areas maintained.',
+  actionComments: 'Routine service completed.',
+}));
+await verifyPdf('BuildingManagementMonthlyFilled', buildingMonthly, 6, 10_000);
+
+console.log(`All ${REPORT_TEMPLATES.length} catalogue templates plus filled Building Manager stress fixtures passed.`);
