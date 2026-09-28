@@ -1445,7 +1445,10 @@ function drawExitConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (me
 
 function photoCaption(photo: ReportPhoto, total: number, ordinal: number): string {
   const area = value(photo.areaName) || 'General';
-  return `${area}: Overall (photo ${ordinal} of ${total})`;
+  const item = value(photo.itemName);
+  return item
+    ? `${area}: ${item} (photo ${ordinal} of ${total})`
+    : `${area}: Overall (photo ${ordinal} of ${total})`;
 }
 
 async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
@@ -1454,6 +1457,11 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
   const areaOrder = new Map(
     report.areas.map((area, index) => [area.name.trim().toLowerCase(), index])
   );
+  const itemOrder = new Map<string, number>();
+  report.areas.forEach((area) => {
+    area.items.forEach((item, index) => itemOrder.set(item.id, index));
+  });
+
   const orderedPhotos = report.photos
     .map((photo, originalIndex) => ({ photo, originalIndex }))
     .sort((a, b) => {
@@ -1463,6 +1471,11 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
       const orderB = areaOrder.get(areaB) ?? Number.MAX_SAFE_INTEGER;
       if (orderA !== orderB) return orderA - orderB;
       if (areaA !== areaB) return areaA.localeCompare(areaB);
+
+      const itemA = a.photo.itemId ? itemOrder.get(a.photo.itemId) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+      const itemB = b.photo.itemId ? itemOrder.get(b.photo.itemId) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+      if (itemA !== itemB) return itemA - itemB;
+
       const indexA = a.photo.photoIndex ?? Number.MAX_SAFE_INTEGER;
       const indexB = b.photo.photoIndex ?? Number.MAX_SAFE_INTEGER;
       if (indexA !== indexB) return indexA - indexB;
@@ -1470,16 +1483,19 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
     })
     .map(({ photo }) => photo);
 
+  const photoGroupKey = (photo: ReportPhoto) =>
+    photo.itemId || `area:${(value(photo.areaName) || 'General').toLowerCase()}`;
+
   const counts = new Map<string, number>();
   orderedPhotos.forEach((photo) => {
-    const key = (value(photo.areaName) || 'General').toLowerCase();
+    const key = photoGroupKey(photo);
     counts.set(key, (counts.get(key) || 0) + 1);
   });
 
   const ordinals = new Map<string, number>();
   const photoOrdinal = new Map<string, number>();
   orderedPhotos.forEach((photo) => {
-    const key = (value(photo.areaName) || 'General').toLowerCase();
+    const key = photoGroupKey(photo);
     const ordinal = (ordinals.get(key) || 0) + 1;
     ordinals.set(key, ordinal);
     photoOrdinal.set(photo.id, ordinal);
