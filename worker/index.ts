@@ -1,4 +1,8 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { isBuildingManagementTemplate } from '../src/data/reportCatalogue';
+import { normalizeAreaName } from '../src/lib/reportFormatting';
+import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
+import { CURRENT_REPORT_SCHEMA_VERSION } from '../src/types/report';
 import type { ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
 
 interface Env {
@@ -106,6 +110,7 @@ function parseReport(row: ReportRow): ReportData {
   const parsed = JSON.parse(row.report_data) as ReportData;
   return {
     ...parsed,
+    schemaVersion: parsed.schemaVersion || CURRENT_REPORT_SCHEMA_VERSION,
     id: row.id,
     propertyId: row.property_id,
     status: row.status,
@@ -118,10 +123,6 @@ function parseReport(row: ReportRow): ReportData {
       url: `/api/reports/${encodeURIComponent(row.id)}/photos/${encodeURIComponent(photo.id)}`,
     })),
   };
-}
-
-function isBuildingManagementReportType(reportType: ReportType): boolean {
-  return ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(reportType);
 }
 
 function storageReportType(reportType: ReportType): 'Entry' | 'Routine' | 'Exit' {
@@ -206,6 +207,7 @@ async function updateReportData(
   const now = new Date().toISOString();
   const stored: ReportData = {
     ...report,
+    schemaVersion: CURRENT_REPORT_SCHEMA_VERSION,
     id: row.id,
     propertyId: row.property_id,
     status,
@@ -407,7 +409,9 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (file.size > 5 * 1024 * 1024) throw new HttpError(413, 'Processed image exceeds the 5 MB upload limit.');
 
       const report = parseReport(row);
-      const targetArea = report.areas.find((area) => area.name === areaName);
+      const targetArea = report.areas.find(
+        (area) => normalizeAreaName(area.name) === normalizeAreaName(areaName)
+      );
       const linkedItem = itemId
         ? targetArea?.items.find((item) => item.id === itemId)
         : undefined;
@@ -415,7 +419,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (itemId && !linkedItem) {
         throw new HttpError(400, 'The selected reporting item does not belong to the selected report category.');
       }
-      if (isBuildingManagementReportType(report.details.reportType) && !linkedItem) {
+      if (isBuildingManagementTemplate(report.details.reportType) && !linkedItem) {
         throw new HttpError(400, 'Building Manager photos must be linked to a reporting item.');
       }
 
@@ -481,6 +485,15 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       }
       if (!request.body) throw new HttpError(400, 'PDF is empty.');
 
+      const report = parseReport(row);
+      const validationIssues = validateReportForFinalization(report);
+      if (validationIssues.length > 0) {
+        throw new HttpError(
+          409,
+          reportValidationMessage(validationIssues, 'Report cannot be finalised')
+        );
+      }
+
       const key = `reports/${reportId}/completed/report.pdf`;
       const stored = await env.REPORT_STORAGE.put(key, request.body, {
         httpMetadata: { contentType: 'application/pdf' },
@@ -496,15 +509,6 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.');
       }
 
-      const report = parseReport(row);
-      if (isBuildingManagementReportType(report.details.reportType)) {
-        const validItemIds = new Set(report.areas.flatMap((area) => area.items.map((item) => item.id)));
-        const unlinked = report.photos.filter((photo) => !photo.itemId || !validItemIds.has(photo.itemId));
-        if (unlinked.length > 0) {
-          await env.REPORT_STORAGE.delete(key).catch(() => undefined);
-          throw new HttpError(409, 'Building Manager reports cannot be finalised while photos are not linked to current reporting items.');
-        }
-      }
       return json(await updateReportData(env, row, report, userEmail, 'completed', key));
     }
 
