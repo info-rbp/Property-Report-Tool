@@ -629,10 +629,11 @@ export default function App() {
   };
 
   const handleCloneLocalConflict = async () => {
-    if (!draftConflict.local.id) return;
+    const conflict = draftConflict;
+    if (!conflict?.local.id) return;
     try {
       const cloned = normalizeReport(
-        await api.cloneConflictDraft(draftConflict.local.id, draftConflict.local)
+        await api.cloneConflictDraft(conflict.local.id, conflict.local)
       );
       if (cloned.id) serverRevisionsRef.current[cloned.id] = cloned.revision;
       setReport(cloned);
