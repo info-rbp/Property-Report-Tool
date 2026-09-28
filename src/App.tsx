@@ -13,13 +13,14 @@ import {
 import { BuildingManagementReportEditor } from './components/BuildingManagementReportEditor';
 import { CommentaryEditor } from './components/CommentaryEditor';
 import { ExtendedReportEditor } from './components/ExtendedReportEditor';
+import { KeyReceiptEditor } from './components/KeyReceiptEditor';
 import { PhotoManager } from './components/PhotoManager';
 import { ProInspectLogo } from './components/ProInspectLogo';
 import { PropertiesDashboard } from './components/PropertiesDashboard';
 import { ReportActions } from './components/ReportActions';
 import { ReportDashboard } from './components/ReportDashboard';
 import { ReportDocument } from './components/ReportDocument';
-import { isBuildingManagementTemplate, reportLabel } from './data/reportCatalogue';
+import { isBuildingManagementTemplate, isKeyReceiptTemplate, reportLabel } from './data/reportCatalogue';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
 import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
@@ -566,16 +567,18 @@ export default function App() {
                   viewMode === 'commentary' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
                 }`}
               >
-                <Edit3 className="w-3.5 h-3.5" /> Commentary ({report.areas.length})
+                <Edit3 className="w-3.5 h-3.5" /> {isKeyReceiptTemplate(report.details.reportType) ? 'Receipt Details' : `Commentary (${report.areas.length})`}
               </button>
-              <button
-                onClick={() => setViewMode('photos')}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
-                  viewMode === 'photos' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
-                }`}
-              >
-                <ImageIcon className="w-3.5 h-3.5" /> Photos ({report.photos.length})
-              </button>
+              {!isKeyReceiptTemplate(report.details.reportType) && (
+                <button
+                  onClick={() => setViewMode('photos')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
+                    viewMode === 'photos' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
+                  }`}
+                >
+                  <ImageIcon className="w-3.5 h-3.5" /> Photos ({report.photos.length})
+                </button>
+              )}
             </>
           )}
 
@@ -589,7 +592,7 @@ export default function App() {
           </button>
         </div>
 
-        {!completed && !isBuildingManagementTemplate(report.details.reportType) && (
+        {!completed && !isBuildingManagementTemplate(report.details.reportType) && !isKeyReceiptTemplate(report.details.reportType) && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => csvInputRef.current?.click()}
@@ -661,6 +664,13 @@ export default function App() {
                 onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
                 onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
               />
+            ) : isKeyReceiptTemplate(report.details.reportType) ? (
+              <KeyReceiptEditor
+                details={report.details}
+                areas={report.areas}
+                onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
+                onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
+              />
             ) : isBuildingManagementTemplate(report.details.reportType) ? (
               <BuildingManagementReportEditor
                 details={report.details}
@@ -680,7 +690,7 @@ export default function App() {
           </div>
         )}
 
-        {viewMode === 'photos' && !completed && (
+        {viewMode === 'photos' && !completed && !isKeyReceiptTemplate(report.details.reportType) && (
           <div className="max-w-6xl mx-auto p-4 md:p-6 h-[calc(100vh-125px)]">
             <PhotoManager
               photos={report.photos}
