@@ -1,4 +1,5 @@
 import {
+  REPORT_TYPES,
   ReportCategory,
   ReportTemplateFamily,
   ReportType,
@@ -539,6 +540,12 @@ function buildReportTemplateMap(): Record<ReportType, ReportTemplateDefinition> 
 
     map[definition.type] = definition;
   }
+
+  const missing = REPORT_TYPES.filter((type) => !map[type]);
+  if (missing.length) {
+    throw new Error(`Missing report template definition(s): ${missing.join(', ')}`);
+  }
+
   return map;
 }
 
