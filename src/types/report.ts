@@ -27,6 +27,10 @@ export const REPORT_TYPES = [
 
 export type ReportType = typeof REPORT_TYPES[number];
 
+export function isReportType(value: unknown): value is ReportType {
+  return typeof value === 'string' && (REPORT_TYPES as readonly string[]).includes(value);
+}
+
 export type ReportCategory = 'Residential' | 'Commercial' | 'Maintenance' | 'Building / Strata';
 export type ReportTemplateFamily =
   | 'entry'
