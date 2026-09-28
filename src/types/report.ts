@@ -165,6 +165,23 @@ export interface TenancyDetails {
   disclaimerText: string;
 }
 
+export interface ProInspectIntegrationContext {
+  v: 1;
+  iss: 'proinspect-platform';
+  exp: number;
+  propertyId: string;
+  propertyAddress: string;
+  propertyReference?: string;
+  clientId?: string;
+  tenancyId?: string;
+  bookingId?: string;
+  workOrderId?: string;
+  reportType: ReportType;
+  audiences: Array<'client' | 'tenant' | 'staff'>;
+  issuedByUid?: string;
+  issuedByEmail?: string;
+}
+
 export interface ReportData {
   schemaVersion?: number;
   id?: string;
@@ -177,6 +194,7 @@ export interface ReportData {
   supersededAt?: string;
   createdAt?: string;
   updatedAt?: string;
+  integrationContext?: ProInspectIntegrationContext;
   details: TenancyDetails;
   areas: InspectionArea[];
   photos: ReportPhoto[];
