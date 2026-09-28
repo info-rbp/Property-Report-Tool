@@ -120,6 +120,10 @@ function parseReport(row: ReportRow): ReportData {
   };
 }
 
+function isBuildingManagementReportType(reportType: ReportType): boolean {
+  return ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(reportType);
+}
+
 function storageReportType(reportType: ReportType): 'Entry' | 'Routine' | 'Exit' {
   if (reportType === 'Entry') return 'Entry';
   if (reportType === 'Exit') return 'Exit';
@@ -402,20 +406,32 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (!file.type.startsWith('image/')) throw new HttpError(400, 'Only image uploads are allowed.');
       if (file.size > 5 * 1024 * 1024) throw new HttpError(413, 'Processed image exceeds the 5 MB upload limit.');
 
+      const report = parseReport(row);
+      const targetArea = report.areas.find((area) => area.name === areaName);
+      const linkedItem = itemId
+        ? targetArea?.items.find((item) => item.id === itemId)
+        : undefined;
+
+      if (itemId && !linkedItem) {
+        throw new HttpError(400, 'The selected reporting item does not belong to the selected report category.');
+      }
+      if (isBuildingManagementReportType(report.details.reportType) && !linkedItem) {
+        throw new HttpError(400, 'Building Manager photos must be linked to a reporting item.');
+      }
+
       const key = `reports/${reportId}/photos/${photoId}.jpg`;
       await env.REPORT_STORAGE.put(key, await file.arrayBuffer(), {
         httpMetadata: { contentType: 'image/jpeg' },
         customMetadata: { reportId, photoId, uploadedBy: userEmail },
       });
 
-      const report = parseReport(row);
       const photos = (report.photos || []).filter((photo) => photo.id !== photoId);
       const photo: ReportPhoto = {
         id: photoId,
         name,
         areaName,
-        itemId,
-        itemName,
+        itemId: linkedItem?.id || itemId,
+        itemName: linkedItem?.name || itemName,
         photoIndex: Number.isFinite(photoIndex) ? photoIndex : photos.length + 1,
         isCover,
         storageKey: key,
@@ -481,6 +497,14 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       }
 
       const report = parseReport(row);
+      if (isBuildingManagementReportType(report.details.reportType)) {
+        const validItemIds = new Set(report.areas.flatMap((area) => area.items.map((item) => item.id)));
+        const unlinked = report.photos.filter((photo) => !photo.itemId || !validItemIds.has(photo.itemId));
+        if (unlinked.length > 0) {
+          await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+          throw new HttpError(409, 'Building Manager reports cannot be finalised while photos are not linked to current reporting items.');
+        }
+      }
       return json(await updateReportData(env, row, report, userEmail, 'completed', key));
     }
 
