@@ -911,26 +911,33 @@ function drawAgentSignoff(pdf: jsPDF, y: number, report: ReportData, heading: st
   y += 8;
 
   const widths = [65, 75, CONTENT_WIDTH - 140];
+  const displayName = value(details.agentSignName) || value(details.inspectingAgent) || 'Not recorded';
+  setFont(pdf, 7, 'normal');
+  const nameLines = wrapText(pdf, displayName, widths[0] - 3.6);
+  setFont(pdf, 8, 'italic');
+  const signatureLines = wrapText(pdf, displayName === 'Not recorded' ? '' : displayName, widths[1] - 3.6);
+  const h = Math.max(18, 9 + (Math.max(nameLines.length, signatureLines.length, 1) * 3));
+
   let x = MARGIN_X;
   widths.forEach((width) => {
-    drawBox(pdf, x, y, width, 18, undefined, LIGHT_BORDER);
+    drawBox(pdf, x, y, width, h, undefined, LIGHT_BORDER);
     x += width;
   });
   setFont(pdf, 6, 'bold');
   setTextColor(pdf, TEXT);
   pdf.text('Print Name:', MARGIN_X + 1.8, y + 4);
   setFont(pdf, 7, 'normal');
-  pdf.text(value(details.agentSignName) || value(details.inspectingAgent) || 'Not recorded', MARGIN_X + 1.8, y + 11);
+  drawWrappedLines(pdf, nameLines, MARGIN_X + 1.8, y + 9.5, 3);
   setFont(pdf, 6, 'bold');
   pdf.text('Signature:', MARGIN_X + 66.8, y + 4);
   setFont(pdf, 8, 'italic');
-  pdf.text(value(details.agentSignName) || value(details.inspectingAgent) || '', MARGIN_X + 66.8, y + 11.2);
+  drawWrappedLines(pdf, signatureLines, MARGIN_X + 66.8, y + 9.7, 3);
   setFont(pdf, 6, 'bold');
   pdf.text('Date:', MARGIN_X + 141.8, y + 4);
   setFont(pdf, 7, 'normal');
-  pdf.text(formatAustralianDate(details.agentSignDate || details.inspectionDate) || 'Not recorded', MARGIN_X + 141.8, y + 11);
+  pdf.text(formatAustralianDate(details.agentSignDate || details.inspectionDate) || 'Not recorded', MARGIN_X + 141.8, y + 9.5);
 
-  return y + 22;
+  return y + h + 4;
 }
 
 function drawDisclaimerSection(pdf: jsPDF, report: ReportData, y: number): number {
