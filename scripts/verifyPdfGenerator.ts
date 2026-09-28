@@ -32,6 +32,7 @@ const longComment = [
   'Observed condition remains serviceable; note surface variation, wear and minor deterioration.',
   'This deliberately long regression-test commentary verifies that row height is measured from wrapped text and continues onto another page without relying on browser DOM geometry.',
 ].join(' ').repeat(18);
+const extremelyLongComment = longComment.repeat(3);
 
 const report: ReportData = {
   id: 'pdf-regression-test',
@@ -161,7 +162,7 @@ const routineReport: ReportData = {
         {
           id: 'routine-exterior-overall',
           name: 'Overall',
-          agentComments: longComment,
+          agentComments: extremelyLongComment,
         },
       ],
     },
@@ -383,7 +384,7 @@ commonPropertyStress.areas[0].items = [
   {
     id: 'common-stress-item',
     name: 'Common property observation with an intentionally extended item description to exercise item-column wrapping',
-    agentComments: longComment,
+    agentComments: extremelyLongComment,
   },
 ];
 await verifyPdf('CommonPropertyLongContent', commonPropertyStress, 4, 6_000);
