@@ -96,6 +96,10 @@ export default function App() {
     if (!report?.id || report.status === 'completed') return;
 
     cacheReport(report).catch(() => undefined);
+    if (isUploadingPhotos || isCompleting) {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      return;
+    }
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
 
     saveTimerRef.current = window.setTimeout(async () => {
@@ -118,7 +122,7 @@ export default function App() {
     return () => {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     };
-  }, [report]);
+  }, [report, isUploadingPhotos, isCompleting]);
 
   const handleCreateProperty = async (input: {
     address: string;
@@ -155,6 +159,22 @@ export default function App() {
     setSelectedProperty(result.property);
     setReportSummaries(result.reports);
     await loadProperties();
+  };
+
+  const saveDraftImmediately = async (draft: ReportData): Promise<ReportData> => {
+    if (!draft.id || draft.status === 'completed') return draft;
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    await cacheReport(draft).catch(() => undefined);
+    setIsSaving(true);
+    try {
+      const saved = normalizeReport(await api.saveReport(draft));
+      setLastSavedTime(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      );
+      return saved;
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCreateReport = async (type: ReportType) => {
@@ -221,6 +241,17 @@ export default function App() {
   };
 
   const handleBackToReports = async () => {
+    if (report?.id && report.status !== 'completed') {
+      try {
+        await saveDraftImmediately(report);
+      } catch (error: any) {
+        setStatusMessage({
+          text: `${error.message || 'Cloud save failed.'} Stay on this report until the draft has saved successfully.`,
+          type: 'error',
+        });
+        return;
+      }
+    }
     setReport(null);
     setViewMode('preview');
     await refreshSelectedProperty().catch(() => undefined);
@@ -264,14 +295,15 @@ export default function App() {
           throw new Error('Select one of the current commentary areas before uploading photos.');
         }
       }
+      const savedDraft = await saveDraftImmediately(report);
       const item = itemId
-        ? report.areas.flatMap((area) => area.items).find((candidate) => candidate.id === itemId)
+        ? savedDraft.areas.flatMap((area) => area.items).find((candidate) => candidate.id === itemId)
         : undefined;
       if (itemId && !item) {
         throw new Error('The selected reporting item no longer exists. Select the item again before uploading.');
       }
 
-      let current = report;
+      let current = savedDraft;
       let nextAreaPhotoIndex = current.photos
         .filter((photo) => photo.areaName === areaName)
         .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
@@ -310,7 +342,8 @@ export default function App() {
   const handleDeletePhoto = async (photoId: string) => {
     if (!report?.id || report.status === 'completed') return;
     try {
-      const updated = await api.deletePhoto(report.id, photoId);
+      const savedDraft = await saveDraftImmediately(report);
+      const updated = await api.deletePhoto(savedDraft.id!, photoId);
       setReport(normalizeReport(updated));
       setStatusMessage({ text: 'Photo deleted.', type: 'info' });
     } catch (error: any) {
@@ -354,9 +387,8 @@ export default function App() {
         throw new Error(reportValidationMessage(validationIssues, 'Report cannot be finalised'));
       }
 
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-      await api.saveReport(report);
-      const blob = await renderPdf();
+      const savedDraft = await saveDraftImmediately(report);
+      const blob = await generateReportPdf(savedDraft, (message) => setExportProgressText(message));
       const maxCompletedPdfBytes = 90 * 1024 * 1024;
       if (blob.size > maxCompletedPdfBytes) {
         throw new Error(
@@ -364,7 +396,7 @@ export default function App() {
         );
       }
       setExportProgressText('Storing completed PDF...');
-      const completed = normalizeReport(await api.completeReport(report.id, blob));
+      const completed = normalizeReport(await api.completeReport(savedDraft.id!, blob));
       setReport(completed);
       await cacheReport(completed);
       downloadPdfBlob(blob, pdfFilename(completed));
