@@ -18,9 +18,10 @@ The platform integration is two-way:
 4. The Worker verifies the token signature, expiry, issuer and report type. Browser code never trusts the raw token payload.
 5. The Report Tool finds or creates its local property container using the canonical ProInspect Property ID as the stable reference and creates the requested report.
 6. Canonical integration context is retained in the report JSON.
-7. On finalisation, a handoff-originated report publishes its completed PDF server-to-server to the ProInspect report-ingestion endpoint before local immutable completion.
-8. The ProInspect platform validates Property/Tenancy/Booking/Work Order relationships and creates the canonical `propertyDocuments` record.
-9. Publication uses the Report Tool report ID as an idempotency key so retrying finalisation cannot create duplicate canonical documents.
+7. On finalisation, the Report Tool first completes its revision-aware compare-and-set transition so only the immutable winning PDF can be published.
+8. The completed PDF is then published server-to-server to the ProInspect report-ingestion endpoint.
+9. The ProInspect platform validates Property/Tenancy/Booking/Work Order relationships and creates the canonical `propertyDocuments` record.
+10. Publication uses the Report Tool report ID as an idempotency key; if platform publication fails after local completion, retrying the same finalisation endpoint republishes the stored immutable PDF without creating duplicate canonical documents or files.
 
 ## Security boundary
 
