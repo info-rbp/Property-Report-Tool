@@ -224,7 +224,7 @@ function drawBox(
 }
 
 async function yieldToBrowser() {
-  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 async function fetchImageSource(source: string, label: string): Promise<Blob> {
