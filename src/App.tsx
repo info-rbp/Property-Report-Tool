@@ -910,7 +910,7 @@ export default function App() {
           </div>
         )}
 
-        {viewMode === 'commentary' && !completed && (
+        {viewMode === 'commentary' && editable && (
           <div className="max-w-6xl mx-auto p-4 md:p-6 h-[calc(100vh-125px)]">
             {['Entry', 'Routine', 'Exit'].includes(report.details.reportType) ? (
               <CommentaryEditor
@@ -945,7 +945,7 @@ export default function App() {
           </div>
         )}
 
-        {viewMode === 'photos' && !completed && !isKeyReceiptTemplate(report.details.reportType) && (
+        {viewMode === 'photos' && editable && !isKeyReceiptTemplate(report.details.reportType) && (
           <div className="max-w-6xl mx-auto p-4 md:p-6 h-[calc(100vh-125px)]">
             <PhotoManager
               photos={report.photos}
@@ -968,6 +968,7 @@ export default function App() {
               onDownloadCompleted={() => handleDownloadCompleted(report.id!)}
               isExporting={isExportingPdf}
               isCompleting={isCompleting}
+              canEdit={editable}
             />
           </div>
         )}
