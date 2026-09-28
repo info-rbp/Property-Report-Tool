@@ -12,6 +12,8 @@ export type ReportType =
   | 'CommercialExit'
   | 'CommonProperty'
   | 'BuildingManagement'
+  | 'BuildingManagementDaily'
+  | 'BuildingManagementMonthly'
   | 'Incident'
   | 'ContractorWorks'
   | 'PropertyHandover'
@@ -39,6 +41,11 @@ export interface InspectionItem {
   undamaged?: boolean | null;
   working?: boolean | null;
   agentComments: string;
+  activityDate?: string;
+  activityTime?: string;
+  activityParty?: string;
+  actionComments?: string;
+  status?: string;
   tenantAgrees?: boolean | null;
   tenantComments?: string;
   isCustom?: boolean;
@@ -58,6 +65,8 @@ export interface ReportPhoto {
   storageKey?: string;
   dataUrl?: string;
   areaName?: string;
+  itemId?: string;
+  itemName?: string;
   photoIndex?: number;
   isCover?: boolean;
 }
@@ -117,6 +126,9 @@ export interface TenancyDetails {
   keysAccessDevices?: string;
   outstandingItems?: string;
   buildingSummary?: string;
+  buildingName?: string;
+  strataPlan?: string;
+  reportingPeriod?: string;
   contractorAttendance?: string;
   residentMatters?: string;
   worksCompleted?: string;
