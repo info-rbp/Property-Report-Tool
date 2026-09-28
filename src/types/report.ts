@@ -1,4 +1,4 @@
-export const CURRENT_REPORT_SCHEMA_VERSION = 4;
+export const CURRENT_REPORT_SCHEMA_VERSION = 5;
 
 export const REPORT_TYPES = [
   'Entry',
@@ -43,7 +43,8 @@ export type ReportTemplateFamily =
   | 'maintenance'
   | 'operations'
   | 'event';
-export type ReportStatus = 'draft' | 'completed';
+export type ReportStatus = 'draft' | 'completed' | 'superseded';
+export type UserRole = 'viewer' | 'editor' | 'admin';
 
 export interface InspectionItem {
   id: string;
@@ -78,6 +79,7 @@ export interface ReportPhoto {
   storageKey?: string;
   dataUrl?: string;
   areaName?: string;
+  areaId?: string;
   itemId?: string;
   itemName?: string;
   photoIndex?: number;
@@ -168,7 +170,11 @@ export interface ReportData {
   id?: string;
   propertyId?: string;
   status?: ReportStatus;
+  revision?: number;
   completedPdfKey?: string;
+  supersedesReportId?: string;
+  supersededByReportId?: string;
+  supersededAt?: string;
   createdAt?: string;
   updatedAt?: string;
   details: TenancyDetails;
@@ -181,6 +187,7 @@ export interface PropertyRecord {
   address: string;
   reference?: string;
   notes?: string;
+  archivedAt?: string;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
@@ -193,10 +200,20 @@ export interface ReportSummary {
   reportType: ReportType;
   title?: string;
   status: ReportStatus;
+  revision?: number;
   inspectionDate?: string;
   completedPdfKey?: string;
+  supersedesReportId?: string;
+  supersededByReportId?: string;
+  supersededAt?: string;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
   updatedBy?: string;
+}
+
+
+export interface UserSession {
+  email: string;
+  role: UserRole;
 }
