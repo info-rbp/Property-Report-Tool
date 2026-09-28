@@ -1,4 +1,5 @@
 import {
+  REPORT_TYPES,
   ReportCategory,
   ReportTemplateFamily,
   ReportType,
@@ -28,6 +29,7 @@ export interface ReportTemplateDefinition {
   summaryFields: ReportFieldDefinition[];
   disclaimer: string;
   selectable?: boolean;
+  specializedLayout?: 'building-management';
 }
 
 const visualInspectionDisclaimer = (subject: string) =>
@@ -299,6 +301,7 @@ export const REPORT_TEMPLATES: ReportTemplateDefinition[] = [
     ],
     disclaimer: verificationDisclaimer('building management monthly report'),
     selectable: false,
+    specializedLayout: 'building-management',
   },
   {
     type: 'BuildingManagementDaily',
@@ -325,6 +328,7 @@ export const REPORT_TEMPLATES: ReportTemplateDefinition[] = [
       ...commonSignoff,
     ],
     disclaimer: verificationDisclaimer('building management daily report'),
+    specializedLayout: 'building-management',
   },
   {
     type: 'BuildingManagementMonthly',
@@ -353,6 +357,7 @@ export const REPORT_TEMPLATES: ReportTemplateDefinition[] = [
       ...commonSignoff,
     ],
     disclaimer: verificationDisclaimer('building management monthly report'),
+    specializedLayout: 'building-management',
   },
   {
     type: 'Incident',
@@ -516,12 +521,44 @@ export const REPORT_TEMPLATES: ReportTemplateDefinition[] = [
   },
 ];
 
-export const REPORT_TEMPLATE_MAP = Object.fromEntries(
-  REPORT_TEMPLATES.map((definition) => [definition.type, definition])
-) as Record<ReportType, ReportTemplateDefinition>;
+function buildReportTemplateMap(): Record<ReportType, ReportTemplateDefinition> {
+  const map = {} as Record<ReportType, ReportTemplateDefinition>;
+  for (const definition of REPORT_TEMPLATES) {
+    if (map[definition.type]) {
+      throw new Error(`Duplicate report template definition: ${definition.type}`);
+    }
+
+    const areaKeys = new Set<string>();
+    for (const area of definition.defaultAreas) {
+      const key = area.trim().toLowerCase();
+      if (!key) throw new Error(`Blank default area in report template: ${definition.type}`);
+      if (areaKeys.has(key)) {
+        throw new Error(`Duplicate default area "${area}" in report template: ${definition.type}`);
+      }
+      areaKeys.add(key);
+    }
+
+    map[definition.type] = definition;
+  }
+
+  const missing = REPORT_TYPES.filter((type) => !map[type]);
+  if (missing.length) {
+    throw new Error(`Missing report template definition(s): ${missing.join(', ')}`);
+  }
+
+  return map;
+}
+
+export const REPORT_TEMPLATE_MAP = buildReportTemplateMap();
 
 export function getReportTemplate(type: ReportType): ReportTemplateDefinition {
-  return REPORT_TEMPLATE_MAP[type];
+  const template = REPORT_TEMPLATE_MAP[type];
+  if (!template) throw new Error(`Unknown report template: ${String(type)}`);
+  return template;
+}
+
+export function isBuildingManagementTemplate(type: ReportType): boolean {
+  return getReportTemplate(type).specializedLayout === 'building-management';
 }
 
 export const REPORT_CATEGORIES: ReportCategory[] = [

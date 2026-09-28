@@ -43,8 +43,10 @@ Completed:
 Production renderer status:
 - The deterministic renderer has passed the large Entry-report production test and the Entry/Routine/Exit template regressions.
 - All 22 report definitions, including the hidden legacy Building Management compatibility template, are generated in CI on every verification run. There are 21 selectable report templates in the application.
-- Representative extended template families have also been visually rendered and reviewed during catalogue implementation. The filled Building Manager Daily and Monthly stress fixtures were separately rendered and visually checked for table continuation, category pagination and sign-off layout.
-- Real-world operational acceptance remains appropriate as each new template is first used with live data, but all templates use the same hardened PDF and photo-rendering path.
+- CI includes deliberately oversized Routine and generic findings, long metadata, filled Building Manager Daily/Monthly reports, schema-migration checks and structural validation checks.
+- Representative hardened PDFs have been rendered and visually reviewed after the full rendering audit, including Entry, Exit, Routine continuation pages, generic inspection/maintenance reports and filled Building Manager reports.
+- Screen previews are non-authoritative summaries. The downloaded deterministic PDF is the acceptance output for pagination and issued-report layout.
+- Real-world operational acceptance remains appropriate as each materially changed template is first used with live data, particularly for device-supplied photographs.
 
 The Access application audience value (`POLICY_AUD`) is intentionally stored only in Cloudflare runtime configuration and is not committed to GitHub.
 
@@ -148,7 +150,9 @@ Keep the `workers.dev` address available as a deployment fallback unless ProInsp
 
 D1:
 - `properties` - address/reference/notes and audit fields.
-- `reports` - status, report JSON, completed PDF key and audit fields.
+- `reports` - status, versioned report JSON, completed PDF key and audit fields.
+- Report JSON is schema-versioned and passes through `src/lib/reportMigration.ts` when read/written so future structural changes have an explicit migration path.
+- Draft saves carry the last known `updated_at` version; stale cross-device saves receive HTTP 409 instead of silently overwriting a newer draft.
 - The initial D1 schema restricts the indexed `report_type` column to Entry/Routine/Exit. Extended templates keep their canonical report type inside `report_data` and use a backward-compatible value in the legacy indexed column. Report summaries read the canonical JSON type. No database migration is required for the expanded catalogue.
 
 R2:

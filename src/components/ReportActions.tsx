@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Download, Mail } from 'lucide-react';
 import { reportLabel } from '../data/reportCatalogue';
+import { validateReportForFinalization } from '../lib/reportValidation';
 import { ReportData } from '../types/report';
 
 interface Props {
@@ -23,11 +24,8 @@ export const ReportActions: React.FC<Props> = ({
   const [recipient, setRecipient] = useState('');
   const details = report.details;
   const completed = report.status === 'completed';
-  const missing = [
-    !details.propertyAddress && 'property address',
-    !details.inspectionDate && 'inspection date',
-    !details.inspectingAgent && 'inspector',
-  ].filter(Boolean) as string[];
+  const validationIssues = completed ? [] : validateReportForFinalization(report);
+  const validationMessages = Array.from(new Set(validationIssues.map((issue) => issue.message)));
 
   const prepareEmail = () => {
     const label = reportLabel(details.reportType);
@@ -48,9 +46,15 @@ ProInspect`;
         </p>
       </div>
 
-      {!completed && missing.length > 0 && (
+      {!completed && validationMessages.length > 0 && (
         <div className="text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3">
-          Before finalising, complete: {missing.join(', ')}.
+          <div className="font-bold">Resolve before finalising:</div>
+          <ul className="list-disc pl-5 mt-1 space-y-0.5">
+            {validationMessages.slice(0, 5).map((message) => <li key={message}>{message}</li>)}
+          </ul>
+          {validationMessages.length > 5 && (
+            <div className="mt-1">+{validationMessages.length - 5} additional validation issue(s).</div>
+          )}
         </div>
       )}
 
@@ -73,7 +77,7 @@ ProInspect`;
             </button>
             <button
               onClick={onComplete}
-              disabled={isExporting || isCompleting || missing.length > 0}
+              disabled={isExporting || isCompleting || validationIssues.length > 0}
               className="px-4 py-2 bg-[#0a2540] text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50"
             >
               <CheckCircle2 className="w-4 h-4" />

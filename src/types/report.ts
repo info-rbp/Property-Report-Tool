@@ -1,26 +1,35 @@
-export type ReportType =
-  | 'Entry'
-  | 'Routine'
-  | 'Exit'
-  | 'PropertyOnboarding'
-  | 'VacantProperty'
-  | 'MaintenanceAssessment'
-  | 'MaintenanceCompletion'
-  | 'CleaningRectification'
-  | 'CommercialIngoing'
-  | 'CommercialPeriodic'
-  | 'CommercialExit'
-  | 'CommonProperty'
-  | 'BuildingManagement'
-  | 'BuildingManagementDaily'
-  | 'BuildingManagementMonthly'
-  | 'Incident'
-  | 'ContractorWorks'
-  | 'PropertyHandover'
-  | 'PreventativeMaintenance'
-  | 'CleaningQuality'
-  | 'AnnualPropertySummary'
-  | 'KeySafeInstallation';
+export const CURRENT_REPORT_SCHEMA_VERSION = 2;
+
+export const REPORT_TYPES = [
+  'Entry',
+  'Routine',
+  'Exit',
+  'PropertyOnboarding',
+  'VacantProperty',
+  'MaintenanceAssessment',
+  'MaintenanceCompletion',
+  'CleaningRectification',
+  'CommercialIngoing',
+  'CommercialPeriodic',
+  'CommercialExit',
+  'CommonProperty',
+  'BuildingManagement',
+  'BuildingManagementDaily',
+  'BuildingManagementMonthly',
+  'Incident',
+  'ContractorWorks',
+  'PropertyHandover',
+  'PreventativeMaintenance',
+  'CleaningQuality',
+  'AnnualPropertySummary',
+  'KeySafeInstallation',
+] as const;
+
+export type ReportType = typeof REPORT_TYPES[number];
+
+export function isReportType(value: unknown): value is ReportType {
+  return typeof value === 'string' && (REPORT_TYPES as readonly string[]).includes(value);
+}
 
 export type ReportCategory = 'Residential' | 'Commercial' | 'Maintenance' | 'Building / Strata';
 export type ReportTemplateFamily =
@@ -150,6 +159,7 @@ export interface TenancyDetails {
 }
 
 export interface ReportData {
+  schemaVersion?: number;
   id?: string;
   propertyId?: string;
   status?: ReportStatus;

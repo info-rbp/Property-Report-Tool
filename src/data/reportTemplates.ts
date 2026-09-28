@@ -1,6 +1,7 @@
 import { PROINSPECT_COMPANY } from '../config/company';
-import { getReportTemplate } from './reportCatalogue';
-import { InspectionArea, ReportData, ReportType } from '../types/report';
+import { migrateReportData } from '../lib/reportMigration';
+import { getReportTemplate, isBuildingManagementTemplate } from './reportCatalogue';
+import { CURRENT_REPORT_SCHEMA_VERSION, InspectionArea, ReportData, ReportType } from '../types/report';
 
 const COMPANY = {
   companyName: PROINSPECT_COMPANY.name,
@@ -12,7 +13,7 @@ const COMPANY = {
 
 function makeDefaultAreas(reportType: ReportType): InspectionArea[] {
   const definition = getReportTemplate(reportType);
-  const emptyActivitySections = ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(reportType);
+  const emptyActivitySections = isBuildingManagementTemplate(reportType);
   return definition.defaultAreas.map((name) => ({
     id: `area-${crypto.randomUUID()}`,
     name,
@@ -40,6 +41,7 @@ export function createBlankReport(
   const template = getReportTemplate(reportType);
 
   return {
+    schemaVersion: CURRENT_REPORT_SCHEMA_VERSION,
     id: crypto.randomUUID(),
     propertyId: property?.id,
     status: 'draft',
@@ -117,20 +119,21 @@ export function createBlankReport(
 }
 
 export function normalizeReport(report: ReportData): ReportData {
+  const migrated = migrateReportData(report);
   const now = new Date().toISOString();
-  const template = getReportTemplate(report.details.reportType);
+  const template = getReportTemplate(migrated.details.reportType);
   return {
-    ...report,
-    id: report.id || crypto.randomUUID(),
-    status: report.status || 'draft',
-    createdAt: report.createdAt || now,
-    updatedAt: report.updatedAt || now,
+    ...migrated,
+    id: migrated.id || crypto.randomUUID(),
+    status: migrated.status || 'draft',
+    createdAt: migrated.createdAt || now,
+    updatedAt: migrated.updatedAt || now,
     details: {
-      ...report.details,
-      formName: report.details.formName || template.label,
-      disclaimerText: report.details.disclaimerText || template.disclaimer,
+      ...migrated.details,
+      formName: migrated.details.formName || template.label,
+      disclaimerText: migrated.details.disclaimerText || template.disclaimer,
     },
-    photos: report.photos || [],
-    areas: report.areas || [],
+    photos: migrated.photos || [],
+    areas: migrated.areas || [],
   };
 }

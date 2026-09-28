@@ -1,4 +1,9 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { isBuildingManagementTemplate } from '../src/data/reportCatalogue';
+import { normalizeAreaName } from '../src/lib/reportFormatting';
+import { migrateReportData } from '../src/lib/reportMigration';
+import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
+import { CURRENT_REPORT_SCHEMA_VERSION, isReportType } from '../src/types/report';
 import type { ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
 
 interface Env {
@@ -103,7 +108,7 @@ function mapProperty(row: PropertyRow) {
 }
 
 function parseReport(row: ReportRow): ReportData {
-  const parsed = JSON.parse(row.report_data) as ReportData;
+  const parsed = migrateReportData(JSON.parse(row.report_data) as ReportData);
   return {
     ...parsed,
     id: row.id,
@@ -118,10 +123,6 @@ function parseReport(row: ReportRow): ReportData {
       url: `/api/reports/${encodeURIComponent(row.id)}/photos/${encodeURIComponent(photo.id)}`,
     })),
   };
-}
-
-function isBuildingManagementReportType(reportType: ReportType): boolean {
-  return ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(reportType);
 }
 
 function storageReportType(reportType: ReportType): 'Entry' | 'Routine' | 'Exit' {
@@ -205,7 +206,8 @@ async function updateReportData(
 ): Promise<ReportData> {
   const now = new Date().toISOString();
   const stored: ReportData = {
-    ...report,
+    ...migrateReportData(report),
+    schemaVersion: CURRENT_REPORT_SCHEMA_VERSION,
     id: row.id,
     propertyId: row.property_id,
     status,
@@ -331,8 +333,10 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     if (parts.length === 4 && parts[3] === 'reports' && request.method === 'POST') {
       const propertyId = parts[2];
       const property = await getPropertyRow(env, propertyId);
-      const body = await request.json() as { reportType?: ReportType; report?: ReportData };
-      if (!body.report || !body.reportType) throw new HttpError(400, 'Report data is required.');
+      const body = await request.json() as { reportType?: unknown; report?: ReportData };
+      if (!body.report || !isReportType(body.reportType)) {
+        throw new HttpError(400, 'A valid report type and report data are required.');
+      }
 
       const id = body.report.id || crypto.randomUUID();
       const now = new Date().toISOString();
@@ -373,16 +377,36 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     if (parts.length === 3 && request.method === 'PUT') {
       const row = await getReportRow(env, reportId);
       if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be edited.');
-      const body = await request.json() as { report?: ReportData };
+      const body = await request.json() as { report?: ReportData; expectedUpdatedAt?: string };
       if (!body.report) throw new HttpError(400, 'Report data is required.');
+      if (!isReportType(body.report.details?.reportType)) {
+        throw new HttpError(400, 'The report contains an unknown report type.');
+      }
+
+      const current = parseReport(row);
+      if (body.report.details.reportType !== current.details.reportType) {
+        throw new HttpError(409, 'The report type cannot be changed after the report has been created.');
+      }
+
+      if (body.expectedUpdatedAt && body.expectedUpdatedAt !== row.updated_at) {
+        throw new HttpError(
+          409,
+          'This draft changed in another browser or device. Reopen the report to load the latest cloud version before continuing.'
+        );
+      }
+
       return json(await updateReportData(env, row, body.report, userEmail));
     }
 
     if (parts.length === 3 && request.method === 'DELETE') {
       const row = await getReportRow(env, reportId);
       if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be deleted.');
-      await deleteReportObjects(env, reportId);
       await env.DB.prepare('DELETE FROM reports WHERE id = ?').bind(reportId).run();
+      try {
+        await deleteReportObjects(env, reportId);
+      } catch (error) {
+        console.error('Draft report deleted from D1 but R2 cleanup failed:', error);
+      }
       return json({ success: true });
     }
 
@@ -407,7 +431,9 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (file.size > 5 * 1024 * 1024) throw new HttpError(413, 'Processed image exceeds the 5 MB upload limit.');
 
       const report = parseReport(row);
-      const targetArea = report.areas.find((area) => area.name === areaName);
+      const targetArea = report.areas.find(
+        (area) => normalizeAreaName(area.name) === normalizeAreaName(areaName)
+      );
       const linkedItem = itemId
         ? targetArea?.items.find((item) => item.id === itemId)
         : undefined;
@@ -415,7 +441,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (itemId && !linkedItem) {
         throw new HttpError(400, 'The selected reporting item does not belong to the selected report category.');
       }
-      if (isBuildingManagementReportType(report.details.reportType) && !linkedItem) {
+      if (isBuildingManagementTemplate(report.details.reportType) && !linkedItem) {
         throw new HttpError(400, 'Building Manager photos must be linked to a reporting item.');
       }
 
@@ -440,7 +466,12 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         ? [...photos.map((item) => ({ ...item, isCover: false })), photo]
         : [...photos, photo];
 
-      return json(await updateReportData(env, row, { ...report, photos: updatedPhotos }, userEmail));
+      try {
+        return json(await updateReportData(env, row, { ...report, photos: updatedPhotos }, userEmail));
+      } catch (error) {
+        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+        throw error;
+      }
     }
 
     if (parts.length === 5 && parts[3] === 'photos') {
@@ -462,9 +493,14 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 
       if (request.method === 'DELETE') {
         if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be edited.');
-        if (photo?.storageKey) await env.REPORT_STORAGE.delete(photo.storageKey);
         const updated = { ...report, photos: report.photos.filter((item) => item.id !== photoId) };
-        return json(await updateReportData(env, row, updated, userEmail));
+        const saved = await updateReportData(env, row, updated, userEmail);
+        if (photo?.storageKey) {
+          await env.REPORT_STORAGE.delete(photo.storageKey).catch((error) => {
+            console.error('Photo removed from report data but R2 cleanup failed:', error);
+          });
+        }
+        return json(saved);
       }
     }
 
@@ -481,6 +517,15 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       }
       if (!request.body) throw new HttpError(400, 'PDF is empty.');
 
+      const report = parseReport(row);
+      const validationIssues = validateReportForFinalization(report);
+      if (validationIssues.length > 0) {
+        throw new HttpError(
+          409,
+          reportValidationMessage(validationIssues, 'Report cannot be finalised')
+        );
+      }
+
       const key = `reports/${reportId}/completed/report.pdf`;
       const stored = await env.REPORT_STORAGE.put(key, request.body, {
         httpMetadata: { contentType: 'application/pdf' },
@@ -496,16 +541,12 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.');
       }
 
-      const report = parseReport(row);
-      if (isBuildingManagementReportType(report.details.reportType)) {
-        const validItemIds = new Set(report.areas.flatMap((area) => area.items.map((item) => item.id)));
-        const unlinked = report.photos.filter((photo) => !photo.itemId || !validItemIds.has(photo.itemId));
-        if (unlinked.length > 0) {
-          await env.REPORT_STORAGE.delete(key).catch(() => undefined);
-          throw new HttpError(409, 'Building Manager reports cannot be finalised while photos are not linked to current reporting items.');
-        }
+      try {
+        return json(await updateReportData(env, row, report, userEmail, 'completed', key));
+      } catch (error) {
+        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+        throw error;
       }
-      return json(await updateReportData(env, row, report, userEmail, 'completed', key));
     }
 
     if (parts.length === 4 && parts[3] === 'pdf' && request.method === 'GET') {

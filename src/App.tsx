@@ -19,7 +19,7 @@ import { PropertiesDashboard } from './components/PropertiesDashboard';
 import { ReportActions } from './components/ReportActions';
 import { ReportDashboard } from './components/ReportDashboard';
 import { ReportDocument } from './components/ReportDocument';
-import { reportLabel } from './data/reportCatalogue';
+import { isBuildingManagementTemplate, reportLabel } from './data/reportCatalogue';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
 import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
@@ -27,6 +27,7 @@ import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
 import { processInspectionImage } from './lib/imageProcessor';
 import { normalizeAreaName } from './lib/reportFormatting';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
+import { reportValidationMessage, validateReportForFinalization } from './lib/reportValidation';
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
 
 type ViewMode = 'preview' | 'commentary' | 'photos' | 'actions';
@@ -61,12 +62,45 @@ export default function App() {
 
   const csvInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<number | null>(null);
+  const serverVersionsRef = useRef<Record<string, string | undefined>>({});
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const queuedSaveCountRef = useRef(0);
 
   const loadProperties = async () => {
     const list = await api.listProperties();
     setProperties(list);
     return list;
   };
+
+  const persistDraft = (draft: ReportData): Promise<ReportData> => {
+    if (!draft.id || draft.status === 'completed') return Promise.resolve(draft);
+    const reportId = draft.id;
+    queuedSaveCountRef.current += 1;
+    setIsSaving(true);
+
+    return new Promise<ReportData>((resolve, reject) => {
+      saveQueueRef.current = saveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            const expectedUpdatedAt = serverVersionsRef.current[reportId] || draft.updatedAt;
+            const saved = normalizeReport(await api.saveReport(draft, expectedUpdatedAt));
+            serverVersionsRef.current[reportId] = saved.updatedAt;
+            await cacheReport(saved).catch(() => undefined);
+            setLastSavedTime(
+              new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            );
+            resolve(saved);
+          } catch (error) {
+            reject(error);
+          } finally {
+            queuedSaveCountRef.current = Math.max(0, queuedSaveCountRef.current - 1);
+            setIsSaving(queuedSaveCountRef.current > 0);
+          }
+        });
+    });
+  };
+
 
   useEffect(() => {
     let active = true;
@@ -94,30 +128,31 @@ export default function App() {
   useEffect(() => {
     if (!report?.id || report.status === 'completed') return;
 
-    cacheReport(report).catch(() => undefined);
+    cacheReport({
+      ...report,
+      updatedAt: serverVersionsRef.current[report.id] || report.updatedAt,
+    }).catch(() => undefined);
+    if (isUploadingPhotos || isCompleting) {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      return;
+    }
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
 
     saveTimerRef.current = window.setTimeout(async () => {
-      setIsSaving(true);
       try {
-        await api.saveReport(report);
-        setLastSavedTime(
-          new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        );
+        await persistDraft(report);
       } catch (error: any) {
         setStatusMessage({
           text: `${error.message || 'Cloud save failed.'} The latest draft remains cached on this device.`,
           type: 'error',
         });
-      } finally {
-        setIsSaving(false);
       }
     }, 700);
 
     return () => {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     };
-  }, [report]);
+  }, [report, isUploadingPhotos, isCompleting]);
 
   const handleCreateProperty = async (input: {
     address: string;
@@ -156,12 +191,23 @@ export default function App() {
     await loadProperties();
   };
 
+  const saveDraftImmediately = async (draft: ReportData): Promise<ReportData> => {
+    if (!draft.id || draft.status === 'completed') return draft;
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    await cacheReport({
+      ...draft,
+      updatedAt: serverVersionsRef.current[draft.id] || draft.updatedAt,
+    }).catch(() => undefined);
+    return persistDraft(draft);
+  };
+
   const handleCreateReport = async (type: ReportType) => {
     if (!selectedProperty) return;
     try {
       const blank = createBlankReport(type, selectedProperty);
-      const created = await api.createReport(selectedProperty.id, type, blank);
-      setReport(normalizeReport(created));
+      const created = normalizeReport(await api.createReport(selectedProperty.id, type, blank));
+      if (created.id) serverVersionsRef.current[created.id] = created.updatedAt;
+      setReport(created);
       setViewMode('commentary');
       await cacheReport(created);
       await refreshSelectedProperty();
@@ -175,13 +221,16 @@ export default function App() {
     try {
       setIsLoading(true);
       const cloudReport = normalizeReport(await api.getReport(id));
+      if (cloudReport.id) serverVersionsRef.current[cloudReport.id] = cloudReport.updatedAt;
       setReport(cloudReport);
       await cacheReport(cloudReport);
       setViewMode('preview');
     } catch (error: any) {
       const cached = await getCachedReport(id).catch(() => null);
       if (cached) {
-        setReport(normalizeReport(cached));
+        const normalizedCached = normalizeReport(cached);
+        if (normalizedCached.id) serverVersionsRef.current[normalizedCached.id] = normalizedCached.updatedAt;
+        setReport(normalizedCached);
         setViewMode('preview');
         setStatusMessage({
           text: 'Cloud storage was unavailable. This device is showing the last cached draft.',
@@ -220,6 +269,17 @@ export default function App() {
   };
 
   const handleBackToReports = async () => {
+    if (report?.id && report.status !== 'completed') {
+      try {
+        await saveDraftImmediately(report);
+      } catch (error: any) {
+        setStatusMessage({
+          text: `${error.message || 'Cloud save failed.'} Stay on this report until the draft has saved successfully.`,
+          type: 'error',
+        });
+        return;
+      }
+    }
     setReport(null);
     setViewMode('preview');
     await refreshSelectedProperty().catch(() => undefined);
@@ -229,6 +289,14 @@ export default function App() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || !report || report.status === 'completed') return;
+
+    if (isBuildingManagementTemplate(report.details.reportType)) {
+      setStatusMessage({
+        text: 'Building Manager reports use item-linked activities. Add activities in the report editor rather than replacing them with the generic CSV importer.',
+        type: 'error',
+      });
+      return;
+    }
 
     try {
       const parsed = await parseCsvFile(file);
@@ -255,14 +323,15 @@ export default function App() {
           throw new Error('Select one of the current commentary areas before uploading photos.');
         }
       }
+      const savedDraft = await saveDraftImmediately(report);
       const item = itemId
-        ? report.areas.flatMap((area) => area.items).find((candidate) => candidate.id === itemId)
+        ? savedDraft.areas.flatMap((area) => area.items).find((candidate) => candidate.id === itemId)
         : undefined;
       if (itemId && !item) {
         throw new Error('The selected reporting item no longer exists. Select the item again before uploading.');
       }
 
-      let current = report;
+      let current = savedDraft;
       let nextAreaPhotoIndex = current.photos
         .filter((photo) => photo.areaName === areaName)
         .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
@@ -274,7 +343,7 @@ export default function App() {
         const name = item
           ? `${areaName}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
           : `${areaName}: Overall (photo ${photoIndex})`;
-        current = await api.uploadPhoto(current.id!, processed.blob, {
+        current = normalizeReport(await api.uploadPhoto(current.id!, processed.blob, {
           id: photoId,
           name,
           areaName,
@@ -282,8 +351,9 @@ export default function App() {
           itemName: item?.name,
           photoIndex,
           isCover: current.photos.length === 0,
-        });
-        setReport(normalizeReport(current));
+        }));
+        if (current.id) serverVersionsRef.current[current.id] = current.updatedAt;
+        setReport(current);
         await cacheReport(current).catch(() => undefined);
       }
 
@@ -301,8 +371,10 @@ export default function App() {
   const handleDeletePhoto = async (photoId: string) => {
     if (!report?.id || report.status === 'completed') return;
     try {
-      const updated = await api.deletePhoto(report.id, photoId);
-      setReport(normalizeReport(updated));
+      const savedDraft = await saveDraftImmediately(report);
+      const updated = normalizeReport(await api.deletePhoto(savedDraft.id!, photoId));
+      if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
+      setReport(updated);
       setStatusMessage({ text: 'Photo deleted.', type: 'info' });
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to delete photo.', type: 'error' });
@@ -335,33 +407,18 @@ export default function App() {
     setIsCompleting(true);
     setExportProgressText('Saving final report data...');
     try {
-      if (report.areas.length > 0 && report.photos.length > 0) {
-        const validAreaKeys = new Set(report.areas.map((area) => normalizeAreaName(area.name)));
-        const unmappedPhotos = report.photos.filter(
-          (photo) => !validAreaKeys.has(normalizeAreaName(photo.areaName || 'General'))
-        );
-        if (unmappedPhotos.length > 0) {
+      const validationIssues = validateReportForFinalization(report);
+      if (validationIssues.length > 0) {
+        if (validationIssues.some((issue) => issue.code.startsWith('photo-') || issue.code.includes('photo'))) {
           setViewMode('photos');
-          throw new Error(
-            `${unmappedPhotos.length} photo${unmappedPhotos.length === 1 ? ' is' : 's are'} not assigned to a current report area. Review the red photo-area filter and reassign before finalising.`
-          );
+        } else {
+          setViewMode('commentary');
         }
-
-        if (['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(report.details.reportType)) {
-          const validItemIds = new Set(report.areas.flatMap((area) => area.items.map((item) => item.id)));
-          const unlinked = report.photos.filter((photo) => !photo.itemId || !validItemIds.has(photo.itemId));
-          if (unlinked.length > 0) {
-            setViewMode('photos');
-            throw new Error(
-              `${unlinked.length} Building Manager photo${unlinked.length === 1 ? ' is' : 's are'} not linked to a current reporting item. Link each photo to the exact activity it supports before finalising.`
-            );
-          }
-        }
+        throw new Error(reportValidationMessage(validationIssues, 'Report cannot be finalised'));
       }
 
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-      await api.saveReport(report);
-      const blob = await renderPdf();
+      const savedDraft = await saveDraftImmediately(report);
+      const blob = await generateReportPdf(savedDraft, (message) => setExportProgressText(message));
       const maxCompletedPdfBytes = 90 * 1024 * 1024;
       if (blob.size > maxCompletedPdfBytes) {
         throw new Error(
@@ -369,7 +426,8 @@ export default function App() {
         );
       }
       setExportProgressText('Storing completed PDF...');
-      const completed = normalizeReport(await api.completeReport(report.id, blob));
+      const completed = normalizeReport(await api.completeReport(savedDraft.id!, blob));
+      if (completed.id) serverVersionsRef.current[completed.id] = completed.updatedAt;
       setReport(completed);
       await cacheReport(completed);
       downloadPdfBlob(blob, pdfFilename(completed));
@@ -531,7 +589,7 @@ export default function App() {
           </button>
         </div>
 
-        {!completed && (
+        {!completed && !isBuildingManagementTemplate(report.details.reportType) && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => csvInputRef.current?.click()}
@@ -588,7 +646,7 @@ export default function App() {
                   ? 'Layout: Western Australia Form 1'
                   : `Layout: ProInspect ${reportLabel(report.details.reportType)}`}
               </span>
-              <span>A4 Portrait • Production PDF renderer</span>
+              <span>Screen preview • Download PDF uses the deterministic production renderer</span>
             </div>
             <ReportDocument report={report} />
           </div>
@@ -603,7 +661,7 @@ export default function App() {
                 onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
                 onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
               />
-            ) : ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(report.details.reportType) ? (
+            ) : isBuildingManagementTemplate(report.details.reportType) ? (
               <BuildingManagementReportEditor
                 details={report.details}
                 areas={report.areas}
@@ -631,7 +689,7 @@ export default function App() {
               onUploadPhotos={handleUploadPhotos}
               onUpdatePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
               onDeletePhoto={handleDeletePhoto}
-              linkToItems={['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(report.details.reportType)}
+              linkToItems={isBuildingManagementTemplate(report.details.reportType)}
             />
           </div>
         )}
