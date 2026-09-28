@@ -8,7 +8,7 @@ Production: `https://report.creation.proinspect.systems/`
 
 ```text
 Properties
-  -> Select a report template from the Residential / Commercial / Maintenance / Building catalogue
+  -> Select a report template from the Residential / Commercial / Maintenance / Building / Custom catalogue
   -> Import commentary from CSV or use the seeded report areas
   -> Upload inspection photos from the device
   -> Review report
