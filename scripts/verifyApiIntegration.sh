@@ -16,7 +16,11 @@ cleanup() {
 
 on_error() {
   local status=$?
-  echo "API integration test failed. Worker log follows:" >&2
+  echo "API integration test failed. Last API response:" >&2
+  cat /tmp/proinspect-api-response.json >&2 || true
+  echo >&2
+  sleep 0.2
+  echo "Worker log follows:" >&2
   cat "${LOG_FILE}" >&2 || true
   exit "${status}"
 }
@@ -81,27 +85,32 @@ assert_status 409 -X POST "${BASE_URL}/api/properties" \
 
 report_payload='{"schemaVersion":5,"details":{"reportType":"Routine","formName":"Routine Inspection Report","actNotice":"","companyName":"ProInspect","companyAddress":"19 Bonnard Crescent Ashby WA 6065","companyPhone":"1300 000 000","propertyAddress":"","inspectingAgent":"Integration Tester","inspectionDate":"2026-09-28","tenancyStartDate":"","tenants":"","reportReturnDate":"","additionalComments":"","agentSignName":"Integration Tester","agentSignDate":"2026-09-28","disclaimerText":"Integration test"},"areas":[{"id":"area-general","name":"General","items":[{"id":"item-overall","name":"Overall","agentComments":"Integration observation"}]}],"photos":[]}'
 
-report=$(curl -fsS -X POST "${BASE_URL}/api/properties/${property_id}/reports" \
+create_report_body=$(printf '%s' "${report_payload}" | python3 -c 'import json,sys; print(json.dumps({"reportType":"Routine","report":json.load(sys.stdin)}))')
+save_report_body_rev1=$(printf '%s' "${report_payload}" | python3 -c 'import json,sys; print(json.dumps({"report":json.load(sys.stdin),"expectedRevision":1}))')
+
+
+assert_status 201 -X POST "${BASE_URL}/api/properties/${property_id}/reports" \
   -H "Content-Type: application/json" \
-  --data "{"reportType":"Routine","report":${report_payload}}")
+  --data "${create_report_body}"
+report=$(cat /tmp/proinspect-api-response.json)
 report_id=$(printf '%s' "${report}" | json_field "['id']")
 revision=$(printf '%s' "${report}" | json_field "['revision']")
 [[ "${revision}" == "1" ]]
 
 saved=$(curl -fsS -X PUT "${BASE_URL}/api/reports/${report_id}" \
   -H "Content-Type: application/json" \
-  --data "{"report":${report_payload},"expectedRevision":1}")
+  --data "${save_report_body_rev1}")
 revision=$(printf '%s' "${saved}" | json_field "['revision']")
 [[ "${revision}" == "2" ]]
 
 assert_status 409 -X PUT "${BASE_URL}/api/reports/${report_id}" \
   -H "Content-Type: application/json" \
-  --data "{"report":${report_payload},"expectedRevision":1}"
+  --data "${save_report_body_rev1}"
 [[ "$(json_field "['code']" </tmp/proinspect-api-response.json)" == "report-revision-conflict" ]]
 
 race_report=$(curl -fsS -X POST "${BASE_URL}/api/properties/${property_id}/reports" \
   -H "Content-Type: application/json" \
-  --data "{\"reportType\":\"Routine\",\"report\":${report_payload}}")
+  --data "${create_report_body}")
 race_report_id=$(printf '%s' "${race_report}" | json_field "['id']")
 
 for slot in 1 2; do
@@ -109,7 +118,7 @@ for slot in 1 2; do
     curl -sS -o "/tmp/proinspect-race-${slot}.json" -w "%{http_code}" \
       -X PUT "${BASE_URL}/api/reports/${race_report_id}" \
       -H "Content-Type: application/json" \
-      --data "{\"report\":${report_payload},\"expectedRevision\":1}" \
+      --data "${save_report_body_rev1}" \
       >"/tmp/proinspect-race-${slot}.status"
   ) &
 done
