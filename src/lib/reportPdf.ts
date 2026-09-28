@@ -1443,9 +1443,12 @@ function drawExitConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (me
   });
 }
 
-function photoCaption(photo: ReportPhoto, total: number, ordinal: number): string {
+function photoCaption(photo: ReportPhoto, total: number, ordinal: number, report: ReportData): string {
   const area = value(photo.areaName) || 'General';
-  const item = value(photo.itemName);
+  const currentItem = photo.itemId
+    ? report.areas.flatMap((reportArea) => reportArea.items).find((item) => item.id === photo.itemId)
+    : undefined;
+  const item = value(currentItem?.name) || value(photo.itemName);
   return item
     ? `${area}: ${item} (photo ${ordinal} of ${total})`
     : `${area}: Overall (photo ${ordinal} of ${total})`;
@@ -1516,12 +1519,19 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
     const pageNumber = Math.floor(pageStart / photosPerPage) + 1;
     const photoPageCount = Math.ceil(orderedPhotos.length / photosPerPage);
 
-    let y = addContentPage(pdf, report, 'Inspection Photos');
+    const buildingManagement = isBuildingManagementReport(report.details.reportType);
+    let y = addContentPage(pdf, report, buildingManagement ? 'Building Manager Photo Evidence' : 'Inspection Photos');
     if (pageStart === 0) {
       drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, firstTitleHeight, SECTION_FILL, BORDER);
       setFont(pdf, 7, 'bold');
       setTextColor(pdf, TEXT);
-      pdf.text(`Agent Inspection Photos (${orderedPhotos.length} photos)`, MARGIN_X + 1.5, y + 4.6);
+      pdf.text(
+        buildingManagement
+          ? `Item-linked Photo Evidence (${orderedPhotos.length} photos)`
+          : `Agent Inspection Photos (${orderedPhotos.length} photos)`,
+        MARGIN_X + 1.5,
+        y + 4.6
+      );
       y += firstTitleHeight + 2;
     }
 
@@ -1549,10 +1559,10 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
       drawBox(pdf, x, cellY, cellWidth, cellHeight, undefined, LIGHT_BORDER);
       setFont(pdf, 5.2, 'bold');
       setTextColor(pdf, TEXT);
-      const areaKey = (value(photo.areaName) || 'General').toLowerCase();
+      const groupKey = photoGroupKey(photo);
       const caption = wrapText(
         pdf,
-        photoCaption(photo, counts.get(areaKey) || 1, photoOrdinal.get(photo.id) || 1),
+        photoCaption(photo, counts.get(groupKey) || 1, photoOrdinal.get(photo.id) || 1, report),
         cellWidth - 2
       );
       drawWrappedLines(pdf, caption, x + 1, cellY + 2.6, 1.9, { maxLines: 2 });
