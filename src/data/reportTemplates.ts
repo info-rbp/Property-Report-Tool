@@ -1,5 +1,6 @@
 import { PROINSPECT_COMPANY } from '../config/company';
 import { migrateReportData } from '../lib/reportMigration';
+import { perthIsoDate } from '../lib/dateUtils';
 import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate } from './reportCatalogue';
 import { CURRENT_REPORT_SCHEMA_VERSION, InspectionArea, ReportData, ReportType } from '../types/report';
 
@@ -37,7 +38,7 @@ export function createBlankReport(
   property?: { id: string; address: string }
 ): ReportData {
   const now = new Date();
-  const date = now.toISOString().slice(0, 10);
+  const date = perthIsoDate(now);
   const template = getReportTemplate(reportType);
 
   return {
