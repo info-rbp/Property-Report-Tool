@@ -1,4 +1,5 @@
 import { PROINSPECT_COMPANY } from '../config/company';
+import { migrateReportData } from '../lib/reportMigration';
 import { getReportTemplate, isBuildingManagementTemplate } from './reportCatalogue';
 import { CURRENT_REPORT_SCHEMA_VERSION, InspectionArea, ReportData, ReportType } from '../types/report';
 
@@ -118,21 +119,21 @@ export function createBlankReport(
 }
 
 export function normalizeReport(report: ReportData): ReportData {
+  const migrated = migrateReportData(report);
   const now = new Date().toISOString();
-  const template = getReportTemplate(report.details.reportType);
+  const template = getReportTemplate(migrated.details.reportType);
   return {
-    ...report,
-    schemaVersion: CURRENT_REPORT_SCHEMA_VERSION,
-    id: report.id || crypto.randomUUID(),
-    status: report.status || 'draft',
-    createdAt: report.createdAt || now,
-    updatedAt: report.updatedAt || now,
+    ...migrated,
+    id: migrated.id || crypto.randomUUID(),
+    status: migrated.status || 'draft',
+    createdAt: migrated.createdAt || now,
+    updatedAt: migrated.updatedAt || now,
     details: {
-      ...report.details,
-      formName: report.details.formName || template.label,
-      disclaimerText: report.details.disclaimerText || template.disclaimer,
+      ...migrated.details,
+      formName: migrated.details.formName || template.label,
+      disclaimerText: migrated.details.disclaimerText || template.disclaimer,
     },
-    photos: report.photos || [],
-    areas: report.areas || [],
+    photos: migrated.photos || [],
+    areas: migrated.areas || [],
   };
 }
