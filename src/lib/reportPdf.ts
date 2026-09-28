@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
-import { formatAustralianDate, splitTenantNames } from './reportFormatting';
+import { formatAustralianDate, resolvePhotoAreaName, splitTenantNames } from './reportFormatting';
 import { assertReportReadyForPdf } from './reportValidation';
 import { InspectionArea, InspectionItem, ReportData, ReportPhoto, ReportType } from '../types/report';
 
@@ -646,7 +646,9 @@ function drawAreaHeader(pdf: jsPDF, y: number, areaName: string, continuation: b
 
 function areaPhotoCount(report: ReportData, area: InspectionArea): number {
   const name = area.name.trim().toLowerCase();
-  const photos = report.photos.filter((photo) => (photo.areaName || '').trim().toLowerCase() === name).length;
+  const photos = report.photos.filter(
+    (photo) => resolvePhotoAreaName(photo, report.areas).trim().toLowerCase() === name
+  ).length;
   return photos || area.overallPhotoCount || 0;
 }
 
@@ -1689,7 +1691,7 @@ function drawExitConditionPages(pdf: jsPDF, report: ReportData, onProgress?: (me
 }
 
 function photoCaption(photo: ReportPhoto, total: number, ordinal: number, report: ReportData): string {
-  const area = value(photo.areaName) || 'General';
+  const area = resolvePhotoAreaName(photo, report.areas);
   const currentItem = photo.itemId
     ? report.areas.flatMap((reportArea) => reportArea.items).find((item) => item.id === photo.itemId)
     : undefined;
