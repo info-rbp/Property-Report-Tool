@@ -35,6 +35,11 @@ const longComment = [
 ].join(' ').repeat(18);
 const extremelyLongComment = longComment.repeat(3);
 
+const LANDSCAPE_JPEG =
+  'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAAyAFADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDmaKKK/TT81CiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/2Q==';
+const PORTRAIT_JPEG =
+  'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCABQADIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwCaiiivyw/QwooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigA//2Q==';
+
 const report: ReportData = {
   id: 'pdf-regression-test',
   status: 'draft',
@@ -249,6 +254,27 @@ const exitReport: ReportData = {
 await verifyPdf('Entry', report, 5, 10_000);
 await verifyPdf('Routine', routineReport, 3, 4_000);
 await verifyPdf('Exit', exitReport, 4);
+
+const photoGalleryReport = structuredClone(routineReport);
+photoGalleryReport.id = 'photo-gallery-regression-test';
+photoGalleryReport.details.formName = 'Routine Inspection Report';
+photoGalleryReport.details.inspectingAgent = 'Photo Gallery Regression Test';
+photoGalleryReport.details.agentSignName = 'Photo Gallery Regression Test';
+photoGalleryReport.photos = Array.from({ length: 13 }, (_, index) => {
+  const area = index % 2 === 0 ? photoGalleryReport.areas[0] : photoGalleryReport.areas[1];
+  return {
+    id: `photo-${index + 1}`,
+    name: `${area.name}: Overall (photo ${index + 1})`,
+    areaName: area.name,
+    photoIndex: Math.floor(index / 2) + 1,
+    isCover: index === 0,
+    dataUrl: index % 3 === 0 ? PORTRAIT_JPEG : LANDSCAPE_JPEG,
+  };
+});
+if (validateReportStructure(photoGalleryReport).length !== 0) {
+  throw new Error('Image-bearing photo gallery fixture failed structural validation.');
+}
+await verifyPdf('PhotoGalleryImages', photoGalleryReport, 5, 12_000);
 
 for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', 'Exit', 'KeyReceipt'].includes(item.type))) {
   const extended = createBlankReport(template.type, {
