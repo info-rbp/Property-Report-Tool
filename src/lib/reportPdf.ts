@@ -83,6 +83,25 @@ function wrapText(pdf: jsPDF, text: string, width: number): string[] {
   return lines.length ? lines : [''];
 }
 
+function truncateTextToWidth(pdf: jsPDF, text: string, maxWidth: number): string {
+  const normalized = value(text);
+  if (!normalized || pdf.getTextWidth(normalized) <= maxWidth) return normalized;
+
+  const ellipsis = '...';
+  let low = 0;
+  let high = normalized.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const candidate = normalized.slice(0, mid).trimEnd() + ellipsis;
+    if (pdf.getTextWidth(candidate) <= maxWidth) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return normalized.slice(0, low).trimEnd() + ellipsis;
+}
+
 function drawWrappedLines(
   pdf: jsPDF,
   lines: string[],
@@ -129,8 +148,21 @@ function reportRunningTitle(reportType: ReportType): string {
 function drawRunningHeader(pdf: jsPDF, report: ReportData, rightTitle?: string) {
   setFont(pdf, 6.8, 'bold');
   setTextColor(pdf, TEXT);
-  pdf.text(value(report.details.propertyAddress) || 'Property address not recorded', MARGIN_X, HEADER_Y);
-  pdf.text(rightTitle || reportRunningTitle(report.details.reportType), PAGE_WIDTH - MARGIN_X, HEADER_Y, { align: 'right' });
+  const gap = 8;
+  const leftWidth = (CONTENT_WIDTH - gap) * 0.6;
+  const rightWidth = CONTENT_WIDTH - gap - leftWidth;
+  const address = truncateTextToWidth(
+    pdf,
+    value(report.details.propertyAddress) || 'Property address not recorded',
+    leftWidth
+  );
+  const title = truncateTextToWidth(
+    pdf,
+    rightTitle || reportRunningTitle(report.details.reportType),
+    rightWidth
+  );
+  pdf.text(address, MARGIN_X, HEADER_Y);
+  pdf.text(title, PAGE_WIDTH - MARGIN_X, HEADER_Y, { align: 'right' });
   pdf.setDrawColor(...LIGHT_BORDER);
   pdf.setLineWidth(0.2);
   pdf.line(MARGIN_X, 9.2, PAGE_WIDTH - MARGIN_X, 9.2);
@@ -707,7 +739,8 @@ function drawRoutineAreaHeader(pdf: jsPDF, y: number, area: InspectionArea, phot
   setFont(pdf, 6.8, 'bold');
   setTextColor(pdf, TEXT);
   const title = continuation ? `${area.name.toUpperCase()} (CONTINUED)` : area.name.toUpperCase();
-  pdf.text(title, MARGIN_X + 1.6, y + 4.6);
+  const titleWidth = photoCount > 0 ? CONTENT_WIDTH - 67 : CONTENT_WIDTH - 3.2;
+  pdf.text(truncateTextToWidth(pdf, title, titleWidth), MARGIN_X + 1.6, y + 4.6);
   if (photoCount > 0) {
     setFont(pdf, 5.9, 'bold');
     setTextColor(pdf, TEAL);
@@ -1185,11 +1218,8 @@ function drawBuildingManagementCategoryHeader(
   drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 7.2, SECTION_FILL, BORDER);
   setFont(pdf, 6.9, 'bold');
   setTextColor(pdf, NAVY);
-  pdf.text(
-    continuation ? `${category.toUpperCase()} (CONTINUED)` : category.toUpperCase(),
-    MARGIN_X + 1.6,
-    y + 4.7
-  );
+  const title = continuation ? `${category.toUpperCase()} (CONTINUED)` : category.toUpperCase();
+  pdf.text(truncateTextToWidth(pdf, title, CONTENT_WIDTH - 3.2), MARGIN_X + 1.6, y + 4.7);
   return y + 7.2;
 }
 
@@ -1602,7 +1632,7 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
   const gapY = 3;
   const firstTitleHeight = 7;
   const cellWidth = (CONTENT_WIDTH - (gapX * (columns - 1))) / columns;
-  const captionHeight = 5.2;
+  const captionHeight = 7.1;
   let embedded = 0;
 
   for (let pageStart = 0; pageStart < orderedPhotos.length; pageStart += photosPerPage) {
@@ -1656,7 +1686,7 @@ async function drawPhotoPages(pdf: jsPDF, report: ReportData, onProgress?: (mess
         photoCaption(photo, counts.get(groupKey) || 1, photoOrdinal.get(photo.id) || 1, report),
         cellWidth - 2
       );
-      drawWrappedLines(pdf, caption, x + 1, cellY + 2.6, 1.9, { maxLines: 2 });
+      drawWrappedLines(pdf, caption, x + 1, cellY + 2.4, 1.9, { maxLines: 3 });
 
       const imageY = cellY + captionHeight;
       const imageHeight = cellHeight - captionHeight;
