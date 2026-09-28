@@ -383,8 +383,12 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     if (parts.length === 3 && request.method === 'DELETE') {
       const row = await getReportRow(env, reportId);
       if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be deleted.');
-      await deleteReportObjects(env, reportId);
       await env.DB.prepare('DELETE FROM reports WHERE id = ?').bind(reportId).run();
+      try {
+        await deleteReportObjects(env, reportId);
+      } catch (error) {
+        console.error('Draft report deleted from D1 but R2 cleanup failed:', error);
+      }
       return json({ success: true });
     }
 
@@ -444,7 +448,12 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         ? [...photos.map((item) => ({ ...item, isCover: false })), photo]
         : [...photos, photo];
 
-      return json(await updateReportData(env, row, { ...report, photos: updatedPhotos }, userEmail));
+      try {
+        return json(await updateReportData(env, row, { ...report, photos: updatedPhotos }, userEmail));
+      } catch (error) {
+        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+        throw error;
+      }
     }
 
     if (parts.length === 5 && parts[3] === 'photos') {
@@ -466,9 +475,14 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 
       if (request.method === 'DELETE') {
         if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be edited.');
-        if (photo?.storageKey) await env.REPORT_STORAGE.delete(photo.storageKey);
         const updated = { ...report, photos: report.photos.filter((item) => item.id !== photoId) };
-        return json(await updateReportData(env, row, updated, userEmail));
+        const saved = await updateReportData(env, row, updated, userEmail);
+        if (photo?.storageKey) {
+          await env.REPORT_STORAGE.delete(photo.storageKey).catch((error) => {
+            console.error('Photo removed from report data but R2 cleanup failed:', error);
+          });
+        }
+        return json(saved);
       }
     }
 
@@ -509,7 +523,12 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.');
       }
 
-      return json(await updateReportData(env, row, report, userEmail, 'completed', key));
+      try {
+        return json(await updateReportData(env, row, report, userEmail, 'completed', key));
+      } catch (error) {
+        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+        throw error;
+      }
     }
 
     if (parts.length === 4 && parts[3] === 'pdf' && request.method === 'GET') {
