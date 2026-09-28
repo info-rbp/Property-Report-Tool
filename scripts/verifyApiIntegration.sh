@@ -90,6 +90,27 @@ assert_status 409 -X PUT "${BASE_URL}/api/reports/${report_id}" \
   --data "{"report":${report_payload},"expectedRevision":1}"
 [[ "$(json_field "['code']" </tmp/proinspect-api-response.json)" == "report-revision-conflict" ]]
 
+race_report=$(curl -fsS -X POST "${BASE_URL}/api/properties/${property_id}/reports" \
+  -H "Content-Type: application/json" \
+  --data "{\"reportType\":\"Routine\",\"report\":${report_payload}}")
+race_report_id=$(printf '%s' "${race_report}" | json_field "['id']")
+
+for slot in 1 2; do
+  (
+    curl -sS -o "/tmp/proinspect-race-${slot}.json" -w "%{http_code}" \
+      -X PUT "${BASE_URL}/api/reports/${race_report_id}" \
+      -H "Content-Type: application/json" \
+      --data "{\"report\":${report_payload},\"expectedRevision\":1}" \
+      >"/tmp/proinspect-race-${slot}.status"
+  ) &
+done
+wait
+
+race_statuses=$(cat /tmp/proinspect-race-1.status /tmp/proinspect-race-2.status | sort | tr '\n' ' ')
+[[ "${race_statuses}" == "200 409 " ]]
+race_current=$(curl -fsS "${BASE_URL}/api/reports/${race_report_id}")
+[[ "$(printf '%s' "${race_current}" | json_field "['revision']")" == "2" ]]
+
 printf '%s' '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAEf/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EH//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/EH//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/EH//2Q==' | base64 -d >/tmp/proinspect-test.jpg
 
 photo_response=$(curl -fsS -X POST "${BASE_URL}/api/reports/${report_id}/photos" \
@@ -103,6 +124,10 @@ photo_response=$(curl -fsS -X POST "${BASE_URL}/api/reports/${report_id}/photos"
   -F "expectedRevision=2")
 revision=$(printf '%s' "${photo_response}" | json_field "['revision']")
 [[ "${revision}" == "3" ]]
+
+bunx wrangler r2 object delete "proinspect-property-reports-data/reports/${report_id}/photos/photo-1.jpg" \
+  --local --persist-to "${STATE_DIR}" --force
+assert_status 200 "${BASE_URL}/api/reports/${report_id}/photos/photo-1"
 
 assert_status 409 -X DELETE "${BASE_URL}/api/reports/${report_id}/photos/photo-1?expectedRevision=2"
 photo_deleted=$(curl -fsS -X DELETE "${BASE_URL}/api/reports/${report_id}/photos/photo-1?expectedRevision=3")
