@@ -347,38 +347,164 @@ async function deleteReportObjects(env: Env, reportId: string): Promise<void> {
   await deleteObjectPrefix(env, `recovery/reports/${reportId}/`);
 }
 
+
+async function findDuplicateProperty(env: Env, address: string, excludeId?: string): Promise<PropertyRow | null> {
+  const sql = excludeId
+    ? 'SELECT * FROM properties WHERE lower(trim(address)) = lower(trim(?)) AND id <> ? LIMIT 1'
+    : 'SELECT * FROM properties WHERE lower(trim(address)) = lower(trim(?)) LIMIT 1';
+  return excludeId
+    ? env.DB.prepare(sql).bind(address, excludeId).first<PropertyRow>()
+    : env.DB.prepare(sql).bind(address).first<PropertyRow>();
+}
+
+async function copyPhotoForReport(
+  env: Env,
+  sourcePhoto: ReportPhoto,
+  sourceReport: ReportData,
+  newReportId: string,
+  userEmail: string
+): Promise<ReportPhoto> {
+  const sourceStoredPhoto = sourceReport.photos.find((photo) => photo.id === sourcePhoto.id);
+  const sourceKey = sourcePhoto.storageKey || sourceStoredPhoto?.storageKey;
+  if (!sourceKey) {
+    return { ...sourcePhoto, dataUrl: undefined, url: undefined, storageKey: undefined };
+  }
+
+  const sourceObject = await getStoredObject(env, sourceKey);
+  if (!sourceObject) {
+    throw new HttpError(
+      409,
+      'A stored photo could not be copied for the replacement draft.',
+      'photo-storage-missing',
+      { photoId: sourcePhoto.id }
+    );
+  }
+
+  const bytes = await sourceObject.arrayBuffer();
+  const newKey = 'reports/' + newReportId + '/photos/' + sourcePhoto.id + '.jpg';
+  const metadata = {
+    httpMetadata: { contentType: 'image/jpeg' },
+    customMetadata: { reportId: newReportId, photoId: sourcePhoto.id, uploadedBy: userEmail },
+  };
+
+  await Promise.all([
+    env.REPORT_STORAGE.put(newKey, bytes, metadata),
+    env.REPORT_STORAGE.put(recoveryKey(newKey), bytes, metadata),
+  ]);
+
+  return { ...sourcePhoto, dataUrl: undefined, url: undefined, storageKey: newKey };
+}
+
+async function createClonedDraft(
+  env: Env,
+  sourceRow: ReportRow,
+  sourceSnapshot: ReportData,
+  userEmail: string,
+  supersedesReportId?: string
+): Promise<ReportData> {
+  if (!isReportType(sourceSnapshot.details?.reportType)) {
+    throw new HttpError(400, 'The source report contains an unknown report type.', 'unknown-report-type');
+  }
+
+  const newId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const sourceCloud = parseReport(sourceRow);
+  const copiedPhotos: ReportPhoto[] = [];
+
+  try {
+    for (const photo of sourceSnapshot.photos || []) {
+      copiedPhotos.push(await copyPhotoForReport(env, photo, sourceCloud, newId, userEmail));
+    }
+
+    const draft: ReportData = {
+      ...migrateReportData(sourceSnapshot),
+      id: newId,
+      propertyId: sourceRow.property_id,
+      status: 'draft',
+      revision: 1,
+      completedPdfKey: undefined,
+      supersedesReportId,
+      supersededByReportId: undefined,
+      supersededAt: undefined,
+      createdAt: now,
+      updatedAt: now,
+      photos: copiedPhotos,
+    };
+
+    await env.DB.prepare(
+      'INSERT INTO reports (id, property_id, report_type, status, revision, report_data, completed_pdf_key, supersedes_report_id, superseded_by_report_id, superseded_at, created_at, updated_at, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?, ?)'
+    )
+      .bind(
+        newId,
+        sourceRow.property_id,
+        storageReportType(draft.details.reportType),
+        'draft',
+        1,
+        JSON.stringify(draft),
+        supersedesReportId || null,
+        now,
+        now,
+        userEmail,
+        userEmail
+      )
+      .run();
+
+    return parseReport(await getReportRow(env, newId));
+  } catch (error) {
+    await deleteReportObjects(env, newId).catch(() => undefined);
+    throw error;
+  }
+}
+
 async function handleApi(request: Request, env: Env): Promise<Response> {
-  const userEmail = await authenticate(request, env);
+  const user = await authenticate(request, env);
+  const userEmail = user.email;
   const url = new URL(request.url);
   const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
 
   if (request.method === 'GET' && url.pathname === '/api/me') {
-    return json({ email: userEmail });
+    return json(user);
   }
 
   if (parts[1] === 'properties') {
     if (parts.length === 2 && request.method === 'GET') {
-      const result = await env.DB.prepare('SELECT * FROM properties ORDER BY updated_at DESC').all<PropertyRow>();
+      const includeArchived = url.searchParams.get('includeArchived') === 'true' && user.role === 'admin';
+      const result = includeArchived
+        ? await env.DB.prepare('SELECT * FROM properties ORDER BY archived_at IS NOT NULL, updated_at DESC').all<PropertyRow>()
+        : await env.DB.prepare('SELECT * FROM properties WHERE archived_at IS NULL ORDER BY updated_at DESC').all<PropertyRow>();
       return json((result.results || []).map(mapProperty));
     }
 
     if (parts.length === 2 && request.method === 'POST') {
-      const body = await request.json() as { address?: string; reference?: string; notes?: string };
+      requireRole(user, 'editor');
+      const body = await request.json() as { address?: string; reference?: string; notes?: string; allowDuplicate?: boolean };
       const address = body.address?.trim();
-      if (!address) throw new HttpError(400, 'Property address is required.');
+      if (!address) throw new HttpError(400, 'Property address is required.', 'property-address-required');
+
+      const duplicate = await findDuplicateProperty(env, address);
+      if (duplicate && !body.allowDuplicate) {
+        throw new HttpError(
+          409,
+          'A property already exists at "' + duplicate.address + '". Open the existing property or explicitly confirm that a duplicate container is required.',
+          'duplicate-property',
+          { propertyId: duplicate.id, archived: Boolean(duplicate.archived_at) }
+        );
+      }
+
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await env.DB.prepare(
-        `INSERT INTO properties (id, address, reference, notes, created_at, updated_at, created_by, updated_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        'INSERT INTO properties (id, address, reference, notes, archived_at, created_at, updated_at, created_by, updated_by) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)'
       )
         .bind(id, address, body.reference?.trim() || null, body.notes?.trim() || null, now, now, userEmail, userEmail)
         .run();
+
       return json(mapProperty({
         id,
         address,
         reference: body.reference?.trim() || null,
         notes: body.notes?.trim() || null,
+        archived_at: null,
         created_at: now,
         updated_at: now,
         created_by: userEmail,
@@ -393,62 +519,86 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         const reports = await env.DB.prepare(
           'SELECT * FROM reports WHERE property_id = ? ORDER BY updated_at DESC'
         ).bind(propertyId).all<ReportRow>();
-        return json({
-          property: mapProperty(property),
-          reports: (reports.results || []).map(reportSummary),
-        });
+        return json({ property: mapProperty(property), reports: (reports.results || []).map(reportSummary) });
       }
 
       if (request.method === 'PUT') {
+        requireRole(user, 'editor');
         await getPropertyRow(env, propertyId);
-        const body = await request.json() as { address?: string; reference?: string; notes?: string };
+        const body = await request.json() as { address?: string; reference?: string; notes?: string; allowDuplicate?: boolean };
         const address = body.address?.trim();
-        if (!address) throw new HttpError(400, 'Property address is required.');
+        if (!address) throw new HttpError(400, 'Property address is required.', 'property-address-required');
+
+        const duplicate = await findDuplicateProperty(env, address, propertyId);
+        if (duplicate && !body.allowDuplicate) {
+          throw new HttpError(
+            409,
+            'Another property already exists at "' + duplicate.address + '". Confirm the duplicate address before saving.',
+            'duplicate-property',
+            { propertyId: duplicate.id, archived: Boolean(duplicate.archived_at) }
+          );
+        }
+
         const now = new Date().toISOString();
         await env.DB.prepare(
           'UPDATE properties SET address = ?, reference = ?, notes = ?, updated_at = ?, updated_by = ? WHERE id = ?'
         )
           .bind(address, body.reference?.trim() || null, body.notes?.trim() || null, now, userEmail, propertyId)
           .run();
-        const updated = await getPropertyRow(env, propertyId);
-        return json(mapProperty(updated));
+        return json(mapProperty(await getPropertyRow(env, propertyId)));
       }
     }
 
+    if (parts.length === 4 && (parts[3] === 'archive' || parts[3] === 'restore') && request.method === 'POST') {
+      requireRole(user, 'admin');
+      const propertyId = parts[2];
+      await getPropertyRow(env, propertyId);
+      const archivedAt = parts[3] === 'archive' ? new Date().toISOString() : null;
+      const now = new Date().toISOString();
+      await env.DB.prepare(
+        'UPDATE properties SET archived_at = ?, updated_at = ?, updated_by = ? WHERE id = ?'
+      ).bind(archivedAt, now, userEmail, propertyId).run();
+      return json(mapProperty(await getPropertyRow(env, propertyId)));
+    }
+
     if (parts.length === 4 && parts[3] === 'reports' && request.method === 'POST') {
+      requireRole(user, 'editor');
       const propertyId = parts[2];
       const property = await getPropertyRow(env, propertyId);
+      if (property.archived_at) {
+        throw new HttpError(409, 'Restore this archived property before creating a report.', 'property-archived');
+      }
+
       const body = await request.json() as { reportType?: unknown; report?: ReportData };
       if (!body.report || !isReportType(body.reportType)) {
-        throw new HttpError(400, 'A valid report type and report data are required.');
+        throw new HttpError(400, 'A valid report type and report data are required.', 'invalid-report');
       }
 
       const id = body.report.id || crypto.randomUUID();
       const now = new Date().toISOString();
       const report: ReportData = {
-        ...body.report,
+        ...migrateReportData(body.report),
         id,
         propertyId,
         status: 'draft',
+        revision: 1,
+        completedPdfKey: undefined,
+        supersedesReportId: undefined,
+        supersededByReportId: undefined,
+        supersededAt: undefined,
         createdAt: now,
         updatedAt: now,
-        details: {
-          ...body.report.details,
-          reportType: body.reportType,
-          propertyAddress: property.address,
-        },
+        details: { ...body.report.details, reportType: body.reportType, propertyAddress: property.address },
         photos: [],
       };
 
       await env.DB.prepare(
-        `INSERT INTO reports
-         (id, property_id, report_type, status, report_data, completed_pdf_key, created_at, updated_at, created_by, updated_by)
-         VALUES (?, ?, ?, 'draft', ?, NULL, ?, ?, ?, ?)`
+        'INSERT INTO reports (id, property_id, report_type, status, revision, report_data, completed_pdf_key, supersedes_report_id, superseded_by_report_id, superseded_at, created_at, updated_at, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?, ?)'
       )
-        .bind(id, propertyId, storageReportType(body.reportType), JSON.stringify(report), now, now, userEmail, userEmail)
+        .bind(id, propertyId, storageReportType(body.reportType), 'draft', 1, JSON.stringify(report), now, now, userEmail, userEmail)
         .run();
 
-      return json(report, 201);
+      return json(parseReport(await getReportRow(env, id)), 201);
     }
   }
 
@@ -460,33 +610,48 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     }
 
     if (parts.length === 3 && request.method === 'PUT') {
+      requireRole(user, 'editor');
       const row = await getReportRow(env, reportId);
-      if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be edited.');
-      const body = await request.json() as { report?: ReportData; expectedUpdatedAt?: string };
-      if (!body.report) throw new HttpError(400, 'Report data is required.');
+      if (row.status !== 'draft') throw new HttpError(409, 'Only draft reports can be edited.', 'report-immutable');
+
+      const body = await request.json() as { report?: ReportData; expectedRevision?: number };
+      if (!body.report) throw new HttpError(400, 'Report data is required.', 'report-data-required');
       if (!isReportType(body.report.details?.reportType)) {
-        throw new HttpError(400, 'The report contains an unknown report type.');
+        throw new HttpError(400, 'The report contains an unknown report type.', 'unknown-report-type');
       }
 
       const current = parseReport(row);
       if (body.report.details.reportType !== current.details.reportType) {
-        throw new HttpError(409, 'The report type cannot be changed after the report has been created.');
+        throw new HttpError(409, 'The report type cannot be changed after the report has been created.', 'report-type-immutable');
       }
 
-      if (body.expectedUpdatedAt && body.expectedUpdatedAt !== row.updated_at) {
-        throw new HttpError(
-          409,
-          'This draft changed in another browser or device. Reopen the report to load the latest cloud version before continuing.'
-        );
-      }
-
-      return json(await updateReportData(env, row, body.report, userEmail));
+      return json(await updateReportData(env, row, body.report, userEmail, Number(body.expectedRevision)));
     }
 
     if (parts.length === 3 && request.method === 'DELETE') {
+      requireRole(user, 'editor');
       const row = await getReportRow(env, reportId);
-      if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be deleted.');
-      await env.DB.prepare('DELETE FROM reports WHERE id = ?').bind(reportId).run();
+      if (row.status !== 'draft') throw new HttpError(409, 'Completed or superseded reports cannot be deleted.', 'report-immutable');
+
+      const expectedRevision = Number(url.searchParams.get('expectedRevision'));
+      if (!Number.isInteger(expectedRevision) || expectedRevision !== row.revision) {
+        throw new HttpError(409, 'This draft changed before it could be deleted. Reload it first.', 'report-revision-conflict');
+      }
+
+      const result = await env.DB.prepare(
+        'DELETE FROM reports WHERE id = ? AND revision = ? AND status = ?'
+      ).bind(reportId, expectedRevision, 'draft').run();
+
+      if ((result.meta?.changes || 0) !== 1) {
+        throw new HttpError(409, 'This draft changed before it could be deleted. Reload it first.', 'report-revision-conflict');
+      }
+
+      if (row.supersedes_report_id) {
+        await env.DB.prepare(
+          "UPDATE reports SET superseded_by_report_id = NULL, updated_at = ?, updated_by = ? WHERE id = ? AND superseded_by_report_id = ? AND status = 'completed'"
+        ).bind(new Date().toISOString(), userEmail, row.supersedes_report_id, reportId).run();
+      }
+
       try {
         await deleteReportObjects(env, reportId);
       } catch (error) {
@@ -495,52 +660,108 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       return json({ success: true });
     }
 
+    if (parts.length === 4 && parts[3] === 'clone' && request.method === 'POST') {
+      requireRole(user, 'editor');
+      const sourceRow = await getReportRow(env, reportId);
+      const body = await request.json() as { report?: ReportData };
+      if (!body.report) throw new HttpError(400, 'Local draft data is required.', 'report-data-required');
+      if (body.report.details?.reportType !== parseReport(sourceRow).details.reportType) {
+        throw new HttpError(409, 'A conflict copy must keep the original report type.', 'report-type-immutable');
+      }
+      return json(await createClonedDraft(env, sourceRow, body.report, userEmail), 201);
+    }
+
+    if (parts.length === 4 && parts[3] === 'correction' && request.method === 'POST') {
+      requireRole(user, 'editor');
+      const sourceRow = await getReportRow(env, reportId);
+      if (sourceRow.status !== 'completed') {
+        throw new HttpError(409, 'Only a completed report can be corrected.', 'correction-source-invalid');
+      }
+      if (sourceRow.superseded_by_report_id) {
+        throw new HttpError(
+          409,
+          'A correction has already been created for this report.',
+          'correction-already-exists',
+          { replacementReportId: sourceRow.superseded_by_report_id }
+        );
+      }
+
+      const sourceReport = parseReport(sourceRow);
+      const draft = await createClonedDraft(env, sourceRow, sourceReport, userEmail, sourceRow.id);
+      const reserve = await env.DB.prepare(
+        "UPDATE reports SET superseded_by_report_id = ?, updated_at = ?, updated_by = ? WHERE id = ? AND status = 'completed' AND superseded_by_report_id IS NULL"
+      ).bind(draft.id, new Date().toISOString(), userEmail, sourceRow.id).run();
+
+      if ((reserve.meta?.changes || 0) !== 1) {
+        await env.DB.prepare('DELETE FROM reports WHERE id = ?').bind(draft.id).run().catch(() => undefined);
+        await deleteReportObjects(env, draft.id!).catch(() => undefined);
+        throw new HttpError(409, 'Another correction was created at the same time. Refresh the property.', 'correction-already-exists');
+      }
+
+      return json(draft, 201);
+    }
+
     if (parts.length === 4 && parts[3] === 'photos' && request.method === 'POST') {
+      requireRole(user, 'editor');
       const row = await getReportRow(env, reportId);
-      if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be edited.');
+      if (row.status !== 'draft') throw new HttpError(409, 'Only draft reports can be edited.', 'report-immutable');
 
       const form = await request.formData();
       const file = form.get('file');
       const photoId = String(form.get('photoId') || '').trim();
       const name = String(form.get('name') || '').trim();
       const areaName = String(form.get('areaName') || 'General').trim();
+      const areaId = String(form.get('areaId') || '').trim() || undefined;
       const itemId = String(form.get('itemId') || '').trim() || undefined;
       const itemName = String(form.get('itemName') || '').trim() || undefined;
       const photoIndex = Number(form.get('photoIndex') || '0');
       const isCover = String(form.get('isCover') || 'false') === 'true';
+      const expectedRevision = Number(form.get('expectedRevision'));
 
       if (!(file instanceof File) || !photoId || !name) {
-        throw new HttpError(400, 'Photo file and metadata are required.');
+        throw new HttpError(400, 'Photo file and metadata are required.', 'photo-data-required');
       }
-      if (!file.type.startsWith('image/')) throw new HttpError(400, 'Only image uploads are allowed.');
-      if (file.size > 5 * 1024 * 1024) throw new HttpError(413, 'Processed image exceeds the 5 MB upload limit.');
+      if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
+        throw new HttpError(400, 'A valid report revision is required for photo uploads.', 'report-revision-required');
+      }
+      if (!file.type.startsWith('image/')) throw new HttpError(400, 'Only image uploads are allowed.', 'invalid-photo-type');
+      if (file.size > 5 * 1024 * 1024) throw new HttpError(413, 'Processed image exceeds the 5 MB upload limit.', 'photo-too-large');
 
       const report = parseReport(row);
-      const targetArea = report.areas.find(
-        (area) => normalizeAreaName(area.name) === normalizeAreaName(areaName)
-      );
-      const linkedItem = itemId
-        ? targetArea?.items.find((item) => item.id === itemId)
-        : undefined;
+      const targetArea = areaId
+        ? report.areas.find((area) => area.id === areaId)
+        : report.areas.find((area) => normalizeAreaName(area.name) === normalizeAreaName(areaName));
 
+      if (!targetArea) {
+        throw new HttpError(400, 'The selected report area no longer exists.', 'photo-area-missing');
+      }
+
+      const linkedItem = itemId ? targetArea.items.find((item) => item.id === itemId) : undefined;
       if (itemId && !linkedItem) {
-        throw new HttpError(400, 'The selected reporting item does not belong to the selected report category.');
+        throw new HttpError(400, 'The selected reporting item does not belong to the selected report category.', 'photo-item-invalid');
       }
       if (isBuildingManagementTemplate(report.details.reportType) && !linkedItem) {
-        throw new HttpError(400, 'Building Manager photos must be linked to a reporting item.');
+        throw new HttpError(400, 'Building Manager photos must be linked to a reporting item.', 'building-photo-item-required');
       }
 
-      const key = `reports/${reportId}/photos/${photoId}.jpg`;
-      await env.REPORT_STORAGE.put(key, await file.arrayBuffer(), {
+      const key = 'reports/' + reportId + '/photos/' + photoId + '.jpg';
+      const bytes = await file.arrayBuffer();
+      const metadata = {
         httpMetadata: { contentType: 'image/jpeg' },
         customMetadata: { reportId, photoId, uploadedBy: userEmail },
-      });
+      };
+
+      await Promise.all([
+        env.REPORT_STORAGE.put(key, bytes, metadata),
+        env.REPORT_STORAGE.put(recoveryKey(key), bytes, metadata),
+      ]);
 
       const photos = (report.photos || []).filter((photo) => photo.id !== photoId);
       const photo: ReportPhoto = {
         id: photoId,
         name,
-        areaName,
+        areaName: targetArea.name,
+        areaId: targetArea.id,
         itemId: linkedItem?.id || itemId,
         itemName: linkedItem?.name || itemName,
         photoIndex: Number.isFinite(photoIndex) ? photoIndex : photos.length + 1,
@@ -552,9 +773,9 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         : [...photos, photo];
 
       try {
-        return json(await updateReportData(env, row, { ...report, photos: updatedPhotos }, userEmail));
+        return json(await updateReportData(env, row, { ...report, photos: updatedPhotos }, userEmail, expectedRevision));
       } catch (error) {
-        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+        await deleteStoragePair(env, key).catch(() => undefined);
         throw error;
       }
     }
@@ -566,9 +787,9 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       const photo = report.photos.find((item) => item.id === photoId);
 
       if (request.method === 'GET') {
-        if (!photo?.storageKey) throw new HttpError(404, 'Photo not found.');
-        const object = await env.REPORT_STORAGE.get(photo.storageKey);
-        if (!object) throw new HttpError(404, 'Photo not found.');
+        if (!photo?.storageKey) throw new HttpError(404, 'Photo not found.', 'photo-not-found');
+        const object = await getStoredObject(env, photo.storageKey);
+        if (!object) throw new HttpError(404, 'Photo not found in primary or recovery storage.', 'photo-not-found');
         const headers = new Headers();
         object.writeHttpMetadata(headers);
         headers.set('ETag', object.httpEtag);
@@ -577,11 +798,14 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       }
 
       if (request.method === 'DELETE') {
-        if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be edited.');
+        requireRole(user, 'editor');
+        if (row.status !== 'draft') throw new HttpError(409, 'Only draft reports can be edited.', 'report-immutable');
+
+        const expectedRevision = Number(url.searchParams.get('expectedRevision'));
         const updated = { ...report, photos: report.photos.filter((item) => item.id !== photoId) };
-        const saved = await updateReportData(env, row, updated, userEmail);
+        const saved = await updateReportData(env, row, updated, userEmail, expectedRevision);
         if (photo?.storageKey) {
-          await env.REPORT_STORAGE.delete(photo.storageKey).catch((error) => {
+          await deleteStoragePair(env, photo.storageKey).catch((error) => {
             console.error('Photo removed from report data but R2 cleanup failed:', error);
           });
         }
@@ -590,55 +814,106 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     }
 
     if (parts.length === 4 && parts[3] === 'complete' && request.method === 'POST') {
+      requireRole(user, 'editor');
       const row = await getReportRow(env, reportId);
-      if (row.status === 'completed') return json(parseReport(row));
-      if (request.headers.get('content-type')?.split(';')[0] !== 'application/pdf') {
-        throw new HttpError(400, 'A PDF document is required.');
+      if (row.status !== 'draft') {
+        if (row.status === 'completed' || row.status === 'superseded') return json(parseReport(row));
+        throw new HttpError(409, 'Only draft reports can be finalised.', 'report-immutable');
       }
+
+      const expectedRevision = Number(url.searchParams.get('expectedRevision'));
+      if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
+        throw new HttpError(400, 'A valid report revision is required for finalisation.', 'report-revision-required');
+      }
+      if (row.revision !== expectedRevision) {
+        throw new HttpError(
+          409,
+          'This report changed after the PDF was prepared. Reload the latest version and generate the PDF again.',
+          'report-revision-conflict'
+        );
+      }
+
+      if (request.headers.get('content-type')?.split(';')[0] !== 'application/pdf') {
+        throw new HttpError(400, 'A PDF document is required.', 'invalid-pdf');
+      }
+
       const maxPdfBytes = 90 * 1024 * 1024;
       const declaredLength = Number(request.headers.get('content-length') || 0);
       if (Number.isFinite(declaredLength) && declaredLength > maxPdfBytes) {
-        throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.');
+        throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.', 'pdf-too-large');
       }
-      if (!request.body) throw new HttpError(400, 'PDF is empty.');
+      if (!request.body) throw new HttpError(400, 'PDF is empty.', 'invalid-pdf');
 
       const report = parseReport(row);
       const validationIssues = validateReportForFinalization(report);
       if (validationIssues.length > 0) {
         throw new HttpError(
           409,
-          reportValidationMessage(validationIssues, 'Report cannot be finalised')
+          reportValidationMessage(validationIssues, 'Report cannot be finalised'),
+          'report-validation-failed'
         );
       }
 
-      const key = `reports/${reportId}/completed/report.pdf`;
-      const stored = await env.REPORT_STORAGE.put(key, request.body, {
-        httpMetadata: { contentType: 'application/pdf' },
-        customMetadata: { reportId, completedBy: userEmail },
-      });
-
-      if (!stored || stored.size <= 0) {
-        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
-        throw new HttpError(400, 'PDF is empty.');
+      if (row.supersedes_report_id) {
+        const original = await getReportRow(env, row.supersedes_report_id);
+        if (original.status !== 'completed' || original.superseded_by_report_id !== row.id) {
+          throw new HttpError(
+            409,
+            'The original report is no longer available for this correction. Refresh the property before continuing.',
+            'correction-source-invalid'
+          );
+        }
       }
-      if (stored.size > maxPdfBytes) {
-        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
-        throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.');
+
+      const key = 'reports/' + reportId + '/completed/report.pdf';
+      const streams = request.body.tee();
+      const metadata = {
+        httpMetadata: { contentType: 'application/pdf' },
+        customMetadata: { reportId, completedBy: userEmail, revision: String(expectedRevision) },
+      };
+
+      const results = await Promise.all([
+        env.REPORT_STORAGE.put(key, streams[0], metadata),
+        env.REPORT_STORAGE.put(recoveryKey(key), streams[1], metadata),
+      ]);
+      const stored = results[0];
+      const recoveryStored = results[1];
+
+      if (!stored || stored.size <= 0 || !recoveryStored || recoveryStored.size <= 0) {
+        await deleteStoragePair(env, key).catch(() => undefined);
+        throw new HttpError(400, 'PDF is empty or could not be mirrored to recovery storage.', 'invalid-pdf');
+      }
+      if (stored.size > maxPdfBytes || recoveryStored.size > maxPdfBytes) {
+        await deleteStoragePair(env, key).catch(() => undefined);
+        throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.', 'pdf-too-large');
       }
 
       try {
-        return json(await updateReportData(env, row, report, userEmail, 'completed', key));
+        const completed = await updateReportData(env, row, report, userEmail, expectedRevision, 'completed', key);
+
+        if (row.supersedes_report_id) {
+          const now = new Date().toISOString();
+          const superseded = await env.DB.prepare(
+            "UPDATE reports SET status = 'superseded', superseded_at = ?, updated_at = ?, updated_by = ? WHERE id = ? AND status = 'completed' AND superseded_by_report_id = ?"
+          ).bind(now, now, userEmail, row.supersedes_report_id, row.id).run();
+
+          if ((superseded.meta?.changes || 0) !== 1) {
+            throw new Error('The replacement report completed, but the original report could not be marked as superseded.');
+          }
+        }
+
+        return json(completed);
       } catch (error) {
-        await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+        await deleteStoragePair(env, key).catch(() => undefined);
         throw error;
       }
     }
 
     if (parts.length === 4 && parts[3] === 'pdf' && request.method === 'GET') {
       const row = await getReportRow(env, reportId);
-      if (!row.completed_pdf_key) throw new HttpError(404, 'Completed PDF not found.');
-      const object = await env.REPORT_STORAGE.get(row.completed_pdf_key);
-      if (!object) throw new HttpError(404, 'Completed PDF not found.');
+      if (!row.completed_pdf_key) throw new HttpError(404, 'Completed PDF not found.', 'pdf-not-found');
+      const object = await getStoredObject(env, row.completed_pdf_key);
+      if (!object) throw new HttpError(404, 'Completed PDF not found in primary or recovery storage.', 'pdf-not-found');
 
       const report = parseReport(row);
       const safeAddress = (report.details.propertyAddress || 'Property')
@@ -647,18 +922,17 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       const safeType = reportInstanceLabel(report.details)
         .replace(/[^a-zA-Z0-9]+/g, '_')
         .replace(/^_+|_+$/g, '') || 'Report';
-      const safeDate = (report.details.inspectionDate || '')
-        .replace(/[^0-9-]/g, '');
-      const filename = `ProInspect_${safeType}_${safeAddress}${safeDate ? `_${safeDate}` : ''}.pdf`;
+      const safeDate = (report.details.inspectionDate || '').replace(/[^0-9-]/g, '');
+      const filename = 'ProInspect_' + safeType + '_' + safeAddress + (safeDate ? '_' + safeDate : '') + '.pdf';
       const headers = new Headers();
       object.writeHttpMetadata(headers);
-      headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+      headers.set('Content-Disposition', 'attachment; filename="' + filename + '"');
       headers.set('Cache-Control', 'private, no-store');
       return new Response(object.body, { headers: securityHeaders(headers) });
     }
   }
 
-  throw new HttpError(404, 'API route not found.');
+  throw new HttpError(404, 'API route not found.', 'route-not-found');
 }
 
 export default {
@@ -670,7 +944,9 @@ export default {
       }
       return await handleApi(request, env);
     } catch (error) {
-      if (error instanceof HttpError) return json({ error: error.message }, error.status);
+      if (error instanceof HttpError) {
+        return json({ error: error.message, code: error.code, details: error.details }, error.status);
+      }
       return unexpectedErrorResponse(error);
     }
   },
