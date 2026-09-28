@@ -66,6 +66,7 @@ export default function App() {
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isSyncingPlatform, setIsSyncingPlatform] = useState(false);
   const [exportProgressText, setExportProgressText] = useState<string | null>(null);
 
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -700,11 +701,63 @@ export default function App() {
         type: 'success',
       });
     } catch (error: any) {
-      await captureRevisionConflict(report, error);
-      setStatusMessage({ text: error.message || 'Unable to finalise report.', type: 'error' });
+      if (
+        error instanceof ApiError &&
+        error.code === 'proinspect-ingest-failed' &&
+        report.id
+      ) {
+        try {
+          const completedCloud = normalizeReport(await api.getReport(report.id));
+          if (completedCloud.id) {
+            serverRevisionsRef.current[completedCloud.id] = completedCloud.revision;
+          }
+          setReport(completedCloud);
+          setDraftConflict(null);
+          await removeCachedReport(completedCloud.id!).catch(() => undefined);
+          setViewMode('actions');
+          setStatusMessage({
+            text:
+              'Report finalised and the immutable PDF is stored, but ProInspect platform sync is pending. Use “Sync to ProInspect” to retry.',
+            type: 'info',
+          });
+        } catch {
+          setStatusMessage({
+            text:
+              'Report finalisation reached the platform-sync stage, but current cloud status could not be reloaded. Refresh before retrying.',
+            type: 'error',
+          });
+        }
+      } else {
+        await captureRevisionConflict(report, error);
+        setStatusMessage({
+          text: error.message || 'Unable to finalise report.',
+          type: 'error',
+        });
+      }
     } finally {
       setIsCompleting(false);
       setExportProgressText(null);
+    }
+  };
+
+  const handleSyncPlatform = async () => {
+    if (!report?.id || report.status !== 'completed' || !report.integrationContext) return;
+    setIsSyncingPlatform(true);
+    try {
+      await api.publishCompletedReport(report.id);
+      setStatusMessage({
+        text: 'Completed report is synced to the canonical ProInspect property record.',
+        type: 'success',
+      });
+    } catch (error: any) {
+      setStatusMessage({
+        text:
+          (error.message || 'Unable to sync this report to ProInspect.') +
+          ' The immutable Report Tool PDF remains safely stored and can be retried.',
+        type: 'error',
+      });
+    } finally {
+      setIsSyncingPlatform(false);
     }
   };
 
@@ -1057,8 +1110,10 @@ export default function App() {
               onDownload={handleDownloadPdf}
               onComplete={handleCompleteReport}
               onDownloadCompleted={() => handleDownloadCompleted(report.id!)}
+              onSyncPlatform={handleSyncPlatform}
               isExporting={isExportingPdf}
               isCompleting={isCompleting}
+              isSyncingPlatform={isSyncingPlatform}
               canEdit={editable}
             />
           </div>
