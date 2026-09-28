@@ -69,13 +69,15 @@ export const api = {
   uploadPhoto: async (
     reportId: string,
     file: Blob,
-    metadata: { id: string; name: string; areaName: string; photoIndex: number; isCover?: boolean }
+    metadata: { id: string; name: string; areaName: string; itemId?: string; itemName?: string; photoIndex: number; isCover?: boolean }
   ) => {
     const form = new FormData();
     form.append('file', file, `${metadata.id}.jpg`);
     form.append('photoId', metadata.id);
     form.append('name', metadata.name);
     form.append('areaName', metadata.areaName);
+    if (metadata.itemId) form.append('itemId', metadata.itemId);
+    if (metadata.itemName) form.append('itemName', metadata.itemName);
     form.append('photoIndex', String(metadata.photoIndex));
     form.append('isCover', metadata.isCover ? 'true' : 'false');
 
