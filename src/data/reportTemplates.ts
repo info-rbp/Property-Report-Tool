@@ -1,6 +1,6 @@
 import { PROINSPECT_COMPANY } from '../config/company';
-import { getReportTemplate } from './reportCatalogue';
-import { InspectionArea, ReportData, ReportType } from '../types/report';
+import { getReportTemplate, isBuildingManagementTemplate } from './reportCatalogue';
+import { CURRENT_REPORT_SCHEMA_VERSION, InspectionArea, ReportData, ReportType } from '../types/report';
 
 const COMPANY = {
   companyName: PROINSPECT_COMPANY.name,
@@ -12,7 +12,7 @@ const COMPANY = {
 
 function makeDefaultAreas(reportType: ReportType): InspectionArea[] {
   const definition = getReportTemplate(reportType);
-  const emptyActivitySections = ['BuildingManagement', 'BuildingManagementDaily', 'BuildingManagementMonthly'].includes(reportType);
+  const emptyActivitySections = isBuildingManagementTemplate(reportType);
   return definition.defaultAreas.map((name) => ({
     id: `area-${crypto.randomUUID()}`,
     name,
@@ -40,6 +40,7 @@ export function createBlankReport(
   const template = getReportTemplate(reportType);
 
   return {
+    schemaVersion: CURRENT_REPORT_SCHEMA_VERSION,
     id: crypto.randomUUID(),
     propertyId: property?.id,
     status: 'draft',
@@ -121,6 +122,7 @@ export function normalizeReport(report: ReportData): ReportData {
   const template = getReportTemplate(report.details.reportType);
   return {
     ...report,
+    schemaVersion: CURRENT_REPORT_SCHEMA_VERSION,
     id: report.id || crypto.randomUUID(),
     status: report.status || 'draft',
     createdAt: report.createdAt || now,
