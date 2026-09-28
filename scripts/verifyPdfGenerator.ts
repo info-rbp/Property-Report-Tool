@@ -262,7 +262,9 @@ for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', '
     ...area,
     items: [
       {
-        ...area.items[0],
+        ...(area.items[0] || {}),
+        id: area.items[0]?.id || `fixture-${template.type}-${areaIndex}-1`,
+        name: area.items[0]?.name || 'Overall',
         clean: template.family === 'condition' ? areaIndex % 3 !== 0 : undefined,
         undamaged: template.family === 'condition' ? true : undefined,
         working: template.family === 'condition' ? true : undefined,
