@@ -22,14 +22,15 @@ import { ReportDashboard } from './components/ReportDashboard';
 import { ReportDocument } from './components/ReportDocument';
 import { isBuildingManagementTemplate, isKeyReceiptTemplate, reportInstanceLabel, reportLabel } from './data/reportCatalogue';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
-import { api } from './lib/api';
-import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
+import { api, ApiError } from './lib/api';
+import { cacheReport, getCachedReport, pruneCachedReports, removeCachedReport } from './lib/cache';
 import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
 import { processInspectionImage } from './lib/imageProcessor';
 import { normalizeAreaName } from './lib/reportFormatting';
+import { perthIsoDate } from './lib/dateUtils';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
 import { reportValidationMessage, validateReportForFinalization } from './lib/reportValidation';
-import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
+import { PropertyRecord, ReportData, ReportSummary, ReportType, UserRole } from './types/report';
 
 type ViewMode = 'preview' | 'commentary' | 'photos' | 'actions';
 type StatusMessage = { text: string; type: 'success' | 'info' | 'error' };
@@ -39,7 +40,7 @@ function pdfFilename(report: ReportData): string {
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
-  const safeDate = (report.details.inspectionDate || new Date().toISOString().slice(0, 10))
+  const safeDate = (report.details.inspectionDate || perthIsoDate())
     .replace(/[^0-9-]/g, '');
   const safeType = reportInstanceLabel(report.details).replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   return `ProInspect_${safeType}_${safeAddress}_${safeDate}.pdf`;
@@ -52,7 +53,13 @@ export default function App() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
   const [userEmail, setUserEmail] = useState('');
+  const [userRole, setUserRole] = useState<UserRole>('viewer');
   const [statusMessage, setStatusMessage] = useState<StatusMessage | null>(null);
+  const [draftConflict, setDraftConflict] = useState<{
+    local: ReportData;
+    cloud: ReportData;
+    message: string;
+  } | null>(null);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -63,18 +70,18 @@ export default function App() {
 
   const csvInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<number | null>(null);
-  const serverVersionsRef = useRef<Record<string, string | undefined>>({});
+  const serverRevisionsRef = useRef<Record<string, number | undefined>>({});
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const queuedSaveCountRef = useRef(0);
 
-  const loadProperties = async () => {
-    const list = await api.listProperties();
+  const loadProperties = async (includeArchived = userRole === 'admin') => {
+    const list = await api.listProperties(includeArchived);
     setProperties(list);
     return list;
   };
 
   const persistDraft = (draft: ReportData): Promise<ReportData> => {
-    if (!draft.id || draft.status === 'completed') return Promise.resolve(draft);
+    if (!draft.id || draft.status !== 'draft') return Promise.resolve(draft);
     const reportId = draft.id;
     queuedSaveCountRef.current += 1;
     setIsSaving(true);
@@ -84,15 +91,31 @@ export default function App() {
         .catch(() => undefined)
         .then(async () => {
           try {
-            const expectedUpdatedAt = serverVersionsRef.current[reportId] || draft.updatedAt;
-            const saved = normalizeReport(await api.saveReport(draft, expectedUpdatedAt));
-            serverVersionsRef.current[reportId] = saved.updatedAt;
+            const expectedRevision = serverRevisionsRef.current[reportId] || draft.revision || 1;
+            const saved = normalizeReport(await api.saveReport(draft, expectedRevision));
+            serverRevisionsRef.current[reportId] = saved.revision;
             await cacheReport(saved).catch(() => undefined);
             setLastSavedTime(
               new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             );
             resolve(saved);
           } catch (error) {
+            if (
+              error instanceof ApiError &&
+              error.code === 'report-revision-conflict' &&
+              draft.id
+            ) {
+              try {
+                const cloud = normalizeReport(await api.getReport(draft.id));
+                setDraftConflict({
+                  local: draft,
+                  cloud,
+                  message: error.message,
+                });
+              } catch {
+                // Keep the local cached draft even if the cloud copy cannot be loaded immediately.
+              }
+            }
             reject(error);
           } finally {
             queuedSaveCountRef.current = Math.max(0, queuedSaveCountRef.current - 1);
@@ -107,9 +130,12 @@ export default function App() {
     let active = true;
     (async () => {
       try {
-        const [me, list] = await Promise.all([api.me(), api.listProperties()]);
+        await pruneCachedReports().catch(() => undefined);
+        const me = await api.me();
+        const list = await api.listProperties(me.role === 'admin');
         if (!active) return;
         setUserEmail(me.email);
+        setUserRole(me.role);
         setProperties(list);
       } catch (error: any) {
         if (!active) return;
@@ -127,11 +153,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!report?.id || report.status === 'completed') return;
+    if (!report?.id || report.status !== 'draft') return;
+    if (draftConflict?.local.id === report.id) return;
 
     cacheReport({
       ...report,
-      updatedAt: serverVersionsRef.current[report.id] || report.updatedAt,
+      revision: serverRevisionsRef.current[report.id] || report.revision,
     }).catch(() => undefined);
     if (isUploadingPhotos || isCompleting) {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
@@ -153,7 +180,7 @@ export default function App() {
     return () => {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     };
-  }, [report, isUploadingPhotos, isCompleting]);
+  }, [report, isUploadingPhotos, isCompleting, draftConflict]);
 
   const handleCreateProperty = async (input: {
     address: string;
