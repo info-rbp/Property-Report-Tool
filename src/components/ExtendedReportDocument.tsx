@@ -177,7 +177,7 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
 
         <div className="mt-2 space-y-3">
           {report.areas.slice(0, 8).map((area) => {
-            const photos = report.photos.filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(area.name)).length;
+            const photos = report.photos.filter((photo) => normalizeAreaName(resolvePhotoAreaName(photo, report.areas)) === normalizeAreaName(area.name)).length;
             return (
               <div key={area.id} className="border border-neutral-300">
                 <div className="bg-slate-100 px-2 py-1.5 border-b border-neutral-300 flex justify-between text-[10px]">
