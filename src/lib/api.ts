@@ -1,4 +1,4 @@
-import { PropertyRecord, ReportData, ReportSummary, ReportType, UserSession } from '../types/report';
+import { PropertyRecord, ProInspectIntegrationContext, ReportData, ReportSummary, ReportType, UserSession } from '../types/report';
 
 export class ApiError extends Error {
   constructor(
@@ -45,6 +45,13 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => apiRequest<UserSession>('/api/me'),
+
+  resolveProInspectHandoff: (token: string) =>
+    apiRequest<ProInspectIntegrationContext>(
+      `/api/integrations/proinspect/handoff?token=${encodeURIComponent(token)}`
+    ),
+
+
 
   listProperties: (includeArchived = false) =>
     apiRequest<PropertyRecord[]>(`/api/properties${includeArchived ? '?includeArchived=true' : ''}`),
