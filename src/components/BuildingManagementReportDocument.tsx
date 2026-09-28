@@ -133,10 +133,14 @@ function PhotoPages({ report }: { report: ReportData }) {
             </div>
           )}
           <div className="grid grid-cols-3 grid-rows-4 gap-2 flex-1 min-h-0">
-            {page.map((photo) => (
+            {page.map((photo) => {
+              const currentItem = photo.itemId
+                ? report.areas.flatMap((area) => area.items).find((item) => item.id === photo.itemId)
+                : undefined;
+              return (
               <div key={photo.id} className="border border-neutral-200 flex flex-col min-w-0">
                 <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
-                  {photo.areaName || 'Category'} — {photo.itemName || 'Reporting item'}
+                  {photo.areaName || 'Category'} — {currentItem?.name || photo.itemName || 'Reporting item'}
                 </div>
                 <div className="bg-neutral-50 flex-1 min-h-0 flex items-center justify-center overflow-hidden">
                   {photo.dataUrl || photo.url ? (
@@ -151,7 +155,8 @@ function PhotoPages({ report }: { report: ReportData }) {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
           <Footer />
         </div>
