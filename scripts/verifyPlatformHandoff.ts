@@ -42,11 +42,12 @@ invariant(
     app.includes('integrationContext: context')
 );
 invariant(
-  'Completed handoff reports publish back before immutable completion',
+  'Only the immutable winning report revision publishes back to the platform',
   worker.includes('publishCompletedReportToPlatform') &&
-    worker.includes('await publishCompletedReportToPlatform(env, report, key)') &&
-    worker.indexOf('await publishCompletedReportToPlatform(env, report, key)') <
-      worker.indexOf("updateReportData(env, row, report, userEmail, expectedRevision, 'completed', key)")
+    worker.indexOf("updateReportData(") <
+      worker.indexOf('await publishCompletedReportToPlatform(') &&
+    worker.includes('completedReport.integrationContext') &&
+    worker.includes('row.completed_pdf_key')
 );
 invariant(
   'Return publication is idempotency keyed by Report Tool report ID',
