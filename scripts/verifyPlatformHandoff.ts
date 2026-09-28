@@ -5,8 +5,8 @@ function read(path: string) {
 }
 
 function invariant(name: string, condition: boolean) {
-  if (!condition) throw new Error(\`PLATFORM HANDOFF CHECK FAILED: \${name}\`);
-  console.log(\`PASS: \${name}\`);
+  if (!condition) throw new Error('PLATFORM HANDOFF CHECK FAILED: ' + name);
+  console.log('PASS: ' + name);
 }
 
 const worker = read('worker/index.ts');
@@ -38,7 +38,7 @@ invariant(
 );
 invariant(
   'Canonical property reference is retained in the Report Tool container',
-  app.includes('PI:\${context.propertyId}') &&
+  app.includes('PI:${context.propertyId}') &&
     app.includes('integrationContext: context')
 );
 invariant(
