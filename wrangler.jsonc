@@ -20,6 +20,10 @@
     {
       "binding": "REPORT_STORAGE",
       "bucket_name": "proinspect-property-reports-data"
+    },
+    {
+      "binding": "REPORT_RECOVERY_STORAGE",
+      "bucket_name": "proinspect-property-reports-recovery"
     }
   ],
   "observability": {
