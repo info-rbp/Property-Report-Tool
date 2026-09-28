@@ -456,6 +456,34 @@ async function createClonedDraft(
   }
 }
 
+async function ensureCorrectionSourceSuperseded(
+  env: Env,
+  replacementRow: ReportRow,
+  userEmail: string
+): Promise<void> {
+  if (!replacementRow.supersedes_report_id) return;
+
+  const now = new Date().toISOString();
+  const result = await env.DB.prepare(
+    "UPDATE reports SET status = 'superseded', superseded_at = COALESCE(superseded_at, ?), updated_at = ?, updated_by = ? WHERE id = ? AND status = 'completed' AND superseded_by_report_id = ?"
+  )
+    .bind(now, now, userEmail, replacementRow.supersedes_report_id, replacementRow.id)
+    .run();
+
+  if ((result.meta?.changes || 0) === 1) return;
+
+  const original = await getReportRow(env, replacementRow.supersedes_report_id);
+  if (original.status === 'superseded' && original.superseded_by_report_id === replacementRow.id) {
+    return;
+  }
+
+  throw new HttpError(
+    409,
+    'The replacement report is complete, but the original report could not yet be marked as superseded. Retry finalisation to complete the correction link.',
+    'correction-source-update-pending'
+  );
+}
+
 async function handleApi(request: Request, env: Env): Promise<Response> {
   const user = await authenticate(request, env);
   const userEmail = user.email;
@@ -817,7 +845,11 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       requireRole(user, 'editor');
       const row = await getReportRow(env, reportId);
       if (row.status !== 'draft') {
-        if (row.status === 'completed' || row.status === 'superseded') return json(parseReport(row));
+        if (row.status === 'completed') {
+          await ensureCorrectionSourceSuperseded(env, row, userEmail);
+          return json(parseReport(await getReportRow(env, reportId)));
+        }
+        if (row.status === 'superseded') return json(parseReport(row));
         throw new HttpError(409, 'Only draft reports can be finalised.', 'report-immutable');
       }
 
@@ -888,25 +920,17 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.', 'pdf-too-large');
       }
 
+      let completed: ReportData;
       try {
-        const completed = await updateReportData(env, row, report, userEmail, expectedRevision, 'completed', key);
-
-        if (row.supersedes_report_id) {
-          const now = new Date().toISOString();
-          const superseded = await env.DB.prepare(
-            "UPDATE reports SET status = 'superseded', superseded_at = ?, updated_at = ?, updated_by = ? WHERE id = ? AND status = 'completed' AND superseded_by_report_id = ?"
-          ).bind(now, now, userEmail, row.supersedes_report_id, row.id).run();
-
-          if ((superseded.meta?.changes || 0) !== 1) {
-            throw new Error('The replacement report completed, but the original report could not be marked as superseded.');
-          }
-        }
-
-        return json(completed);
+        completed = await updateReportData(env, row, report, userEmail, expectedRevision, 'completed', key);
       } catch (error) {
         await deleteStoragePair(env, key).catch(() => undefined);
         throw error;
       }
+
+      const completedRow = await getReportRow(env, reportId);
+      await ensureCorrectionSourceSuperseded(env, completedRow, userEmail);
+      return json(completed);
     }
 
     if (parts.length === 4 && parts[3] === 'pdf' && request.method === 'GET') {
