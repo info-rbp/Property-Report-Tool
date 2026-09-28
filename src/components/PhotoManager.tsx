@@ -202,10 +202,12 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         <div>
           <h3 className="font-bold text-neutral-900 text-sm flex items-center gap-2">
             <Image className="w-4 h-4 text-neutral-700" />
-            Property Inspection Photos ({photos.length})
+            {linkToItems ? 'Building Manager Photo Evidence' : 'Property Inspection Photos'} ({photos.length})
           </h3>
           <p className="text-xs text-neutral-500">
-            Upload JPG, PNG or WebP images from this device. Images are resized before cloud storage.
+            {linkToItems
+              ? 'Select the report category and exact reporting item before uploading. Each photo will remain linked to that item in the final PDF.'
+              : 'Upload JPG, PNG or WebP images from this device. Images are resized before cloud storage.'}
           </p>
         </div>
 
@@ -215,7 +217,13 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           </span>
           <select
             value={selectedUploadArea}
-            onChange={(event) => setSelectedUploadArea(event.target.value)}
+            onChange={(event) => {
+              const areaName = event.target.value;
+              setSelectedUploadArea(areaName);
+              if (linkToItems) {
+                setSelectedUploadItemId(areaByName.get(areaName)?.items[0]?.id || '');
+              }
+            }}
             className="px-2 py-1.5 bg-transparent font-medium text-neutral-800 focus:outline-hidden"
           >
             {availableAreaNames.map((name) => <option key={name} value={name}>{name}</option>)}
@@ -236,7 +244,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           )}
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
+            disabled={isUploading || (linkToItems && !selectedUploadItemId)}
             className="px-3 py-1.5 bg-[#0a2540] text-white font-bold flex items-center gap-1.5 disabled:opacity-50"
           >
             <Upload className="w-3.5 h-3.5" />
