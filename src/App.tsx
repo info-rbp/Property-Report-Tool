@@ -182,18 +182,105 @@ export default function App() {
     };
   }, [report, isUploadingPhotos, isCompleting, draftConflict]);
 
+  const captureRevisionConflict = async (local: ReportData, error: unknown) => {
+    if (
+      error instanceof ApiError &&
+      error.code === 'report-revision-conflict' &&
+      local.id
+    ) {
+      try {
+        const cloud = normalizeReport(await api.getReport(local.id));
+        setDraftConflict({ local, cloud, message: error.message });
+      } catch {
+        // The local cache remains available even if the cloud copy cannot be loaded.
+      }
+    }
+  };
+
   const handleCreateProperty = async (input: {
     address: string;
     reference?: string;
     notes?: string;
   }) => {
     try {
-      const created = await api.createProperty(input);
-      await loadProperties();
+      let created: PropertyRecord;
+      try {
+        created = await api.createProperty(input);
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'duplicate-property') {
+          const proceed = confirm(
+            error.message + '\n\nCreate a separate property container at the same address anyway?'
+          );
+          if (!proceed) return;
+          created = await api.createProperty({ ...input, allowDuplicate: true });
+        } else {
+          throw error;
+        }
+      }
+      await loadProperties(userRole === 'admin');
       await handleOpenProperty(created);
       setStatusMessage({ text: 'Property created.', type: 'success' });
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to create property.', type: 'error' });
+    }
+  };
+
+  const handleUpdateProperty = async (input: {
+    address: string;
+    reference?: string;
+    notes?: string;
+  }) => {
+    if (!selectedProperty) return;
+    try {
+      let updated: PropertyRecord;
+      try {
+        updated = await api.updateProperty(selectedProperty.id, input);
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'duplicate-property') {
+          const proceed = confirm(
+            error.message + '\n\nSave this address on both property containers anyway?'
+          );
+          if (!proceed) return;
+          updated = await api.updateProperty(selectedProperty.id, { ...input, allowDuplicate: true });
+        } else {
+          throw error;
+        }
+      }
+      setSelectedProperty(updated);
+      await loadProperties(userRole === 'admin');
+      setStatusMessage({
+        text: 'Property details updated. Existing issued reports remain unchanged.',
+        type: 'success',
+      });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to update property.', type: 'error' });
+    }
+  };
+
+  const handleArchiveProperty = async () => {
+    if (!selectedProperty || userRole !== 'admin') return;
+    if (!confirm('Archive this property container? Its reports will be retained and remain recoverable.')) return;
+    try {
+      await api.archiveProperty(selectedProperty.id);
+      setSelectedProperty(null);
+      setReportSummaries([]);
+      setReport(null);
+      await loadProperties(true);
+      setStatusMessage({ text: 'Property archived. No report data was deleted.', type: 'info' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to archive property.', type: 'error' });
+    }
+  };
+
+  const handleRestoreProperty = async (property: PropertyRecord) => {
+    if (userRole !== 'admin') return;
+    try {
+      const restored = await api.restoreProperty(property.id);
+      await loadProperties(true);
+      setStatusMessage({ text: 'Property restored.', type: 'success' });
+      await handleOpenProperty(restored);
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to restore property.', type: 'error' });
     }
   };
 
@@ -204,6 +291,7 @@ export default function App() {
       setSelectedProperty(result.property);
       setReportSummaries(result.reports);
       setReport(null);
+      setDraftConflict(null);
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to open property.', type: 'error' });
     } finally {
@@ -216,26 +304,27 @@ export default function App() {
     const result = await api.getProperty(selectedProperty.id);
     setSelectedProperty(result.property);
     setReportSummaries(result.reports);
-    await loadProperties();
+    await loadProperties(userRole === 'admin');
   };
 
   const saveDraftImmediately = async (draft: ReportData): Promise<ReportData> => {
-    if (!draft.id || draft.status === 'completed') return draft;
+    if (!draft.id || draft.status !== 'draft') return draft;
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     await cacheReport({
       ...draft,
-      updatedAt: serverVersionsRef.current[draft.id] || draft.updatedAt,
+      revision: serverRevisionsRef.current[draft.id] || draft.revision,
     }).catch(() => undefined);
     return persistDraft(draft);
   };
 
   const handleCreateReport = async (type: ReportType) => {
-    if (!selectedProperty) return;
+    if (!selectedProperty || userRole === 'viewer') return;
     try {
       const blank = createBlankReport(type, selectedProperty);
       const created = normalizeReport(await api.createReport(selectedProperty.id, type, blank));
-      if (created.id) serverVersionsRef.current[created.id] = created.updatedAt;
+      if (created.id) serverRevisionsRef.current[created.id] = created.revision;
       setReport(created);
+      setDraftConflict(null);
       setViewMode('commentary');
       await cacheReport(created);
       await refreshSelectedProperty();
@@ -249,15 +338,18 @@ export default function App() {
     try {
       setIsLoading(true);
       const cloudReport = normalizeReport(await api.getReport(id));
-      if (cloudReport.id) serverVersionsRef.current[cloudReport.id] = cloudReport.updatedAt;
+      if (cloudReport.id) serverRevisionsRef.current[cloudReport.id] = cloudReport.revision;
       setReport(cloudReport);
+      setDraftConflict(null);
       await cacheReport(cloudReport);
       setViewMode('preview');
     } catch (error: any) {
       const cached = await getCachedReport(id).catch(() => null);
       if (cached) {
         const normalizedCached = normalizeReport(cached);
-        if (normalizedCached.id) serverVersionsRef.current[normalizedCached.id] = normalizedCached.updatedAt;
+        if (normalizedCached.id) {
+          serverRevisionsRef.current[normalizedCached.id] = normalizedCached.revision;
+        }
         setReport(normalizedCached);
         setViewMode('preview');
         setStatusMessage({
@@ -273,9 +365,11 @@ export default function App() {
   };
 
   const handleDeleteReport = async (id: string) => {
+    if (userRole === 'viewer') return;
     if (!confirm('Delete this draft report and its stored photos? This cannot be undone.')) return;
     try {
-      await api.deleteReport(id);
+      const summary = reportSummaries.find((item) => item.id === id);
+      await api.deleteReport(id, summary?.revision || 1);
       await removeCachedReport(id).catch(() => undefined);
       await refreshSelectedProperty();
       setStatusMessage({ text: 'Draft report deleted.', type: 'info' });
@@ -284,25 +378,52 @@ export default function App() {
     }
   };
 
+  const handleCreateCorrection = async (id: string) => {
+    if (userRole === 'viewer') return;
+    try {
+      const replacement = normalizeReport(await api.createCorrection(id));
+      if (replacement.id) serverRevisionsRef.current[replacement.id] = replacement.revision;
+      setReport(replacement);
+      setDraftConflict(null);
+      await cacheReport(replacement);
+      await refreshSelectedProperty();
+      setViewMode('commentary');
+      setStatusMessage({
+        text: 'Correction draft created. The original issued report remains unchanged until this replacement is finalised.',
+        type: 'info',
+      });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to create correction report.', type: 'error' });
+    }
+  };
+
   const handleBackToProperties = async () => {
+    if (draftConflict && report?.id === draftConflict.local.id) {
+      setStatusMessage({ text: 'Resolve the draft conflict before leaving this report.', type: 'error' });
+      return;
+    }
     setSelectedProperty(null);
     setReportSummaries([]);
     setReport(null);
     setViewMode('preview');
     try {
-      await loadProperties();
+      await loadProperties(userRole === 'admin');
     } catch {
       // Existing list remains visible.
     }
   };
 
   const handleBackToReports = async () => {
-    if (report?.id && report.status !== 'completed') {
+    if (draftConflict && report?.id === draftConflict.local.id) {
+      setStatusMessage({ text: 'Resolve the draft conflict before leaving this report.', type: 'error' });
+      return;
+    }
+    if (report?.id && report.status === 'draft') {
       try {
         await saveDraftImmediately(report);
       } catch (error: any) {
         setStatusMessage({
-          text: `${error.message || 'Cloud save failed.'} Stay on this report until the draft has saved successfully.`,
+          text: (error.message || 'Cloud save failed.') + ' Stay on this report until the draft has saved successfully.',
           type: 'error',
         });
         return;
@@ -316,7 +437,7 @@ export default function App() {
   const handleCsvUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file || !report || report.status === 'completed') return;
+    if (!file || !report || report.status !== 'draft' || userRole === 'viewer') return;
 
     if (isBuildingManagementTemplate(report.details.reportType)) {
       setStatusMessage({
@@ -331,7 +452,7 @@ export default function App() {
       setReport((current) => current ? { ...current, areas: parsed.areas } : current);
       setViewMode('commentary');
       setStatusMessage({
-        text: `Imported commentary for ${parsed.areas.length} areas from ${file.name}.`,
+        text: 'Imported commentary for ' + parsed.areas.length + ' areas from ' + file.name + '.',
         type: 'success',
       });
     } catch (error: any) {
@@ -340,20 +461,21 @@ export default function App() {
   };
 
   const handleUploadPhotos = async (files: File[], areaName: string, itemId?: string) => {
-    if (!report?.id || report.status === 'completed') return;
+    if (!report?.id || report.status !== 'draft' || userRole === 'viewer') return;
     setIsUploadingPhotos(true);
     setStatusMessage(null);
 
     try {
-      if (report.areas.length > 0) {
-        const validAreas = new Set(report.areas.map((area) => normalizeAreaName(area.name)));
-        if (!validAreas.has(normalizeAreaName(areaName))) {
-          throw new Error('Select one of the current commentary areas before uploading photos.');
-        }
-      }
       const savedDraft = await saveDraftImmediately(report);
+      const targetArea = savedDraft.areas.find(
+        (area) => normalizeAreaName(area.name) === normalizeAreaName(areaName)
+      );
+      if (!targetArea) {
+        throw new Error('Select one of the current commentary areas before uploading photos.');
+      }
+
       const item = itemId
-        ? savedDraft.areas.flatMap((area) => area.items).find((candidate) => candidate.id === itemId)
+        ? targetArea.items.find((candidate) => candidate.id === itemId)
         : undefined;
       if (itemId && !item) {
         throw new Error('The selected reporting item no longer exists. Select the item again before uploading.');
@@ -361,7 +483,10 @@ export default function App() {
 
       let current = savedDraft;
       let nextAreaPhotoIndex = current.photos
-        .filter((photo) => photo.areaName === areaName)
+        .filter((photo) =>
+          photo.areaId === targetArea.id ||
+          (!photo.areaId && normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
+        )
         .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
 
       for (const file of files) {
@@ -369,27 +494,36 @@ export default function App() {
         const photoIndex = ++nextAreaPhotoIndex;
         const photoId = crypto.randomUUID();
         const name = item
-          ? `${areaName}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
-          : `${areaName}: Overall (photo ${photoIndex})`;
-        current = normalizeReport(await api.uploadPhoto(current.id!, processed.blob, {
-          id: photoId,
-          name,
-          areaName,
-          itemId: item?.id,
-          itemName: item?.name,
-          photoIndex,
-          isCover: current.photos.length === 0,
-        }));
-        if (current.id) serverVersionsRef.current[current.id] = current.updatedAt;
+          ? areaName + ': ' + (item.name || 'Reporting item') + ' (photo ' + photoIndex + ')'
+          : areaName + ': Overall (photo ' + photoIndex + ')';
+
+        current = normalizeReport(await api.uploadPhoto(
+          current.id!,
+          processed.blob,
+          {
+            id: photoId,
+            name,
+            areaName: targetArea.name,
+            areaId: targetArea.id,
+            itemId: item?.id,
+            itemName: item?.name,
+            photoIndex,
+            isCover: current.photos.length === 0,
+          },
+          current.revision || 1
+        ));
+
+        if (current.id) serverRevisionsRef.current[current.id] = current.revision;
         setReport(current);
         await cacheReport(current).catch(() => undefined);
       }
 
       setStatusMessage({
-        text: `Uploaded ${files.length} photo${files.length === 1 ? '' : 's'} to cloud storage.`,
+        text: 'Uploaded ' + files.length + ' photo' + (files.length === 1 ? '' : 's') + ' to cloud storage.',
         type: 'success',
       });
     } catch (error: any) {
+      if (report) await captureRevisionConflict(report, error);
       setStatusMessage({ text: error.message || 'Unable to upload photos.', type: 'error' });
     } finally {
       setIsUploadingPhotos(false);
@@ -397,14 +531,18 @@ export default function App() {
   };
 
   const handleDeletePhoto = async (photoId: string) => {
-    if (!report?.id || report.status === 'completed') return;
+    if (!report?.id || report.status !== 'draft' || userRole === 'viewer') return;
     try {
       const savedDraft = await saveDraftImmediately(report);
-      const updated = normalizeReport(await api.deletePhoto(savedDraft.id!, photoId));
-      if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
+      const updated = normalizeReport(
+        await api.deletePhoto(savedDraft.id!, photoId, savedDraft.revision || 1)
+      );
+      if (updated.id) serverRevisionsRef.current[updated.id] = updated.revision;
       setReport(updated);
+      await cacheReport(updated).catch(() => undefined);
       setStatusMessage({ text: 'Photo deleted.', type: 'info' });
     } catch (error: any) {
+      await captureRevisionConflict(report, error);
       setStatusMessage({ text: error.message || 'Unable to delete photo.', type: 'error' });
     }
   };
@@ -431,7 +569,7 @@ export default function App() {
   };
 
   const handleCompleteReport = async () => {
-    if (!report?.id || report.status === 'completed') return;
+    if (!report?.id || report.status !== 'draft' || userRole === 'viewer') return;
     setIsCompleting(true);
     setExportProgressText('Saving final report data...');
     try {
@@ -450,27 +588,77 @@ export default function App() {
       const maxCompletedPdfBytes = 90 * 1024 * 1024;
       if (blob.size > maxCompletedPdfBytes) {
         throw new Error(
-          `Generated PDF is ${(blob.size / (1024 * 1024)).toFixed(1)} MB and exceeds the 90 MB completed-report limit.`
+          'Generated PDF is ' + (blob.size / (1024 * 1024)).toFixed(1) + ' MB and exceeds the 90 MB completed-report limit.'
         );
       }
+
       setExportProgressText('Storing completed PDF...');
-      const completed = normalizeReport(await api.completeReport(savedDraft.id!, blob));
-      if (completed.id) serverVersionsRef.current[completed.id] = completed.updatedAt;
+      const completed = normalizeReport(
+        await api.completeReport(savedDraft.id!, blob, savedDraft.revision || 1)
+      );
+      if (completed.id) serverRevisionsRef.current[completed.id] = completed.revision;
       setReport(completed);
-      await cacheReport(completed);
+      setDraftConflict(null);
+      await removeCachedReport(completed.id!).catch(() => undefined);
       downloadPdfBlob(blob, pdfFilename(completed));
       await refreshSelectedProperty();
       setViewMode('actions');
       setStatusMessage({
-        text: 'Report finalised. The issued PDF is stored in cloud storage and has also been downloaded.',
+        text: completed.supersedesReportId
+          ? 'Correction finalised. The original report is retained and marked as superseded.'
+          : 'Report finalised. The issued PDF is stored in cloud storage and has also been downloaded.',
         type: 'success',
       });
     } catch (error: any) {
+      await captureRevisionConflict(report, error);
       setStatusMessage({ text: error.message || 'Unable to finalise report.', type: 'error' });
     } finally {
       setIsCompleting(false);
       setExportProgressText(null);
     }
+  };
+
+  const handleReloadCloudConflict = async () => {
+    if (!draftConflict) return;
+    const cloud = normalizeReport(draftConflict.cloud);
+    if (cloud.id) serverRevisionsRef.current[cloud.id] = cloud.revision;
+    setReport(cloud);
+    await cacheReport(cloud).catch(() => undefined);
+    setDraftConflict(null);
+    setStatusMessage({ text: 'Loaded the latest cloud version.', type: 'info' });
+  };
+
+  const handleCloneLocalConflict = async () => {
+    if (!draftConflict.local.id) return;
+    try {
+      const cloned = normalizeReport(
+        await api.cloneConflictDraft(draftConflict.local.id, draftConflict.local)
+      );
+      if (cloned.id) serverRevisionsRef.current[cloned.id] = cloned.revision;
+      setReport(cloned);
+      await cacheReport(cloned);
+      setDraftConflict(null);
+      await refreshSelectedProperty();
+      setStatusMessage({
+        text: 'Your local changes were preserved as a separate draft. The newer cloud draft was not overwritten.',
+        type: 'success',
+      });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to preserve the local draft.', type: 'error' });
+    }
+  };
+
+  const handleDownloadLocalConflict = () => {
+    if (!draftConflict) return;
+    const blob = new Blob([JSON.stringify(draftConflict.local, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'ProInspect_conflict_draft_' + (draftConflict.local.id || 'report') + '.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleDownloadCompleted = (id: string) => {
