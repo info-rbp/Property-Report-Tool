@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { isBuildingManagementTemplate } from '../src/data/reportCatalogue';
 import { normalizeAreaName } from '../src/lib/reportFormatting';
+import { migrateReportData } from '../src/lib/reportMigration';
 import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
 import { CURRENT_REPORT_SCHEMA_VERSION, isReportType } from '../src/types/report';
 import type { ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
@@ -107,10 +108,9 @@ function mapProperty(row: PropertyRow) {
 }
 
 function parseReport(row: ReportRow): ReportData {
-  const parsed = JSON.parse(row.report_data) as ReportData;
+  const parsed = migrateReportData(JSON.parse(row.report_data) as ReportData);
   return {
     ...parsed,
-    schemaVersion: parsed.schemaVersion || CURRENT_REPORT_SCHEMA_VERSION,
     id: row.id,
     propertyId: row.property_id,
     status: row.status,
@@ -206,7 +206,7 @@ async function updateReportData(
 ): Promise<ReportData> {
   const now = new Date().toISOString();
   const stored: ReportData = {
-    ...report,
+    ...migrateReportData(report),
     schemaVersion: CURRENT_REPORT_SCHEMA_VERSION,
     id: row.id,
     propertyId: row.property_id,
