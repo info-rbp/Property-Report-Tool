@@ -1084,7 +1084,15 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (row.status !== 'draft') {
         if (row.status === 'completed') {
           await ensureCorrectionSourceSuperseded(env, row, userEmail);
-          return json(parseReport(await getReportRow(env, reportId)));
+          const completedReport = parseReport(await getReportRow(env, reportId));
+          if (completedReport.integrationContext && row.completed_pdf_key) {
+            await publishCompletedReportToPlatform(
+              env,
+              completedReport,
+              row.completed_pdf_key
+            );
+          }
+          return json(completedReport);
         }
         if (row.status === 'superseded') return json(parseReport(row));
         throw new HttpError(409, 'Only draft reports can be finalised.', 'report-immutable');
@@ -1166,13 +1174,19 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
           throw new HttpError(400, 'Uploaded content is not a PDF document.', 'invalid-pdf');
         }
 
-        // Handoff-originated reports must publish to the canonical ProInspect
-        // document store before the local report is marked immutable. The
-        // platform uses report.id as an idempotency key so a retry cannot
-        // create duplicate property documents.
-        await publishCompletedReportToPlatform(env, report, key);
-
-        completed = await updateReportData(env, row, report, userEmail, expectedRevision, 'completed', key);
+        // Complete the Report Tool's compare-and-set transition first. This
+        // guarantees that the PDF published to ProInspect is the exact
+        // immutable revision that won finalisation, rather than a stale PDF
+        // from a draft that lost a concurrent write race.
+        completed = await updateReportData(
+          env,
+          row,
+          report,
+          userEmail,
+          expectedRevision,
+          'completed',
+          key
+        );
       } catch (error) {
         await deleteStoragePair(env, key).catch(() => undefined);
         throw error;
@@ -1180,6 +1194,19 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 
       const completedRow = await getReportRow(env, reportId);
       await ensureCorrectionSourceSuperseded(env, completedRow, userEmail);
+
+      // Platform publication is server-to-server and idempotent by Report Tool
+      // report ID. If it fails, the immutable PDF remains safely stored; a
+      // retry of this same finalisation endpoint republishes the completed PDF
+      // without creating a second canonical property document.
+      if (completed.integrationContext && completedRow.completed_pdf_key) {
+        await publishCompletedReportToPlatform(
+          env,
+          completed,
+          completedRow.completed_pdf_key
+        );
+      }
+
       return json(completed);
     }
 
