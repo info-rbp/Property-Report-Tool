@@ -195,7 +195,7 @@ export function validateReportForFinalization(report: ReportData): ReportValidat
   if (!areas.length) {
     issues.push({ code: 'areas-required', message: 'The report must contain at least one report area/category.' });
   }
-  if (itemCount === 0) {
+  if (itemCount === 0 && !isKeyReceiptTemplate(report.details.reportType)) {
     issues.push({ code: 'items-required', message: 'The report must contain at least one completed reporting item.' });
   }
 
