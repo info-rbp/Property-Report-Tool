@@ -1,4 +1,4 @@
-import { ReportPhoto } from '../types/report';
+import { InspectionArea, ReportPhoto } from '../types/report';
 
 export function formatAustralianDate(input?: string | null): string {
   const raw = (input || '').trim();
@@ -61,4 +61,17 @@ export function renumberPhotosByArea(photos: ReportPhoto[]): ReportPhoto[] {
       name: `${areaName}: ${suffix}`,
     };
   });
+}
+
+
+export function resolvePhotoAreaName(
+  photo: ReportPhoto,
+  areas: InspectionArea[],
+  fallback = 'General'
+): string {
+  if (photo.areaId) {
+    const area = areas.find((candidate) => candidate.id === photo.areaId);
+    if (area?.name?.trim()) return area.name.trim();
+  }
+  return (photo.areaName || fallback).trim() || fallback;
 }
