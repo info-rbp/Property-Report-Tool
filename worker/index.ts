@@ -391,6 +391,8 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       const photoId = String(form.get('photoId') || '').trim();
       const name = String(form.get('name') || '').trim();
       const areaName = String(form.get('areaName') || 'General').trim();
+      const itemId = String(form.get('itemId') || '').trim() || undefined;
+      const itemName = String(form.get('itemName') || '').trim() || undefined;
       const photoIndex = Number(form.get('photoIndex') || '0');
       const isCover = String(form.get('isCover') || 'false') === 'true';
 
@@ -412,6 +414,8 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         id: photoId,
         name,
         areaName,
+        itemId,
+        itemName,
         photoIndex: Number.isFinite(photoIndex) ? photoIndex : photos.length + 1,
         isCover,
         storageKey: key,
