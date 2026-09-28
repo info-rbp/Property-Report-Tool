@@ -9,6 +9,7 @@ import type { ReportData, ReportPhoto, ReportStatus, ReportType, UserRole } from
 interface Env {
   DB: D1Database;
   REPORT_STORAGE: R2Bucket;
+  REPORT_RECOVERY_STORAGE: R2Bucket;
   TEAM_DOMAIN?: string;
   POLICY_AUD?: string;
   DEV_USER_EMAIL?: string;
@@ -325,26 +326,31 @@ function recoveryKey(key: string): string {
 async function getStoredObject(env: Env, key: string): Promise<R2ObjectBody | null> {
   const primary = await env.REPORT_STORAGE.get(key);
   if (primary) return primary;
-  return env.REPORT_STORAGE.get(recoveryKey(key));
+  return env.REPORT_RECOVERY_STORAGE.get(recoveryKey(key));
 }
 
 async function deleteStoragePair(env: Env, key: string): Promise<void> {
-  await env.REPORT_STORAGE.delete([key, recoveryKey(key)]);
+  await Promise.all([
+    env.REPORT_STORAGE.delete(key),
+    env.REPORT_RECOVERY_STORAGE.delete(recoveryKey(key)),
+  ]);
 }
 
-async function deleteObjectPrefix(env: Env, prefix: string): Promise<void> {
+async function deleteObjectPrefix(bucket: R2Bucket, prefix: string): Promise<void> {
   let cursor: string | undefined;
   do {
-    const listed = await env.REPORT_STORAGE.list({ prefix, cursor, limit: 1000 });
+    const listed = await bucket.list({ prefix, cursor, limit: 1000 });
     const keys = listed.objects.map((object) => object.key);
-    if (keys.length) await env.REPORT_STORAGE.delete(keys);
+    if (keys.length) await bucket.delete(keys);
     cursor = listed.truncated ? listed.cursor : undefined;
   } while (cursor);
 }
 
 async function deleteReportObjects(env: Env, reportId: string): Promise<void> {
-  await deleteObjectPrefix(env, `reports/${reportId}/`);
-  await deleteObjectPrefix(env, `recovery/reports/${reportId}/`);
+  await Promise.all([
+    deleteObjectPrefix(env.REPORT_STORAGE, `reports/${reportId}/`),
+    deleteObjectPrefix(env.REPORT_RECOVERY_STORAGE, `recovery/reports/${reportId}/`),
+  ]);
 }
 
 
@@ -389,7 +395,7 @@ async function copyPhotoForReport(
 
   await Promise.all([
     env.REPORT_STORAGE.put(newKey, bytes, metadata),
-    env.REPORT_STORAGE.put(recoveryKey(newKey), bytes, metadata),
+    env.REPORT_RECOVERY_STORAGE.put(recoveryKey(newKey), bytes, metadata),
   ]);
 
   return { ...sourcePhoto, dataUrl: undefined, url: undefined, storageKey: newKey };
@@ -781,7 +787,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 
       await Promise.all([
         env.REPORT_STORAGE.put(key, bytes, metadata),
-        env.REPORT_STORAGE.put(recoveryKey(key), bytes, metadata),
+        env.REPORT_RECOVERY_STORAGE.put(recoveryKey(key), bytes, metadata),
       ]);
 
       const photos = (report.photos || []).filter((photo) => photo.id !== photoId);
@@ -906,7 +912,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 
       const results = await Promise.all([
         env.REPORT_STORAGE.put(key, streams[0], metadata),
-        env.REPORT_STORAGE.put(recoveryKey(key), streams[1], metadata),
+        env.REPORT_RECOVERY_STORAGE.put(recoveryKey(key), streams[1], metadata),
       ]);
       const stored = results[0];
       const recoveryStored = results[1];
