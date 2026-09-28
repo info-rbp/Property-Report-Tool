@@ -583,7 +583,7 @@ export default function App() {
                   ? 'Layout: Western Australia Form 1'
                   : `Layout: ProInspect ${reportLabel(report.details.reportType)}`}
               </span>
-              <span>A4 Portrait • Production PDF renderer</span>
+              <span>Screen preview • Download PDF uses the deterministic production renderer</span>
             </div>
             <ReportDocument report={report} />
           </div>
