@@ -1338,6 +1338,7 @@ function drawBuildingManagementActivityPages(
 ) {
   const daily = isDailyBuildingManagementReport(report.details.reportType);
   const template = getReportTemplate(report.details.reportType);
+  const runningTitle = template.shortLabel;
   const x = buildingManagementColumnPositions();
   const lineHeight = 2.55;
   let y = startY;
@@ -1442,6 +1443,7 @@ function drawBuildingManagementActivityPages(
 
 function drawBuildingManagementClosingPages(pdf: jsPDF, report: ReportData) {
   const template = getReportTemplate(report.details.reportType);
+  const runningTitle = template.shortLabel;
   let y = addContentPage(pdf, report, runningTitle);
   y = drawRoutinePageHeading(pdf, y, template.finalSectionTitle);
 
