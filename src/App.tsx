@@ -30,7 +30,7 @@ import { normalizeAreaName } from './lib/reportFormatting';
 import { perthIsoDate } from './lib/dateUtils';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
 import { reportValidationMessage, validateReportForFinalization } from './lib/reportValidation';
-import { PropertyRecord, ReportData, ReportSummary, ReportType, UserRole } from './types/report';
+import { PropertyRecord, ProInspectIntegrationContext, ReportData, ReportSummary, ReportType, UserRole } from './types/report';
 
 type ViewMode = 'preview' | 'commentary' | 'photos' | 'actions';
 type StatusMessage = { text: string; type: 'success' | 'info' | 'error' };
@@ -133,11 +133,93 @@ export default function App() {
         const me = await api.me();
         setCacheIdentity(me.email);
         await pruneCachedReports().catch(() => undefined);
-        const list = await api.listProperties(me.role === 'admin');
+
+        let list = await api.listProperties(me.role === 'admin');
         if (!active) return;
         setUserEmail(me.email);
         setUserRole(me.role);
         setProperties(list);
+
+        const currentUrl = new URL(window.location.href);
+        const handoffToken = currentUrl.searchParams.get('proinspect_handoff');
+        if (handoffToken) {
+          if (me.role === 'viewer') {
+            throw new Error('Your Report Tool role cannot create reports from a platform handoff.');
+          }
+
+          const context: ProInspectIntegrationContext =
+            await api.resolveProInspectHandoff(handoffToken);
+          if (!active) return;
+
+          const canonicalReference = `PI:${context.propertyId}`;
+          const normalizedAddress = context.propertyAddress.trim().toLowerCase();
+          let property =
+            list.find((item) => item.reference === canonicalReference) ||
+            list.find((item) => item.address.trim().toLowerCase() === normalizedAddress);
+
+          if (!property) {
+            property = await api.createProperty({
+              address: context.propertyAddress,
+              reference: canonicalReference,
+              notes:
+                'Linked to canonical ProInspect property ' +
+                context.propertyId +
+                ' via signed platform handoff.',
+            });
+            list = await api.listProperties(me.role === 'admin');
+            if (!active) return;
+            setProperties(list);
+          }
+
+          const propertyResult = await api.getProperty(property.id);
+          if (!active) return;
+          setSelectedProperty(propertyResult.property);
+          setReportSummaries(propertyResult.reports);
+
+          const blank = createBlankReport(context.reportType, propertyResult.property);
+          const linkedDraft: ReportData = {
+            ...blank,
+            integrationContext: context,
+            details: {
+              ...blank.details,
+              propertyAddress: context.propertyAddress,
+              referenceNumber:
+                context.propertyReference ||
+                context.bookingId ||
+                context.workOrderId ||
+                blank.details.referenceNumber,
+              workOrderReference:
+                context.workOrderId || blank.details.workOrderReference,
+            },
+          };
+
+          const created = normalizeReport(
+            await api.createReport(
+              propertyResult.property.id,
+              context.reportType,
+              linkedDraft
+            )
+          );
+          if (created.id) serverRevisionsRef.current[created.id] = created.revision;
+          setReport(created);
+          setDraftConflict(null);
+          setViewMode('commentary');
+          await cacheReport(created);
+
+          currentUrl.searchParams.delete('proinspect_handoff');
+          window.history.replaceState(
+            {},
+            '',
+            currentUrl.pathname +
+              (currentUrl.search ? currentUrl.search : '') +
+              currentUrl.hash
+          );
+          setStatusMessage({
+            text:
+              'Report created from ProInspect platform context. Finalisation will publish the issued PDF back to the canonical property record.',
+            type: 'success',
+          });
+        }
       } catch (error: any) {
         if (!active) return;
         setStatusMessage({
