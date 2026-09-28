@@ -15,3 +15,11 @@ DEV_USER_ROLE=admin
 # viewer = read/download only
 # editor = create/edit/finalise/correct reports and edit properties
 # admin  = editor permissions plus archive/restore properties
+
+
+# Stage 2 ProInspect platform integration.
+# The handoff signing key must match REPORT_HANDOFF_SIGNING_KEY in the main
+# ProInspect application. The ingest token must match REPORT_INGEST_TOKEN.
+PROINSPECT_HANDOFF_SIGNING_KEY=""
+PROINSPECT_INGEST_URL="https://bookings.proinspect.systems/api/integrations/reports"
+PROINSPECT_INGEST_TOKEN=""
