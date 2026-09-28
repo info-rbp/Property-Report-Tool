@@ -86,6 +86,7 @@ export default function App() {
             const expectedUpdatedAt = serverVersionsRef.current[reportId] || draft.updatedAt;
             const saved = normalizeReport(await api.saveReport(draft, expectedUpdatedAt));
             serverVersionsRef.current[reportId] = saved.updatedAt;
+            await cacheReport(saved).catch(() => undefined);
             setLastSavedTime(
               new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             );
@@ -127,7 +128,10 @@ export default function App() {
   useEffect(() => {
     if (!report?.id || report.status === 'completed') return;
 
-    cacheReport(report).catch(() => undefined);
+    cacheReport({
+      ...report,
+      updatedAt: serverVersionsRef.current[report.id] || report.updatedAt,
+    }).catch(() => undefined);
     if (isUploadingPhotos || isCompleting) {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
       return;
@@ -190,7 +194,10 @@ export default function App() {
   const saveDraftImmediately = async (draft: ReportData): Promise<ReportData> => {
     if (!draft.id || draft.status === 'completed') return draft;
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    await cacheReport(draft).catch(() => undefined);
+    await cacheReport({
+      ...draft,
+      updatedAt: serverVersionsRef.current[draft.id] || draft.updatedAt,
+    }).catch(() => undefined);
     return persistDraft(draft);
   };
 
