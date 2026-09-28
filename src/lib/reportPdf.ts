@@ -1746,8 +1746,8 @@ export async function generateReportPdf(
   });
 
   pdf.setProperties({
-    title: `ProInspect ${report.details.reportType} Report - ${value(report.details.propertyAddress)}`,
-    subject: `${report.details.reportType} property inspection report`,
+    title: `ProInspect ${reportDisplayTitle(report.details.reportType)} - ${value(report.details.propertyAddress)}`,
+    subject: reportDisplayTitle(report.details.reportType),
     author: value(report.details.companyName) || PROINSPECT_COMPANY.name,
     creator: 'ProInspect Property Reports',
   });
