@@ -54,6 +54,7 @@ export const ExtendedReportEditor: React.FC<Props> = ({
 }) => {
   const template = getReportTemplate(details.reportType);
   const showRatings = template.family === 'condition';
+  const isCustomReport = details.reportType === 'Custom';
   const [tab, setTab] = useState<'findings' | 'details' | 'summary'>('findings');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
 
@@ -67,6 +68,10 @@ export const ExtendedReportEditor: React.FC<Props> = ({
 
   const updateDetail = (key: keyof TenancyDetails, value: string) => {
     onChangeDetails({ ...details, [key]: value });
+  };
+
+  const updateAreaName = (areaId: string, name: string) => {
+    onChangeAreas(areas.map((area) => area.id === areaId ? { ...area, name } : area));
   };
 
   const updateItem = (areaId: string, itemId: string, field: keyof InspectionItem, value: any) => {
@@ -181,7 +186,7 @@ export const ExtendedReportEditor: React.FC<Props> = ({
                 onClick={addArea}
                 className="px-3 py-1.5 bg-[#0a2540] text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
               >
-                <Plus className="w-3.5 h-3.5" /> Add Area / Section
+                <Plus className="w-3.5 h-3.5" /> {isCustomReport ? 'Add Section' : 'Add Area / Section'}
               </button>
             </div>
 
@@ -196,7 +201,17 @@ export const ExtendedReportEditor: React.FC<Props> = ({
                     >
                       <div className="flex items-center gap-2">
                         {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                        <span className="font-black text-xs md:text-sm">{area.name}</span>
+                        {isCustomReport ? (
+                          <input
+                            value={area.name}
+                            onChange={(event) => updateAreaName(area.id, event.target.value)}
+                            onClick={(event) => event.stopPropagation()}
+                            className="min-w-[180px] max-w-[360px] border border-neutral-300 rounded-lg px-2 py-1 font-black text-xs md:text-sm bg-white"
+                            aria-label="Custom report section name"
+                          />
+                        ) : (
+                          <span className="font-black text-xs md:text-sm">{area.name}</span>
+                        )}
                         <span className="text-[11px] bg-neutral-200 px-2 py-0.5 rounded-full">{area.items.length} items</span>
                       </div>
                       <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
