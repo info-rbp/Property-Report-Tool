@@ -1,7 +1,7 @@
 import React from 'react';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { getReportTemplate } from '../data/reportCatalogue';
-import { formatAustralianDate, normalizeAreaName } from '../lib/reportFormatting';
+import { formatAustralianDate, normalizeAreaName, resolvePhotoAreaName } from '../lib/reportFormatting';
 import { InspectionArea, InspectionItem, ReportData } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
 
@@ -140,7 +140,7 @@ function PhotoPages({ report }: { report: ReportData }) {
               return (
               <div key={photo.id} className="border border-neutral-200 flex flex-col min-w-0">
                 <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
-                  {photo.areaName || 'Category'} — {currentItem?.name || photo.itemName || 'Reporting item'}
+                  {resolvePhotoAreaName(photo, report.areas, 'Category')} — {currentItem?.name || photo.itemName || 'Reporting item'}
                 </div>
                 <div className="bg-neutral-50 flex-1 min-h-0 flex items-center justify-center overflow-hidden">
                   {photo.dataUrl || photo.url ? (
