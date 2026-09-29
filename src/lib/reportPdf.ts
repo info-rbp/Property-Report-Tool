@@ -1503,6 +1503,7 @@ async function drawBuildingManagementActivityPages(
   onProgress?: (message: string) => void
 ) {
   const daily = isDailyBuildingManagementReport(report.details.reportType);
+  const inlinePhotos = report.details.reportType === 'BuildingManagementMonthly';
   const template = getReportTemplate(report.details.reportType);
   const runningTitle = template.shortLabel;
   const x = buildingManagementColumnPositions();
@@ -1604,7 +1605,7 @@ async function drawBuildingManagementActivityPages(
         firstFragment = false;
       }
 
-      if (buildingManagementItemPhotos(report, item.id) > 0) {
+      if (inlinePhotos && buildingManagementItemPhotos(report, item.id) > 0) {
         y = await drawBuildingManagementItemPhotoEvidence(pdf, report, area, item, y, onProgress);
 
         if (itemIndex < area.items.length - 1) {
@@ -2440,6 +2441,9 @@ export async function generateReportPdf(
     const template = getReportTemplate(report.details.reportType);
     onProgress?.(`Building ${template.label}...`);
     await drawBuildingManagementReportPages(pdf, report, onProgress);
+    if (report.details.reportType !== 'BuildingManagementMonthly') {
+      await drawPhotoPages(pdf, report, onProgress);
+    }
     onProgress?.('Building Building Manager summary and sign-off...');
     drawBuildingManagementClosingPages(pdf, report);
   } else {
@@ -2464,8 +2468,10 @@ export async function generateReportPdf(
       ? 3 + photoPageMinimum
       : report.details.reportType === 'Exit'
       ? 2 + (report.areas.length ? 1 : 0) + photoPageMinimum
-      : isBuildingManagementTemplate(report.details.reportType)
+      : report.details.reportType === 'BuildingManagementMonthly'
       ? 3
+      : isBuildingManagementTemplate(report.details.reportType)
+      ? 3 + photoPageMinimum
       : template.family === 'condition'
       ? 3 + (report.areas.length ? 1 : 0) + photoPageMinimum
       : 3 + photoPageMinimum;
