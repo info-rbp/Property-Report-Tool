@@ -27,7 +27,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Dependency security audit
-        continue-on-error: true
         run: bun run security:verify
       - name: TypeScript validation
         run: bun run lint
