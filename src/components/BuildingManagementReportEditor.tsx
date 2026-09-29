@@ -20,6 +20,7 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
 }) => {
   const template = getReportTemplate(details.reportType);
   const isDaily = details.reportType === 'BuildingManagementDaily';
+  const monthlyPilot = details.reportType === 'BuildingManagementMonthly';
   const [tab, setTab] = useState<'activities' | 'details' | 'summary'>('activities');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
 
@@ -176,7 +177,9 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
               <div>
                 <h3 className="text-sm font-bold text-neutral-900">{template.findingsTitle}</h3>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Add individual reporting items under the same categories used by the Building Management report. Use the arrow controls to set the order shown in the report. Photos are linked to the specific reporting item from the Photos tab and appear directly beneath that item in the report.
+                  {monthlyPilot
+                    ? 'Add individual reporting items under the same categories used by the Building Management report. Use the arrow controls to set the order shown in the report. Photos are linked to the specific reporting item from the Photos tab and appear directly beneath that item in the report.'
+                    : 'Add individual reporting items under the same categories used by the Building Management report. Photos are linked to the specific reporting item from the Photos tab.'}
                 </p>
               </div>
               <button onClick={addCategory} className="px-3 py-1.5 bg-[#0a2540] text-white rounded-lg text-xs font-bold flex items-center gap-1.5">
@@ -254,26 +257,30 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                                   <Camera className="w-3.5 h-3.5" /> {linkedPhotos} linked
                                 </div>
                                 <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => moveItem(area.id, item.id, 'up')}
-                                    disabled={itemIndex === 0}
-                                    aria-label="Move reporting item up"
-                                    title="Move reporting item up"
-                                    className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
-                                  >
-                                    <ArrowUp className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => moveItem(area.id, item.id, 'down')}
-                                    disabled={itemIndex === area.items.length - 1}
-                                    aria-label="Move reporting item down"
-                                    title="Move reporting item down"
-                                    className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
-                                  >
-                                    <ArrowDown className="w-4 h-4" />
-                                  </button>
+                                  {monthlyPilot && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveItem(area.id, item.id, 'up')}
+                                        disabled={itemIndex === 0}
+                                        aria-label="Move reporting item up"
+                                        title="Move reporting item up"
+                                        className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                      >
+                                        <ArrowUp className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveItem(area.id, item.id, 'down')}
+                                        disabled={itemIndex === area.items.length - 1}
+                                        aria-label="Move reporting item down"
+                                        title="Move reporting item down"
+                                        className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                      >
+                                        <ArrowDown className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => deleteItem(area.id, item.id)}
