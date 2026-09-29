@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Building2, Camera, ChevronDown, ChevronRight, ClipboardList, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Building2, Camera, ChevronDown, ChevronRight, ClipboardList, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { getReportTemplate } from '../data/reportCatalogue';
 import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
 
@@ -46,6 +46,21 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
               items: area.items.map((item) => item.id === itemId ? { ...item, ...patch } : item),
             }
       )
+    );
+  };
+
+  const moveItem = (areaId: string, itemId: string, direction: 'up' | 'down') => {
+    onChangeAreas(
+      areas.map((area) => {
+        if (area.id !== areaId) return area;
+        const currentIndex = area.items.findIndex((item) => item.id === itemId);
+        const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        if (currentIndex < 0 || nextIndex < 0 || nextIndex >= area.items.length) return area;
+
+        const items = [...area.items];
+        [items[currentIndex], items[nextIndex]] = [items[nextIndex], items[currentIndex]];
+        return { ...area, items };
+      })
     );
   };
 
@@ -161,7 +176,7 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
               <div>
                 <h3 className="text-sm font-bold text-neutral-900">{template.findingsTitle}</h3>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Add individual reporting items under the same categories used by the Building Management report. Photos are linked to the specific reporting item from the Photos tab.
+                  Add individual reporting items under the same categories used by the Building Management report. Use the arrow controls to set the order shown in the report. Photos are linked to the specific reporting item from the Photos tab and appear directly beneath that item in the report.
                 </p>
               </div>
               <button onClick={addCategory} className="px-3 py-1.5 bg-[#0a2540] text-white rounded-lg text-xs font-bold flex items-center gap-1.5">
@@ -200,7 +215,7 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                         </div>
                       )}
 
-                      {area.items.map((item) => {
+                      {area.items.map((item, itemIndex) => {
                         const linkedPhotos = itemPhotoCounts.get(item.id) || 0;
                         return (
                           <div key={item.id} className="p-4 space-y-3">
@@ -234,13 +249,41 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                                   placeholder="Short description / subject"
                                 />
                               </div>
-                              <div className="md:col-span-2 flex items-end justify-between">
+                              <div className="md:col-span-2 flex items-end justify-between gap-2">
                                 <div className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 rounded-lg px-2 py-2 flex items-center gap-1">
                                   <Camera className="w-3.5 h-3.5" /> {linkedPhotos} linked
                                 </div>
-                                <button onClick={() => deleteItem(area.id, item.id)} className="p-2 text-neutral-300 hover:text-red-600">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => moveItem(area.id, item.id, 'up')}
+                                    disabled={itemIndex === 0}
+                                    aria-label="Move reporting item up"
+                                    title="Move reporting item up"
+                                    className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                  >
+                                    <ArrowUp className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => moveItem(area.id, item.id, 'down')}
+                                    disabled={itemIndex === area.items.length - 1}
+                                    aria-label="Move reporting item down"
+                                    title="Move reporting item down"
+                                    className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                  >
+                                    <ArrowDown className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteItem(area.id, item.id)}
+                                    aria-label="Delete reporting item"
+                                    title="Delete reporting item"
+                                    className="p-2 text-neutral-300 hover:text-red-600"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </div>
                             </div>
 
