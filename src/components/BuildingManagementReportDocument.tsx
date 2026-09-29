@@ -1,7 +1,7 @@
 import React from 'react';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { getReportTemplate } from '../data/reportCatalogue';
-import { formatAustralianDate } from '../lib/reportFormatting';
+import { formatAustralianDate, normalizeAreaName, resolvePhotoAreaName } from '../lib/reportFormatting';
 import { InspectionArea, InspectionItem, ReportData } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
 
@@ -75,10 +75,12 @@ function ItemRows({
   report,
   area,
   daily,
+  inlinePhotos,
 }: {
   report: ReportData;
   area: InspectionArea;
   daily: boolean;
+  inlinePhotos: boolean;
 }) {
   if (!area.items.length) {
     return (
@@ -102,7 +104,7 @@ function ItemRows({
             <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">{item.actionComments || 'No further action recorded.'}</div>
             <div className="p-2 text-center font-bold text-cyan-700">{itemPhotoCount(report, item.id)}</div>
           </div>
-          <ItemPhotos report={report} item={item} />
+          {inlinePhotos && <ItemPhotos report={report} item={item} />}
         </React.Fragment>
       ))}
     </>
@@ -113,10 +115,12 @@ function CategoryPage({
   report,
   area,
   daily,
+  inlinePhotos,
 }: {
   report: ReportData;
   area: InspectionArea;
   daily: boolean;
+  inlinePhotos: boolean;
 }) {
   return (
     <div className="pdf-page w-[210mm] min-h-[297mm] bg-white p-[12mm] flex flex-col shadow-2xl box-border">
@@ -133,15 +137,82 @@ function CategoryPage({
         <div className="p-2 border-r border-neutral-300 text-center">Actions</div>
         <div className="p-2 text-center">Photos</div>
       </div>
-      <ItemRows report={report} area={area} daily={daily} />
+      <ItemRows report={report} area={area} daily={daily} inlinePhotos={inlinePhotos} />
       <Footer />
     </div>
+  );
+}
+
+function PhotoPages({ report }: { report: ReportData }) {
+  if (!report.photos.length) return null;
+
+  const areaOrder = new Map(report.areas.map((area, index) => [normalizeAreaName(area.name), index]));
+  const itemOrder = new Map<string, number>();
+  report.areas.forEach((area) => area.items.forEach((item, index) => itemOrder.set(item.id, index)));
+
+  const ordered = [...report.photos].sort((a, b) => {
+    const areaDiff =
+      (areaOrder.get(normalizeAreaName(a.areaName)) ?? Number.MAX_SAFE_INTEGER) -
+      (areaOrder.get(normalizeAreaName(b.areaName)) ?? Number.MAX_SAFE_INTEGER);
+    if (areaDiff) return areaDiff;
+    const itemDiff =
+      (a.itemId ? itemOrder.get(a.itemId) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER) -
+      (b.itemId ? itemOrder.get(b.itemId) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER);
+    if (itemDiff) return itemDiff;
+    return (a.photoIndex || 0) - (b.photoIndex || 0);
+  });
+
+  const pages = Array.from({ length: Math.ceil(ordered.length / 12) }, (_, index) =>
+    ordered.slice(index * 12, (index + 1) * 12)
+  );
+
+  return (
+    <>
+      {pages.map((page, pageIndex) => (
+        <div key={pageIndex} className="pdf-page w-[210mm] min-h-[297mm] bg-white p-[12mm] flex flex-col shadow-2xl box-border">
+          <Header report={report} title="Building Manager Photo Evidence" />
+          {pageIndex === 0 && (
+            <div className="bg-slate-100 border border-neutral-300 px-3 py-2 text-sm font-extrabold text-[#0a2540] mb-3">
+              Item-linked Photo Evidence ({ordered.length} photos)
+            </div>
+          )}
+          <div className="grid grid-cols-3 grid-rows-4 gap-2 flex-1 min-h-0">
+            {page.map((photo) => {
+              const currentItem = photo.itemId
+                ? report.areas.flatMap((area) => area.items).find((item) => item.id === photo.itemId)
+                : undefined;
+              return (
+                <div key={photo.id} className="border border-neutral-200 flex flex-col min-w-0">
+                  <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
+                    {resolvePhotoAreaName(photo, report.areas, 'Category')} — {currentItem?.name || photo.itemName || 'Reporting item'}
+                  </div>
+                  <div className="bg-neutral-50 flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+                    {photo.dataUrl || photo.url ? (
+                      <img
+                        src={photo.dataUrl || photo.url}
+                        alt={photo.name}
+                        className="block max-w-full max-h-full object-contain"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="text-[8px] text-neutral-400">Image unavailable</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <Footer />
+        </div>
+      ))}
+    </>
   );
 }
 
 export const BuildingManagementReportDocument: React.FC<Props> = ({ report }) => {
   const template = getReportTemplate(report.details.reportType);
   const daily = report.details.reportType === 'BuildingManagementDaily';
+  const monthlyPilot = report.details.reportType === 'BuildingManagementMonthly';
   const cover = report.photos.find((photo) => photo.isCover) || report.photos[0];
   const details = report.details;
 
@@ -224,9 +295,10 @@ export const BuildingManagementReportDocument: React.FC<Props> = ({ report }) =>
       </div>
 
       {report.areas.map((area) => (
-        <CategoryPage key={area.id} report={report} area={area} daily={daily} />
+        <CategoryPage key={area.id} report={report} area={area} daily={daily} inlinePhotos={monthlyPilot} />
       ))}
 
+      {!monthlyPilot && <PhotoPages report={report} />}
 
       <div className="pdf-page w-[210mm] min-h-[297mm] bg-white p-[12mm] flex flex-col shadow-2xl box-border">
         <Header report={report} title={template.shortLabel} />
