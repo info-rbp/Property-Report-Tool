@@ -27,18 +27,60 @@ function Header({ report, title }: { report: ReportData; title: string }) {
   );
 }
 
+function itemPhotos(report: ReportData, itemId: string) {
+  return report.photos
+    .filter((photo) => photo.itemId === itemId)
+    .sort((a, b) => (a.photoIndex || 0) - (b.photoIndex || 0));
+}
+
 function itemPhotoCount(report: ReportData, itemId: string): number {
-  return report.photos.filter((photo) => photo.itemId === itemId).length;
+  return itemPhotos(report, itemId).length;
+}
+
+function ItemPhotos({ report, item }: { report: ReportData; item: InspectionItem }) {
+  const photos = itemPhotos(report, item.id);
+  if (!photos.length) return null;
+
+  return (
+    <div className="border-x border-b border-neutral-300 bg-neutral-50 px-3 py-3">
+      <div className="text-[8px] font-extrabold uppercase tracking-wide text-[#0a2540] mb-2">
+        Photo evidence — {item.name || 'Reporting item'}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {photos.map((photo, index) => (
+          <div key={photo.id} className="border border-neutral-200 bg-white flex flex-col min-w-0">
+            <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
+              Photo {index + 1} of {photos.length}
+            </div>
+            <div className="h-[42mm] bg-neutral-50 flex items-center justify-center overflow-hidden">
+              {photo.dataUrl || photo.url ? (
+                <img
+                  src={photo.dataUrl || photo.url}
+                  alt={photo.name}
+                  className="block max-w-full max-h-full object-contain"
+                  loading="lazy"
+                />
+              ) : (
+                <span className="text-[8px] text-neutral-400">Image unavailable</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ItemRows({
   report,
   area,
   daily,
+  inlinePhotos,
 }: {
   report: ReportData;
   area: InspectionArea;
   daily: boolean;
+  inlinePhotos: boolean;
 }) {
   if (!area.items.length) {
     return (
@@ -51,19 +93,19 @@ function ItemRows({
   return (
     <>
       {area.items.map((item: InspectionItem) => (
-        <div
-          key={item.id}
-          className="grid grid-cols-[38mm_32mm_1fr_44mm_12mm] border-x border-b border-neutral-300 text-[8px]"
-        >
-          <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">
-            <div className="font-bold">{daily ? item.activityTime || 'Time not recorded' : formatAustralianDate(item.activityDate) || 'Date not recorded'}</div>
-            {item.activityParty && <div className="mt-1">{item.activityParty}</div>}
+        <React.Fragment key={item.id}>
+          <div className="grid grid-cols-[38mm_32mm_1fr_44mm_12mm] border-x border-b border-neutral-300 text-[8px]">
+            <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">
+              <div className="font-bold">{daily ? item.activityTime || 'Time not recorded' : formatAustralianDate(item.activityDate) || 'Date not recorded'}</div>
+              {item.activityParty && <div className="mt-1">{item.activityParty}</div>}
+            </div>
+            <div className="p-2 border-r border-neutral-200 font-bold">{item.name || 'Untitled reporting item'}</div>
+            <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">{item.agentComments || 'No activity summary recorded.'}</div>
+            <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">{item.actionComments || 'No further action recorded.'}</div>
+            <div className="p-2 text-center font-bold text-cyan-700">{itemPhotoCount(report, item.id)}</div>
           </div>
-          <div className="p-2 border-r border-neutral-200 font-bold">{item.name || 'Untitled reporting item'}</div>
-          <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">{item.agentComments || 'No activity summary recorded.'}</div>
-          <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">{item.actionComments || 'No further action recorded.'}</div>
-          <div className="p-2 text-center font-bold text-cyan-700">{itemPhotoCount(report, item.id)}</div>
-        </div>
+          {inlinePhotos && <ItemPhotos report={report} item={item} />}
+        </React.Fragment>
       ))}
     </>
   );
@@ -73,10 +115,12 @@ function CategoryPage({
   report,
   area,
   daily,
+  inlinePhotos,
 }: {
   report: ReportData;
   area: InspectionArea;
   daily: boolean;
+  inlinePhotos: boolean;
 }) {
   return (
     <div className="pdf-page w-[210mm] min-h-[297mm] bg-white p-[12mm] flex flex-col shadow-2xl box-border">
@@ -93,7 +137,7 @@ function CategoryPage({
         <div className="p-2 border-r border-neutral-300 text-center">Actions</div>
         <div className="p-2 text-center">Photos</div>
       </div>
-      <ItemRows report={report} area={area} daily={daily} />
+      <ItemRows report={report} area={area} daily={daily} inlinePhotos={inlinePhotos} />
       <Footer />
     </div>
   );
@@ -138,23 +182,23 @@ function PhotoPages({ report }: { report: ReportData }) {
                 ? report.areas.flatMap((area) => area.items).find((item) => item.id === photo.itemId)
                 : undefined;
               return (
-              <div key={photo.id} className="border border-neutral-200 flex flex-col min-w-0">
-                <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
-                  {resolvePhotoAreaName(photo, report.areas, 'Category')} — {currentItem?.name || photo.itemName || 'Reporting item'}
+                <div key={photo.id} className="border border-neutral-200 flex flex-col min-w-0">
+                  <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
+                    {resolvePhotoAreaName(photo, report.areas, 'Category')} — {currentItem?.name || photo.itemName || 'Reporting item'}
+                  </div>
+                  <div className="bg-neutral-50 flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+                    {photo.dataUrl || photo.url ? (
+                      <img
+                        src={photo.dataUrl || photo.url}
+                        alt={photo.name}
+                        className="block max-w-full max-h-full object-contain"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="text-[8px] text-neutral-400">Image unavailable</span>
+                    )}
+                  </div>
                 </div>
-                <div className="bg-neutral-50 flex-1 min-h-0 flex items-center justify-center overflow-hidden">
-                  {photo.dataUrl || photo.url ? (
-                    <img
-                      src={photo.dataUrl || photo.url}
-                      alt={photo.name}
-                      className="block max-w-full max-h-full object-contain"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span className="text-[8px] text-neutral-400">Image unavailable</span>
-                  )}
-                </div>
-              </div>
               );
             })}
           </div>
@@ -168,6 +212,7 @@ function PhotoPages({ report }: { report: ReportData }) {
 export const BuildingManagementReportDocument: React.FC<Props> = ({ report }) => {
   const template = getReportTemplate(report.details.reportType);
   const daily = report.details.reportType === 'BuildingManagementDaily';
+  const monthlyPilot = report.details.reportType === 'BuildingManagementMonthly';
   const cover = report.photos.find((photo) => photo.isCover) || report.photos[0];
   const details = report.details;
 
@@ -250,10 +295,10 @@ export const BuildingManagementReportDocument: React.FC<Props> = ({ report }) =>
       </div>
 
       {report.areas.map((area) => (
-        <CategoryPage key={area.id} report={report} area={area} daily={daily} />
+        <CategoryPage key={area.id} report={report} area={area} daily={daily} inlinePhotos={monthlyPilot} />
       ))}
 
-      <PhotoPages report={report} />
+      {!monthlyPilot && <PhotoPages report={report} />}
 
       <div className="pdf-page w-[210mm] min-h-[297mm] bg-white p-[12mm] flex flex-col shadow-2xl box-border">
         <Header report={report} title={template.shortLabel} />
