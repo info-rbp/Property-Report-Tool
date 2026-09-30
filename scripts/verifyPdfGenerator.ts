@@ -515,6 +515,45 @@ buildingMonthly.areas[6].items = Array.from({ length: 18 }, (_, index) => ({
   agentComments: 'Bins collected, washed and returned; waste streams consolidated and collection areas maintained.',
   actionComments: 'Routine service completed.',
 }));
+buildingMonthly.photos = [
+  {
+    id: 'bm-monthly-photo-1',
+    name: 'Roof waterproofing evidence 1',
+    areaName: buildingMonthly.areas[0].name,
+    itemId: 'bm-monthly-maintenance-1',
+    itemName: buildingMonthly.areas[0].items[0].name,
+    photoIndex: 1,
+    isCover: true,
+    dataUrl: LANDSCAPE_JPEG,
+  },
+  {
+    id: 'bm-monthly-photo-2',
+    name: 'Roof waterproofing evidence 2',
+    areaName: buildingMonthly.areas[0].name,
+    itemId: 'bm-monthly-maintenance-1',
+    itemName: buildingMonthly.areas[0].items[0].name,
+    photoIndex: 2,
+    dataUrl: PORTRAIT_JPEG,
+  },
+  {
+    id: 'bm-monthly-photo-3',
+    name: 'Electrical attendance evidence',
+    areaName: buildingMonthly.areas[0].name,
+    itemId: 'bm-monthly-maintenance-2',
+    itemName: buildingMonthly.areas[0].items[1].name,
+    photoIndex: 1,
+    dataUrl: LANDSCAPE_JPEG,
+  },
+  {
+    id: 'bm-monthly-photo-4',
+    name: 'Access programming evidence',
+    areaName: buildingMonthly.areas[1].name,
+    itemId: 'bm-monthly-security-1',
+    itemName: buildingMonthly.areas[1].items[0].name,
+    photoIndex: 1,
+    dataUrl: PORTRAIT_JPEG,
+  },
+];
 await verifyPdf('BuildingManagementMonthlyFilled', buildingMonthly, 6, 10_000);
 
 const commonPropertyStress = createBlankReport('CommonProperty', {
