@@ -40,6 +40,8 @@ function PreviewFooter() {
 function CoverPage({ report }: { report: ReportData }) {
   const { details, photos } = report;
   const cover = photos.find((photo) => photo.isCover) || photos[0];
+  const coverSource = details.coverPhotoUrl || cover?.dataUrl || cover?.url;
+  const coverName = details.coverPhotoUrl ? 'Report cover' : cover?.name || 'Report cover';
   return (
     <div className="pdf-page w-[210mm] min-h-[297mm] bg-white text-neutral-900 p-[18mm] flex flex-col shadow-2xl box-border">
       <div className="flex justify-between items-start">
@@ -61,10 +63,10 @@ function CoverPage({ report }: { report: ReportData }) {
       </div>
 
       <div className="mt-12 w-[140mm] h-[85mm] mx-auto overflow-hidden rounded border border-neutral-300 bg-neutral-50 flex items-center justify-center">
-        {cover?.dataUrl || cover?.url ? (
+        {coverSource ? (
           <img
-            src={cover.dataUrl || cover.url}
-            alt={cover.name}
+            src={coverSource}
+            alt={coverName}
             className="w-full h-full object-contain"
             crossOrigin="anonymous"
           />

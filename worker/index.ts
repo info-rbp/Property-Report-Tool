@@ -117,6 +117,12 @@ function parseReport(row: ReportRow): ReportData {
     completedPdfKey: row.completed_pdf_key || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    details: {
+      ...parsed.details,
+      coverPhotoUrl: parsed.details.coverPhotoStorageKey
+        ? `/api/reports/${encodeURIComponent(row.id)}/cover`
+        : parsed.details.coverPhotoUrl,
+    },
     photos: (parsed.photos || []).map((photo) => ({
       ...photo,
       dataUrl: undefined,
@@ -215,6 +221,10 @@ async function updateReportData(
     completedPdfKey: completedPdfKey || undefined,
     createdAt: row.created_at,
     updatedAt: now,
+    details: {
+      ...report.details,
+      coverPhotoUrl: report.details.coverPhotoStorageKey ? undefined : report.details.coverPhotoUrl,
+    },
     photos: (report.photos || []).map((photo) => ({
       ...photo,
       dataUrl: undefined,
@@ -409,6 +419,59 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         console.error('Draft report deleted from D1 but R2 cleanup failed:', error);
       }
       return json({ success: true });
+    }
+
+    if (parts.length === 4 && parts[3] === 'cover') {
+      const row = await getReportRow(env, reportId);
+      const report = parseReport(row);
+
+      if (request.method === 'GET') {
+        const key = report.details.coverPhotoStorageKey;
+        if (!key) throw new HttpError(404, 'Cover photo not found.');
+        const object = await env.REPORT_STORAGE.get(key);
+        if (!object) throw new HttpError(404, 'Cover photo not found.');
+        const headers = new Headers();
+        object.writeHttpMetadata(headers);
+        headers.set('ETag', object.httpEtag);
+        headers.set('Cache-Control', 'private, max-age=3600');
+        return new Response(object.body, { headers: securityHeaders(headers) });
+      }
+
+      if (request.method === 'POST') {
+        if (row.status === 'completed') throw new HttpError(409, 'Completed reports cannot be edited.');
+        const form = await request.formData();
+        const file = form.get('file');
+        if (!(file instanceof File)) throw new HttpError(400, 'Cover photo file is required.');
+        if (!file.type.startsWith('image/')) throw new HttpError(400, 'Only image uploads are allowed.');
+        if (file.size > 5 * 1024 * 1024) throw new HttpError(413, 'Processed image exceeds the 5 MB upload limit.');
+
+        const previousKey = report.details.coverPhotoStorageKey;
+        const key = `reports/${reportId}/cover/${crypto.randomUUID()}.jpg`;
+        await env.REPORT_STORAGE.put(key, await file.arrayBuffer(), {
+          httpMetadata: { contentType: 'image/jpeg' },
+          customMetadata: { reportId, uploadedBy: userEmail, purpose: 'cover' },
+        });
+
+        try {
+          const saved = await updateReportData(env, row, {
+            ...report,
+            details: {
+              ...report.details,
+              coverPhotoUrl: undefined,
+              coverPhotoStorageKey: key,
+            },
+          }, userEmail);
+          if (previousKey && previousKey !== key) {
+            await env.REPORT_STORAGE.delete(previousKey).catch((error) => {
+              console.error('Cover photo replaced but old R2 object cleanup failed:', error);
+            });
+          }
+          return json(saved);
+        } catch (error) {
+          await env.REPORT_STORAGE.delete(key).catch(() => undefined);
+          throw error;
+        }
+      }
     }
 
     if (parts.length === 4 && parts[3] === 'photos' && request.method === 'POST') {

@@ -6,8 +6,10 @@ import { InspectionArea, ReportPhoto } from '../types/report';
 interface PhotoManagerProps {
   photos: ReportPhoto[];
   areas?: InspectionArea[];
+  coverPhotoUrl?: string;
   isUploading?: boolean;
   onUploadPhotos: (files: File[], areaName: string, itemId?: string) => Promise<void>;
+  onUploadCoverPhoto: (file: File) => Promise<void>;
   onUpdatePhotos: (photos: ReportPhoto[]) => void;
   linkToItems?: boolean;
   onDeletePhoto: (id: string) => Promise<void>;
@@ -16,14 +18,17 @@ interface PhotoManagerProps {
 export const PhotoManager: React.FC<PhotoManagerProps> = ({
   photos,
   areas = [],
+  coverPhotoUrl,
   isUploading = false,
   onUploadPhotos,
+  onUploadCoverPhoto,
   onUpdatePhotos,
   onDeletePhoto,
   linkToItems = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const areaFileInputRef = useRef<HTMLInputElement>(null);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
   const [selectedUploadArea, setSelectedUploadArea] = useState<string>(areas[0]?.name || 'General');
   const [targetUploadArea, setTargetUploadArea] = useState<string>(areas[0]?.name || 'General');
   const [activeAreaFilter, setActiveAreaFilter] = useState<string>('ALL');
@@ -102,6 +107,13 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     await onUploadPhotos(files, areaName || 'General', itemId);
   };
 
+  const handleCoverFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    await onUploadCoverPhoto(file);
+  };
+
   const handleUploadForSpecificArea = (areaName: string) => {
     setTargetUploadArea(areaName);
     const items = areaByName.get(areaName)?.items || [];
@@ -113,10 +125,6 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
       setTargetUploadItemId(items[0].id);
     }
     areaFileInputRef.current?.click();
-  };
-
-  const handleSetCoverPhoto = (id: string) => {
-    onUpdatePhotos(photos.map((photo) => ({ ...photo, isCover: photo.id === id })));
   };
 
   const handleRenamePhoto = (id: string, name: string) => {
@@ -197,6 +205,46 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         onChange={(event) => handleFileUpload(event, targetUploadArea, targetUploadItemId)}
         className="hidden"
       />
+      <input
+        ref={coverFileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={handleCoverFileUpload}
+        className="hidden"
+      />
+
+      <div className="p-4 border-b border-neutral-200 bg-white">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="w-full sm:w-40 aspect-[4/3] rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden flex items-center justify-center shrink-0">
+            {coverPhotoUrl ? (
+              <img src={coverPhotoUrl} alt="Report cover" className="w-full h-full object-cover" />
+            ) : (
+              <div className="text-center text-neutral-400 text-xs px-3">
+                <Star className="w-5 h-5 mx-auto mb-1.5" />
+                No dedicated cover photo
+              </div>
+            )}
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 text-sm font-bold text-neutral-900">
+              <Star className="w-4 h-4 text-amber-500" />
+              Report Cover Photo
+            </div>
+            <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
+              Upload a dedicated cover image for the first page of the report. This image is stored separately from inspection evidence and does not need an area or reporting-item assignment.
+            </p>
+            <button
+              type="button"
+              onClick={() => coverFileInputRef.current?.click()}
+              disabled={isUploading}
+              className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              {isUploading ? 'Uploading...' : coverPhotoUrl ? 'Replace Cover Photo' : 'Upload Cover Photo'}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div className="p-4 border-b border-neutral-200 bg-neutral-50 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -394,13 +442,6 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                     #{photo.photoIndex || index + 1}
                   </div>
                   <div className="absolute top-1.5 right-1.5 flex gap-1">
-                    <button
-                      onClick={() => handleSetCoverPhoto(photo.id)}
-                      className={`p-1 rounded shadow-xs ${photo.isCover ? 'bg-amber-400 text-neutral-900' : 'bg-white/90 text-neutral-600 opacity-0 group-hover:opacity-100'}`}
-                      title="Use as cover photo"
-                    >
-                      <Star className="w-3.5 h-3.5" />
-                    </button>
                     <button
                       onClick={() => onDeletePhoto(photo.id)}
                       className="bg-red-600 text-white p-1 rounded shadow-xs opacity-0 group-hover:opacity-100"

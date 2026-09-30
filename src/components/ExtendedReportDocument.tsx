@@ -111,6 +111,8 @@ function PhotoPreviewPages({ report }: { report: ReportData }) {
 export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
   const template = getReportTemplate(report.details.reportType);
   const cover = report.photos.find((photo) => photo.isCover) || report.photos[0];
+  const coverSource = report.details.coverPhotoUrl || cover?.dataUrl || cover?.url;
+  const coverName = report.details.coverPhotoUrl ? 'Report cover' : cover?.name || 'Report cover';
   const conditionFamily = template.family === 'condition';
   const displayTitle =
     report.details.reportType === 'Custom' && report.details.formName?.trim()
@@ -136,8 +138,8 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
         </div>
 
         <div className="mt-12 w-[140mm] h-[85mm] mx-auto overflow-hidden rounded border border-neutral-300 bg-neutral-50 flex items-center justify-center">
-          {cover?.dataUrl || cover?.url ? (
-            <img src={cover.dataUrl || cover.url} alt={cover.name} className="max-w-full max-h-full object-contain" />
+          {coverSource ? (
+            <img src={coverSource} alt={coverName} className="max-w-full max-h-full object-contain" />
           ) : (
             <div className="text-center text-neutral-400 text-xs">
               <div className="font-bold text-[#0a2540]">ProInspect</div>

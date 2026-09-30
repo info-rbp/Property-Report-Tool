@@ -66,6 +66,16 @@ export const api = {
       method: 'DELETE',
     }),
 
+  uploadCoverPhoto: async (reportId: string, file: Blob) => {
+    const form = new FormData();
+    form.append('file', file, 'cover.jpg');
+
+    return apiRequest<ReportData>(`/api/reports/${encodeURIComponent(reportId)}/cover`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+
   uploadPhoto: async (
     reportId: string,
     file: Blob,

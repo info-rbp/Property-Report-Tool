@@ -107,6 +107,7 @@ export interface TenancyDetails {
   tenantReceivedDate?: string;
   reportReturnDate: string;
   coverPhotoUrl?: string;
+  coverPhotoStorageKey?: string;
   paintingPremisesExternalDate?: string;
   paintingPremisesInternalDate?: string;
   floorcoveringsLaidDate?: string;
