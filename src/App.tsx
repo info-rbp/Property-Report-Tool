@@ -312,6 +312,29 @@ export default function App() {
     }
   };
 
+  const handleUploadCoverPhoto = async (file: File) => {
+    if (!report?.id || report.status === 'completed') return;
+    setIsUploadingPhotos(true);
+    setStatusMessage(null);
+
+    try {
+      const savedDraft = await saveDraftImmediately(report);
+      const processed = await processInspectionImage(file);
+      const updated = normalizeReport(await api.uploadCoverPhoto(savedDraft.id!, processed.blob));
+      if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
+      setReport(updated);
+      await cacheReport(updated).catch(() => undefined);
+      setStatusMessage({
+        text: savedDraft.details.coverPhotoUrl ? 'Cover photo replaced.' : 'Cover photo uploaded.',
+        type: 'success',
+      });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to upload cover photo.', type: 'error' });
+    } finally {
+      setIsUploadingPhotos(false);
+    }
+  };
+
   const handleUploadPhotos = async (files: File[], areaName: string, itemId?: string) => {
     if (!report?.id || report.status === 'completed') return;
     setIsUploadingPhotos(true);
@@ -695,8 +718,10 @@ export default function App() {
             <PhotoManager
               photos={report.photos}
               areas={report.areas}
+              coverPhotoUrl={report.details.coverPhotoUrl}
               isUploading={isUploadingPhotos}
               onUploadPhotos={handleUploadPhotos}
+              onUploadCoverPhoto={handleUploadCoverPhoto}
               onUpdatePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
               onDeletePhoto={handleDeletePhoto}
               linkToItems={isBuildingManagementTemplate(report.details.reportType)}
