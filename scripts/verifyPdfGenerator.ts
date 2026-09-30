@@ -1,6 +1,7 @@
 import { REPORT_TEMPLATES } from '../src/data/reportCatalogue';
 import { createBlankReport } from '../src/data/reportTemplates';
-import { formatAustralianDate, renumberPhotosByArea, splitTenantNames } from '../src/lib/reportFormatting';
+import { formatAustralianDate, renumberPhotosByArea, resolvePhotoAreaName, splitTenantNames } from '../src/lib/reportFormatting';
+import { isValidReportDate, perthIsoDate } from '../src/lib/dateUtils';
 import { migrateReportData } from '../src/lib/reportMigration';
 import { generateReportPdf } from '../src/lib/reportPdf';
 import { validateReportForFinalization, validateReportStructure } from '../src/lib/reportValidation';
@@ -8,6 +9,13 @@ import { CURRENT_REPORT_SCHEMA_VERSION, ReportData } from '../src/types/report';
 
 if (formatAustralianDate('2026-09-27') !== '27/09/2026') {
   throw new Error('Australian date formatting regression detected.');
+}
+
+if (perthIsoDate(new Date('2026-09-27T20:00:00Z')) !== '2026-09-28') {
+  throw new Error('Perth-local calendar date regression detected.');
+}
+if (!isValidReportDate('2026-09-28') || !isValidReportDate('28/09/2026') || isValidReportDate('31/02/2026')) {
+  throw new Error('Report date validation regression detected.');
 }
 
 const tenantNames = splitTenantNames('John Smith & Jane Smith');
@@ -632,6 +640,34 @@ delete legacyReport.schemaVersion;
 const migratedLegacyReport = migrateReportData(legacyReport);
 if (migratedLegacyReport.schemaVersion !== CURRENT_REPORT_SCHEMA_VERSION) {
   throw new Error('Legacy report schema migration regression detected.');
+}
+
+const legacyPhotoReport = structuredClone(routineReport);
+legacyPhotoReport.schemaVersion = 4;
+legacyPhotoReport.photos = [{
+  id: 'legacy-photo-area-link',
+  name: 'General: Overall (photo 1)',
+  areaName: legacyPhotoReport.areas[0].name,
+  photoIndex: 1,
+}];
+const migratedPhotoReport = migrateReportData(legacyPhotoReport);
+if (migratedPhotoReport.photos[0].areaId !== migratedPhotoReport.areas[0].id) {
+  throw new Error('Legacy photo area ID migration regression detected.');
+}
+const renamedArea = migratedPhotoReport.areas[0];
+renamedArea.name = 'Renamed Report Section';
+if (resolvePhotoAreaName(migratedPhotoReport.photos[0], migratedPhotoReport.areas) !== 'Renamed Report Section') {
+  throw new Error('Stable photo area link regression detected after section rename.');
+}
+
+const invalidDateReport = createBlankReport('Routine', {
+  id: 'invalid-date-validation',
+  address: '19 Bonnard Crescent Ashby WA 6065',
+});
+invalidDateReport.details.inspectingAgent = 'Date Validation Test';
+invalidDateReport.details.inspectionDate = '31/02/2026';
+if (!validateReportForFinalization(invalidDateReport).some((issue) => issue.code === 'inspection-date-invalid')) {
+  throw new Error('Invalid report date validation regression detected.');
 }
 
 let futureSchemaRejected = false;

@@ -21,13 +21,17 @@ Properties
 - React + Vite frontend served as Cloudflare Workers Static Assets.
 - Cloudflare Worker API under `/api/*`.
 - Cloudflare D1 for Properties, report metadata and report JSON.
-- Cloudflare R2 for compressed inspection photos and completed PDFs.
+- Cloudflare R2 primary storage for compressed inspection photos and completed PDFs, with an independently bound recovery R2 bucket for mirrored evidence and issued PDFs.
 - Cloudflare Access for staff authentication.
 - IndexedDB as a local draft cache only.
 - Browser-side deterministic PDF generation using `jsPDF` directly from report data; final PDFs do not depend on DOM screenshots or Tailwind rendering.
 - Versioned report JSON with an explicit migration pipeline for future report-schema changes.
 - Shared structural/finalisation validation across the browser and Worker, including photo-area and Building Manager photo-item integrity.
-- Version-aware draft saves reject stale cross-device edits instead of silently overwriting newer cloud data.
+- Monotonic report revisions and atomic compare-and-set mutations reject stale cross-device edits, photo changes and finalisation instead of silently overwriting newer cloud data.
+- Conflict recovery can reload the cloud copy, preserve the local copy as a separate draft, or export the local draft as JSON.
+- Completed reports are immutable; corrections create a new linked report and retain the original as a superseded audit record.
+- Cloudflare Access authentication is supplemented by viewer/editor/admin application roles.
+- Local IndexedDB is limited to draft resilience, expires after seven days and purges completed/superseded reports.
 
 ## Report catalogue
 

@@ -8,13 +8,16 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vite build && wrangler deploy",
+    "deploy": "vite build && bash scripts/ensureCloudflareResources.sh && wrangler d1 migrations apply proinspect-property-reports --remote && wrangler deploy",
+    "infra:ensure": "bash scripts/ensureCloudflareResources.sh",
     "db:migrate:local": "wrangler d1 migrations apply proinspect-property-reports --local",
     "db:migrate:remote": "wrangler d1 migrations apply proinspect-property-reports --remote",
     "clean": "rm -rf dist .wrangler",
     "lint": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "db:backup": "mkdir -p backups && wrangler d1 export proinspect-property-reports --remote --output=./backups/proinspect-property-reports.sql",
-    "pdf:verify": "bun run scripts/verifyPdfGenerator.ts"
+    "pdf:verify": "bun run scripts/verifyPdfGenerator.ts",
+    "api:verify": "bash scripts/verifyApiIntegration.sh",
+    "security:verify": "bun audit --audit-level=high"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

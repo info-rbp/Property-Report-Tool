@@ -10,6 +10,8 @@ import { CURRENT_REPORT_SCHEMA_VERSION, ReportData } from '../types/report';
  * Version 4 registers the Custom Report type. It adds no new structural fields,
  * but marks persisted data as requiring an application version that understands
  * the Custom Report catalogue entry.
+ * Version 5 adds stable area IDs to photo links so renaming a report section
+ * does not orphan its existing photo evidence.
  *
  * Future schema changes must add an explicit migration step here before
  * CURRENT_REPORT_SCHEMA_VERSION is increased.
@@ -60,6 +62,23 @@ export function migrateReportData(input: ReportData): ReportData {
         items: (area.items || []).map((item) => ({ ...item })),
       })),
       photos: migrated.photos.map((photo) => ({ ...photo })),
+    };
+  }
+
+  if ((migrated.schemaVersion || 1) < 5) {
+    const areaIdByName = new Map(
+      migrated.areas
+        .filter((area) => area.id && area.name)
+        .map((area) => [area.name.trim().toLowerCase(), area.id])
+    );
+
+    migrated = {
+      ...migrated,
+      schemaVersion: 5,
+      photos: migrated.photos.map((photo) => ({
+        ...photo,
+        areaId: photo.areaId || areaIdByName.get((photo.areaName || '').trim().toLowerCase()),
+      })),
     };
   }
 

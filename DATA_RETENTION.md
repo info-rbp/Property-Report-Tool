@@ -5,8 +5,9 @@ This is the operational retention policy for V1. It is not a substitute for any 
 ## Authoritative storage
 
 - D1 is the authoritative store for Properties and report JSON.
-- R2 is the authoritative store for inspection-photo derivatives and completed PDFs.
-- IndexedDB is a local resilience cache only and must not be treated as the authoritative copy.
+- The primary R2 bucket is the authoritative file store for inspection-photo derivatives and completed PDFs.
+- A separately bound recovery R2 bucket receives an automatic mirrored copy of every new inspection photo and issued PDF.
+- IndexedDB is a local draft-resilience cache only. Completed/superseded reports are removed from it, and stale draft cache entries expire after seven days.
 
 ## Draft reports
 
@@ -40,20 +41,26 @@ The resulting `backups/` directory is gitignored and must never be committed to 
 
 ## R2 recovery
 
-V1 does not configure an automatic object-expiry rule on `proinspect-property-reports-data`.
+The application uses two separately bound R2 buckets:
 
-The application already prevents completed reports from being deleted through its API. R2 objects should therefore remain in place unless deliberately removed by an administrator.
+- primary: `proinspect-property-reports-data`;
+- recovery: `proinspect-property-reports-recovery`.
 
-If ProInspect later adopts a formal disposal period, implement it only after the legal/business retention period is confirmed. Avoid bucket-wide expiry rules until then.
+New inspection photos and completed PDFs are written to both buckets. Normal reads use primary storage and automatically fall back to the recovery bucket if the primary object is missing. Draft/photo deletion removes both copies; issued completed and superseded reports remain immutable through the application.
+
+Neither bucket uses an automatic object-expiry rule. If ProInspect later adopts a formal disposal period, implement it only after the legal/business retention period is confirmed.
+
+The recovery bucket protects against object-level deletion or corruption in the primary bucket. It should still be supplemented by an account-level/off-platform business backup if protection against an entire Cloudflare account or provider-level loss is required.
 
 ## Backup review
 
 At least monthly:
 1. confirm D1 is queryable;
 2. perform a D1 export to secure business backup storage;
-3. confirm the R2 bucket is accessible;
+3. confirm both the primary and recovery R2 buckets are accessible;
 4. confirm at least one completed PDF can be retrieved;
-5. record the check in the business operations log.
+5. where practical, verify recovery fallback by confirming the matching recovery object exists;
+6. record the check in the business operations log.
 
 ## Incident recovery
 
@@ -61,4 +68,4 @@ For accidental D1 changes within the available Time Travel window, use D1 Time T
 
 For older D1 recovery, use the most recent approved D1 export.
 
-For R2 object loss, recovery depends on the separate backup process in place at the time. Completed reports must not be manually deleted from R2 without an approved disposal instruction.
+For a missing primary R2 object, the application automatically attempts the recovery bucket. Completed reports must not be manually deleted from either R2 bucket without an approved disposal instruction.

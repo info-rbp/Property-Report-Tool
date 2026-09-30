@@ -7,6 +7,7 @@ import { KeyReceiptDocument } from './KeyReceiptDocument';
 import { BuildingManagementReportDocument } from './BuildingManagementReportDocument';
 import { ExtendedReportDocument } from './ExtendedReportDocument';
 import { SimpleReportDocument } from './SimpleReportDocument';
+import { resolvePhotoAreaName } from '../lib/reportFormatting';
 
 interface ReportPreviewProps {
   report: ReportData;
@@ -486,7 +487,7 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
                       {(() => {
                         const areaPhotosCount =
                           photos.filter(
-                            (p) => (p.areaName || '').trim().toLowerCase() === area.name.trim().toLowerCase()
+                            (p) => resolvePhotoAreaName(p, report.areas, '').trim().toLowerCase() === area.name.trim().toLowerCase()
                           ).length ||
                           area.overallPhotoCount ||
                           0;

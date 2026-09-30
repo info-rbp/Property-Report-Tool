@@ -1,4 +1,4 @@
-import { ReportPhoto } from '../types/report';
+import { InspectionArea, ReportPhoto } from '../types/report';
 
 export function formatAustralianDate(input?: string | null): string {
   const raw = (input || '').trim();
@@ -37,7 +37,7 @@ export function renumberPhotosByArea(photos: ReportPhoto[]): ReportPhoto[] {
   const nextIndex = new Map<string, number>();
 
   return photos.map((photo) => {
-    const key = normalizeAreaName(photo.areaName) || 'general';
+    const key = photo.areaId || normalizeAreaName(photo.areaName) || 'general';
     const photoIndex = (nextIndex.get(key) || 0) + 1;
     nextIndex.set(key, photoIndex);
 
@@ -61,4 +61,17 @@ export function renumberPhotosByArea(photos: ReportPhoto[]): ReportPhoto[] {
       name: `${areaName}: ${suffix}`,
     };
   });
+}
+
+
+export function resolvePhotoAreaName(
+  photo: ReportPhoto,
+  areas: InspectionArea[],
+  fallback = 'General'
+): string {
+  if (photo.areaId) {
+    const area = areas.find((candidate) => candidate.id === photo.areaId);
+    if (area?.name?.trim()) return area.name.trim();
+  }
+  return (photo.areaName || fallback).trim() || fallback;
 }

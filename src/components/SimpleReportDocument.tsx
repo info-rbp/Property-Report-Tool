@@ -1,6 +1,6 @@
 import React from 'react';
 import { PROINSPECT_COMPANY } from '../config/company';
-import { formatAustralianDate, normalizeAreaName } from '../lib/reportFormatting';
+import { formatAustralianDate, normalizeAreaName, resolvePhotoAreaName } from '../lib/reportFormatting';
 import { InspectionArea, ReportData } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
 
@@ -16,7 +16,7 @@ function displayTitle(reportType: ReportData['details']['reportType']): string {
 
 function photoCount(report: ReportData, area: InspectionArea): number {
   const key = normalizeAreaName(area.name);
-  return report.photos.filter((photo) => normalizeAreaName(photo.areaName) === key).length;
+  return report.photos.filter((photo) => normalizeAreaName(resolvePhotoAreaName(photo, report.areas)) === key).length;
 }
 
 function PreviewHeader({ report, title }: { report: ReportData; title: string }) {
@@ -324,7 +324,7 @@ function PhotoPreviewPages({ report }: { report: ReportData }) {
   });
   const totals = new Map<string, number>();
   orderedPhotos.forEach((photo) => {
-    const key = normalizeAreaName(photo.areaName || 'General');
+    const key = normalizeAreaName(resolvePhotoAreaName(photo, report.areas));
     totals.set(key, (totals.get(key) || 0) + 1);
   });
   const ordinals = new Map<string, number>();
@@ -345,7 +345,7 @@ function PhotoPreviewPages({ report }: { report: ReportData }) {
           )}
           <div className="grid grid-cols-3 grid-rows-4 gap-2 flex-1 min-h-0">
             {page.map((photo) => {
-              const key = normalizeAreaName(photo.areaName || 'General');
+              const key = normalizeAreaName(resolvePhotoAreaName(photo, report.areas));
               const ordinal = (ordinals.get(key) || 0) + 1;
               ordinals.set(key, ordinal);
               return (

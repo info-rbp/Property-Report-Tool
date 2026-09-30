@@ -1,7 +1,7 @@
 import React from 'react';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { getReportTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
-import { formatAustralianDate, normalizeAreaName } from '../lib/reportFormatting';
+import { formatAustralianDate, normalizeAreaName, resolvePhotoAreaName } from '../lib/reportFormatting';
 import { ReportData, TenancyDetails } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
 
@@ -57,7 +57,7 @@ function PhotoPreviewPages({ report }: { report: ReportData }) {
 
   const totals = new Map<string, number>();
   ordered.forEach((photo) => {
-    const key = normalizeAreaName(photo.areaName || 'General');
+    const key = normalizeAreaName(resolvePhotoAreaName(photo, report.areas));
     totals.set(key, (totals.get(key) || 0) + 1);
   });
   const ordinals = new Map<string, number>();
@@ -77,7 +77,7 @@ function PhotoPreviewPages({ report }: { report: ReportData }) {
           )}
           <div className="grid grid-cols-3 grid-rows-4 gap-2 flex-1 min-h-0">
             {page.map((photo) => {
-              const key = normalizeAreaName(photo.areaName || 'General');
+              const key = normalizeAreaName(resolvePhotoAreaName(photo, report.areas));
               const ordinal = (ordinals.get(key) || 0) + 1;
               ordinals.set(key, ordinal);
               return (
@@ -177,7 +177,7 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
 
         <div className="mt-2 space-y-3">
           {report.areas.slice(0, 8).map((area) => {
-            const photos = report.photos.filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(area.name)).length;
+            const photos = report.photos.filter((photo) => normalizeAreaName(resolvePhotoAreaName(photo, report.areas)) === normalizeAreaName(area.name)).length;
             return (
               <div key={area.id} className="border border-neutral-300">
                 <div className="bg-slate-100 px-2 py-1.5 border-b border-neutral-300 flex justify-between text-[10px]">

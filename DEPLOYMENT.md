@@ -5,7 +5,8 @@ V1 is deployed as a single Cloudflare Workers application containing:
 - React/Vite static assets.
 - A Worker API under `/api/*`.
 - Cloudflare D1 for Properties and report JSON.
-- Cloudflare R2 for inspection photos and completed PDFs.
+- Cloudflare R2 primary storage for inspection photos and completed PDFs.
+- A separate Cloudflare R2 recovery bucket containing mirrored inspection photos and issued PDFs.
 - Cloudflare Access for staff authentication.
 
 PDF generation remains browser-side, but the production renderer now builds the PDF directly from report data using jsPDF. It does not rasterise the React/Tailwind preview with html2canvas. Cloudflare stores the final issued PDF after generation.
@@ -17,13 +18,15 @@ PDF generation remains browser-side, but the production renderer now builds the 
 - Active production hostname: `https://report.creation.proinspect.systems/`
 - D1 database: `proinspect-property-reports`
 - D1 database ID: `777186a0-e6ca-43f5-8f50-448bd4454046`
-- R2 bucket: `proinspect-property-reports-data`
+- Primary R2 bucket: `proinspect-property-reports-data`
+- Recovery R2 bucket: `proinspect-property-reports-recovery`
 - D1 binding: `DB`
-- R2 binding: `REPORT_STORAGE`
+- Primary R2 binding: `REPORT_STORAGE`
+- Recovery R2 binding: `REPORT_RECOVERY_STORAGE`
 - Cloudflare Access team domain: `https://delicate-dream-e4c9.cloudflareaccess.com`
 - Access policy: approved users with `@remotebusinesspartner.com.au`
 
-The R2 S3 API endpoint is not required by the application. The Worker accesses R2 through the native `REPORT_STORAGE` binding, so no S3 credentials belong in the repository.
+The R2 S3 API endpoint is not required by the application. The Worker accesses both buckets through native Worker bindings, so no S3 credentials belong in the repository. New inspection photos and issued PDFs are written to both primary and recovery storage. Read operations fall back to the recovery bucket if the primary object is unavailable.
 
 ## Current production status
 
@@ -82,7 +85,13 @@ For production after any future migration is added:
 bun run db:migrate:remote
 ```
 
-The initial production migration has already been applied.
+The initial production migration has already been applied. Before deploying the application-hardening release, migration `0002_application_hardening.sql` must also be applied. The repository deployment command now ensures the recovery R2 bucket exists, applies pending remote D1 migrations, and only then deploys the Worker:
+
+```bash
+bun run deploy
+```
+
+Do not deploy the hardened Worker against the pre-hardening D1 schema.
 
 ## Cloudflare Access
 
@@ -91,7 +100,19 @@ The Worker expects:
 ```text
 TEAM_DOMAIN=https://delicate-dream-e4c9.cloudflareaccess.com
 POLICY_AUD=<stored in Cloudflare runtime configuration>
+DEFAULT_ROLE=editor
+ADMIN_EMAILS=<comma-separated addresses, optional>
+EDITOR_EMAILS=<comma-separated addresses, optional>
+VIEWER_EMAILS=<comma-separated addresses, optional>
 ```
+
+Cloudflare Access remains the authentication perimeter. Application authorization is then applied as follows:
+
+- `viewer`: read properties/reports and download issued PDFs;
+- `editor`: viewer permissions plus create/edit/finalise/correct reports and edit properties;
+- `admin`: editor permissions plus archive/restore properties.
+
+Explicit email lists override `DEFAULT_ROLE`. If no role variables are supplied, authenticated users default to `editor` to preserve the existing production workflow.
 
 The Worker validates `Cf-Access-Jwt-Assertion` before allowing any `/api/*` request.
 
@@ -113,9 +134,12 @@ The `DEV_USER_EMAIL` bypass is accepted only on localhost/127.0.0.1 and is never
 Permanent GitHub verification runs on pull requests and pushes to `main`:
 
 - frozen Bun dependency install;
+- high-severity dependency advisory audit;
 - browser TypeScript validation;
 - Worker TypeScript validation;
 - production Vite build;
+- local Worker/D1/R2 integration regression;
+- deterministic PDF regression and artifact export;
 - Wrangler deployment dry-run.
 
 Manual commands:
@@ -152,12 +176,20 @@ D1:
 - `properties` - address/reference/notes and audit fields.
 - `reports` - status, versioned report JSON, completed PDF key and audit fields.
 - Report JSON is schema-versioned and passes through `src/lib/reportMigration.ts` when read/written so future structural changes have an explicit migration path.
-- Draft saves carry the last known `updated_at` version; stale cross-device saves receive HTTP 409 instead of silently overwriting a newer draft.
-- The initial D1 schema restricts the indexed `report_type` column to Entry/Routine/Exit. Extended templates keep their canonical report type inside `report_data` and use a backward-compatible value in the legacy indexed column. Report summaries read the canonical JSON type. No database migration is required for the expanded catalogue.
+- Every report has a monotonic integer revision. Draft saves, photo mutations, deletion and finalisation use atomic compare-and-set writes against that revision; stale operations receive HTTP 409.
+- Migration 0002 removes the legacy Entry/Routine/Exit report-type constraint. `report_type` now stores the canonical report type for every template.
+- Completed reports may be corrected only by creating a linked replacement draft. When the replacement is issued, the original is retained as `superseded` rather than altered or deleted.
+- Properties support archive/restore rather than destructive deletion.
 
-R2:
+Primary R2:
 - `reports/<report-id>/photos/<photo-id>.jpg`
 - `reports/<report-id>/completed/report.pdf`
+
+Recovery R2:
+- `recovery/reports/<report-id>/photos/<photo-id>.jpg`
+- `recovery/reports/<report-id>/completed/report.pdf`
+
+New evidence and issued PDFs are mirrored during the same application operation. Reads fall back to recovery storage when the primary object is unavailable. Draft cleanup removes both copies.
 
 Completed reports cannot be edited or deleted through the V1 API.
 
@@ -197,7 +229,7 @@ Cloudflare-specific files are ordinary repository files and do not change the Go
 
 Included:
 - Properties as report containers.
-- 22 selectable report templates across Residential, Commercial, Maintenance and Building / Strata.
+- 23 selectable report templates across Residential, Commercial, Maintenance, Building / Strata and Custom.
 - Entry, Routine and Exit remain dedicated production templates.
 - Extended reports use catalogue-driven condition, inspection, maintenance/verification, operations and event/handover template families.
 - Building Manager Daily and Monthly reports use a dedicated Category / Reporting Item / Activity Summary / Actions / Photos layout and require photos to be linked to a current reporting item before finalisation.

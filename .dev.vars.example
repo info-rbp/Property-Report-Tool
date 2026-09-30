@@ -1,5 +1,17 @@
 # Local development only. Copy this file to .dev.vars.
 DEV_USER_EMAIL=local@proinspect.test
+DEV_USER_ROLE=admin
 
 # Production requests use Cloudflare Access instead.
 # Configure TEAM_DOMAIN and POLICY_AUD as Worker variables/secrets in Cloudflare.
+#
+# Application authorization is layered on top of Cloudflare Access:
+# DEFAULT_ROLE=editor
+# ADMIN_EMAILS=admin1@example.com,admin2@example.com
+# EDITOR_EMAILS=editor1@example.com,editor2@example.com
+# VIEWER_EMAILS=viewer1@example.com
+#
+# Explicit email lists override DEFAULT_ROLE. Supported roles are:
+# viewer = read/download only
+# editor = create/edit/finalise/correct reports and edit properties
+# admin  = editor permissions plus archive/restore properties
