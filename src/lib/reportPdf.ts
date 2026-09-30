@@ -1372,8 +1372,14 @@ function drawBuildingManagementTableHeader(pdf: jsPDF, y: number, daily: boolean
   return y + h;
 }
 
+function buildingManagementItemPhotoList(report: ReportData, itemId: string): ReportPhoto[] {
+  return report.photos
+    .filter((photo) => photo.itemId === itemId)
+    .sort((a, b) => (a.photoIndex || 0) - (b.photoIndex || 0));
+}
+
 function buildingManagementItemPhotos(report: ReportData, itemId: string): number {
-  return report.photos.filter((photo) => photo.itemId === itemId).length;
+  return buildingManagementItemPhotoList(report, itemId).length;
 }
 
 function buildingManagementPeriodText(item: InspectionItem, daily: boolean): string {
@@ -1384,13 +1390,118 @@ function buildingManagementPeriodText(item: InspectionItem, daily: boolean): str
   return [when, party].filter(Boolean).join('\n');
 }
 
-function drawBuildingManagementActivityPages(
+function drawBuildingManagementPhotoEvidenceHeader(
+  pdf: jsPDF,
+  y: number,
+  item: InspectionItem,
+  photoCount: number,
+  continuation = false
+): number {
+  const h = 7.2;
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, LIGHT_FILL, LIGHT_BORDER);
+  setFont(pdf, 6.3, 'bold');
+  setTextColor(pdf, NAVY);
+  const suffix = continuation ? ' (CONTINUED)' : '';
+  const title = `PHOTO EVIDENCE - ${value(item.name) || 'REPORTING ITEM'}${suffix}`;
+  pdf.text(truncateTextToWidth(pdf, title, CONTENT_WIDTH - 38), MARGIN_X + 1.6, y + 4.6);
+  setFont(pdf, 5.8, 'bold');
+  setTextColor(pdf, TEAL);
+  pdf.text(`${photoCount} ${photoCount === 1 ? 'photo' : 'photos'}`, PAGE_WIDTH - MARGIN_X - 1.6, y + 4.6, { align: 'right' });
+  return y + h + 2;
+}
+
+async function drawBuildingManagementItemPhotoEvidence(
+  pdf: jsPDF,
+  report: ReportData,
+  area: InspectionArea,
+  item: InspectionItem,
+  startY: number,
+  onProgress?: (message: string) => void
+): Promise<number> {
+  const photos = buildingManagementItemPhotoList(report, item.id);
+  if (!photos.length) return startY;
+
+  const template = getReportTemplate(report.details.reportType);
+  const runningTitle = template.shortLabel;
+  const columns = 3;
+  const gapX = 3;
+  const gapY = 2.5;
+  const cellWidth = (CONTENT_WIDTH - (gapX * (columns - 1))) / columns;
+  const captionHeight = 6;
+  const imageHeight = 38;
+  const cellHeight = captionHeight + imageHeight;
+  let y = startY;
+  let embedded = 0;
+
+  const beginEvidenceBlock = (continuation: boolean) => {
+    if (y + 7.2 + 2 + cellHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, runningTitle);
+      y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+    }
+    y = drawBuildingManagementPhotoEvidenceHeader(pdf, y, item, photos.length, continuation);
+  };
+
+  beginEvidenceBlock(false);
+  onProgress?.(`Rendering ${photos.length} photo${photos.length === 1 ? '' : 's'} for "${value(item.name) || 'reporting item'}"...`);
+
+  for (let rowStart = 0; rowStart < photos.length; rowStart += columns) {
+    if (y + cellHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, runningTitle);
+      y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+      y = drawBuildingManagementPhotoEvidenceHeader(pdf, y, item, photos.length, true);
+    }
+
+    const rowPhotos = photos.slice(rowStart, rowStart + columns);
+    for (let column = 0; column < rowPhotos.length; column++) {
+      const photo = rowPhotos[column];
+      const x = MARGIN_X + (column * (cellWidth + gapX));
+      drawBox(pdf, x, y, cellWidth, cellHeight, undefined, LIGHT_BORDER);
+
+      setFont(pdf, 5.4, 'bold');
+      setTextColor(pdf, TEXT);
+      pdf.text(`Photo ${rowStart + column + 1} of ${photos.length}`, x + 1.2, y + 3.8);
+
+      const source = photoSource(photo);
+      if (!source) {
+        throw new Error(`Photo "${photo.name || photo.id}" has no image source. The report was not finalised.`);
+      }
+
+      const image = await prepareImageForPdf(source, photo.name || `photo ${rowStart + column + 1}`, 720, 45_000);
+      const fit = containRect(image.width, image.height, cellWidth - 1.6, imageHeight - 1.6);
+      const imageY = y + captionHeight;
+      pdf.addImage(
+        image.bytes,
+        'JPEG',
+        x + 0.8 + fit.xOffset,
+        imageY + 0.8 + fit.yOffset,
+        fit.width,
+        fit.height,
+        undefined,
+        'FAST'
+      );
+
+      embedded += 1;
+      if (embedded % 4 === 0) await yieldToBrowser();
+    }
+
+    y += cellHeight + gapY;
+  }
+
+  if (embedded !== photos.length) {
+    throw new Error(`Building Manager photo validation failed for "${value(item.name) || item.id}".`);
+  }
+
+  return y + 1;
+}
+
+async function drawBuildingManagementActivityPages(
   pdf: jsPDF,
   report: ReportData,
   startY: number,
   onProgress?: (message: string) => void
 ) {
   const daily = isDailyBuildingManagementReport(report.details.reportType);
+  const inlinePhotos = report.details.reportType === 'BuildingManagementMonthly';
   const template = getReportTemplate(report.details.reportType);
   const runningTitle = template.shortLabel;
   const x = buildingManagementColumnPositions();
@@ -1400,7 +1511,8 @@ function drawBuildingManagementActivityPages(
   if (y + 20 > BODY_BOTTOM) y = addContentPage(pdf, report, runningTitle);
   y = drawRoutinePageHeading(pdf, y, template.findingsTitle);
 
-  report.areas.forEach((area, areaIndex) => {
+  for (let areaIndex = 0; areaIndex < report.areas.length; areaIndex++) {
+    const area = report.areas[areaIndex];
     onProgress?.(`Laying out Building Manager category ${areaIndex + 1} of ${report.areas.length}...`);
 
     if (y + 20 > BODY_BOTTOM) y = addContentPage(pdf, report, runningTitle);
@@ -1419,10 +1531,11 @@ function drawBuildingManagementActivityPages(
       setTextColor(pdf, MUTED);
       pdf.text('No activity recorded in this category for the reporting period.', MARGIN_X + 2, y + 5.6);
       y += h + 2.5;
-      return;
+      continue;
     }
 
-    area.items.forEach((item) => {
+    for (let itemIndex = 0; itemIndex < area.items.length; itemIndex++) {
+      const item = area.items[itemIndex];
       setFont(pdf, 5.9, 'normal');
       const summaryLines = wrapText(pdf, value(item.agentComments) || 'No activity summary recorded.', BUILDING_MANAGEMENT_WIDTHS[2] - 2.6);
       const actionLines = wrapText(pdf, value(item.actionComments) || 'No further action recorded.', BUILDING_MANAGEMENT_WIDTHS[3] - 2.6);
@@ -1489,10 +1602,22 @@ function drawBuildingManagementActivityPages(
         offset += chunkSize;
         firstFragment = false;
       }
-    });
+
+      if (inlinePhotos && buildingManagementItemPhotos(report, item.id) > 0) {
+        y = await drawBuildingManagementItemPhotoEvidence(pdf, report, area, item, y, onProgress);
+
+        if (itemIndex < area.items.length - 1) {
+          if (y + 13 > BODY_BOTTOM) {
+            y = addContentPage(pdf, report, runningTitle);
+            y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+          }
+          y = drawBuildingManagementTableHeader(pdf, y, daily);
+        }
+      }
+    }
 
     y += 2.5;
-  });
+  }
 }
 
 function drawBuildingManagementClosingPages(pdf: jsPDF, report: ReportData) {
@@ -1516,13 +1641,13 @@ function drawBuildingManagementClosingPages(pdf: jsPDF, report: ReportData) {
   drawDisclaimerSection(pdf, report, y);
 }
 
-function drawBuildingManagementReportPages(
+async function drawBuildingManagementReportPages(
   pdf: jsPDF,
   report: ReportData,
   onProgress?: (message: string) => void
 ) {
   const overviewEnd = drawBuildingManagementOverview(pdf, report);
-  drawBuildingManagementActivityPages(pdf, report, overviewEnd, onProgress);
+  await drawBuildingManagementActivityPages(pdf, report, overviewEnd, onProgress);
 }
 
 interface ExitItemFragment {
@@ -2313,8 +2438,10 @@ export async function generateReportPdf(
   } else if (isBuildingManagementTemplate(report.details.reportType)) {
     const template = getReportTemplate(report.details.reportType);
     onProgress?.(`Building ${template.label}...`);
-    drawBuildingManagementReportPages(pdf, report, onProgress);
-    await drawPhotoPages(pdf, report, onProgress);
+    await drawBuildingManagementReportPages(pdf, report, onProgress);
+    if (report.details.reportType !== 'BuildingManagementMonthly') {
+      await drawPhotoPages(pdf, report, onProgress);
+    }
     onProgress?.('Building Building Manager summary and sign-off...');
     drawBuildingManagementClosingPages(pdf, report);
   } else {
@@ -2339,6 +2466,8 @@ export async function generateReportPdf(
       ? 3 + photoPageMinimum
       : report.details.reportType === 'Exit'
       ? 2 + (report.areas.length ? 1 : 0) + photoPageMinimum
+      : report.details.reportType === 'BuildingManagementMonthly'
+      ? 3
       : template.family === 'condition'
       ? 3 + (report.areas.length ? 1 : 0) + photoPageMinimum
       : 3 + photoPageMinimum;
