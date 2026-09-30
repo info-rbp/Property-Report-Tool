@@ -213,7 +213,9 @@ export const BuildingManagementReportDocument: React.FC<Props> = ({ report }) =>
   const template = getReportTemplate(report.details.reportType);
   const daily = report.details.reportType === 'BuildingManagementDaily';
   const monthlyPilot = report.details.reportType === 'BuildingManagementMonthly';
-  const cover = report.photos.find((photo) => photo.isCover) || report.photos[0];
+  const cover = report.details.coverPhotoUrl
+    ? { name: 'Report cover', url: report.details.coverPhotoUrl }
+    : report.photos.find((photo) => photo.isCover) || report.photos[0];
   const details = report.details;
 
   const summaryRows = daily
