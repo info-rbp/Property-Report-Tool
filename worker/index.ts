@@ -445,21 +445,28 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         if (!file.type.startsWith('image/')) throw new HttpError(400, 'Only image uploads are allowed.');
         if (file.size > 5 * 1024 * 1024) throw new HttpError(413, 'Processed image exceeds the 5 MB upload limit.');
 
-        const key = `reports/${reportId}/cover/cover.jpg`;
+        const previousKey = report.details.coverPhotoStorageKey;
+        const key = `reports/${reportId}/cover/${crypto.randomUUID()}.jpg`;
         await env.REPORT_STORAGE.put(key, await file.arrayBuffer(), {
           httpMetadata: { contentType: 'image/jpeg' },
           customMetadata: { reportId, uploadedBy: userEmail, purpose: 'cover' },
         });
 
         try {
-          return json(await updateReportData(env, row, {
+          const saved = await updateReportData(env, row, {
             ...report,
             details: {
               ...report.details,
               coverPhotoUrl: undefined,
               coverPhotoStorageKey: key,
             },
-          }, userEmail));
+          }, userEmail);
+          if (previousKey && previousKey !== key) {
+            await env.REPORT_STORAGE.delete(previousKey).catch((error) => {
+              console.error('Cover photo replaced but old R2 object cleanup failed:', error);
+            });
+          }
+          return json(saved);
         } catch (error) {
           await env.REPORT_STORAGE.delete(key).catch(() => undefined);
           throw error;
