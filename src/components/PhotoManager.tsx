@@ -127,10 +127,6 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     areaFileInputRef.current?.click();
   };
 
-  const handleSetCoverPhoto = (id: string) => {
-    onUpdatePhotos(photos.map((photo) => ({ ...photo, isCover: photo.id === id })));
-  };
-
   const handleRenamePhoto = (id: string, name: string) => {
     onUpdatePhotos(photos.map((photo) => photo.id === id ? { ...photo, name } : photo));
   };
@@ -446,13 +442,6 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                     #{photo.photoIndex || index + 1}
                   </div>
                   <div className="absolute top-1.5 right-1.5 flex gap-1">
-                    <button
-                      onClick={() => handleSetCoverPhoto(photo.id)}
-                      className={`p-1 rounded shadow-xs ${photo.isCover ? 'bg-amber-400 text-neutral-900' : 'bg-white/90 text-neutral-600 opacity-0 group-hover:opacity-100'}`}
-                      title="Use as cover photo"
-                    >
-                      <Star className="w-3.5 h-3.5" />
-                    </button>
                     <button
                       onClick={() => onDeletePhoto(photo.id)}
                       className="bg-red-600 text-white p-1 rounded shadow-xs opacity-0 group-hover:opacity-100"
