@@ -483,6 +483,8 @@ buildingMonthly.details.clientName = 'Council of Owners';
 buildingMonthly.details.inspectingAgent = 'Building Manager Regression Test';
 buildingMonthly.details.agentSignName = 'Building Manager Regression Test';
 buildingMonthly.details.buildingSummary = 'Monthly building-management activity summary covering maintenance, security, cleaning, grounds, resident movements, inductions, waste, other matters, leave plans and issues.';
+buildingMonthly.details.coverPhotoUrl = PORTRAIT_JPEG;
+buildingMonthly.details.coverPhotoStorageKey = 'regression/building-monthly-cover.jpg';
 buildingMonthly.areas[0].items = Array.from({ length: 14 }, (_, index) => ({
   id: `bm-monthly-maintenance-${index + 1}`,
   name: index % 2 === 0 ? 'Roof waterproofing works' : 'Electrical / services attendance',
@@ -523,7 +525,6 @@ buildingMonthly.photos = [
     itemId: 'bm-monthly-maintenance-1',
     itemName: buildingMonthly.areas[0].items[0].name,
     photoIndex: 1,
-    isCover: true,
     dataUrl: LANDSCAPE_JPEG,
   },
   {
