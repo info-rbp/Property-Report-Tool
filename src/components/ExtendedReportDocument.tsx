@@ -110,7 +110,9 @@ function PhotoPreviewPages({ report }: { report: ReportData }) {
 
 export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
   const template = getReportTemplate(report.details.reportType);
-  const cover = report.photos.find((photo) => photo.isCover) || report.photos[0];
+  const cover = report.details.coverPhotoUrl
+    ? { name: 'Report cover', url: report.details.coverPhotoUrl }
+    : report.photos.find((photo) => photo.isCover) || report.photos[0];
   const conditionFamily = template.family === 'condition';
   const displayTitle =
     report.details.reportType === 'Custom' && report.details.formName?.trim()
