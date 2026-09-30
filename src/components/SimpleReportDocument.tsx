@@ -39,7 +39,9 @@ function PreviewFooter() {
 
 function CoverPage({ report }: { report: ReportData }) {
   const { details, photos } = report;
-  const cover = photos.find((photo) => photo.isCover) || photos[0];
+  const cover = details.coverPhotoUrl
+    ? { name: 'Report cover', url: details.coverPhotoUrl }
+    : photos.find((photo) => photo.isCover) || photos[0];
   return (
     <div className="pdf-page w-[210mm] min-h-[297mm] bg-white text-neutral-900 p-[18mm] flex flex-col shadow-2xl box-border">
       <div className="flex justify-between items-start">
