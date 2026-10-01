@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Building2, Camera, ChevronDown, ChevronRight, ClipboardList, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { getReportTemplate } from '../data/reportCatalogue';
+import { normalizeAreaName } from '../lib/reportFormatting';
 import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   photos: ReportPhoto[];
   onChangeDetails: (details: TenancyDetails) => void;
   onChangeAreas: (areas: InspectionArea[]) => void;
+  onChangePhotos: (photos: ReportPhoto[]) => void;
 }
 
 export const BuildingManagementReportEditor: React.FC<Props> = ({
@@ -17,12 +19,14 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   photos,
   onChangeDetails,
   onChangeAreas,
+  onChangePhotos,
 }) => {
   const template = getReportTemplate(details.reportType);
   const isDaily = details.reportType === 'BuildingManagementDaily';
   const monthlyPilot = details.reportType === 'BuildingManagementMonthly';
   const [tab, setTab] = useState<'activities' | 'details' | 'summary'>('activities');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
+  const [categoryNameDrafts, setCategoryNameDrafts] = useState<Record<string, string>>({});
 
   const itemPhotoCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -65,6 +69,69 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
     );
   };
 
+  const moveCategory = (areaId: string, direction: 'up' | 'down') => {
+    const currentIndex = areas.findIndex((area) => area.id === areaId);
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= areas.length) return;
+
+    const nextAreas = [...areas];
+    [nextAreas[currentIndex], nextAreas[nextIndex]] = [nextAreas[nextIndex], nextAreas[currentIndex]];
+    onChangeAreas(nextAreas);
+  };
+
+  const commitCategoryName = (area: InspectionArea) => {
+    const draft = categoryNameDrafts[area.id];
+    if (draft === undefined) return;
+
+    const name = draft.trim();
+    if (!name) {
+      alert('Category name cannot be blank.');
+      setCategoryNameDrafts((current) => {
+        const next = { ...current };
+        delete next[area.id];
+        return next;
+      });
+      return;
+    }
+
+    const normalized = normalizeAreaName(name);
+    const duplicate = areas.some(
+      (candidate) => candidate.id !== area.id && normalizeAreaName(candidate.name) === normalized
+    );
+    if (duplicate) {
+      alert(`A category named "${name}" already exists. Category names must be unique.`);
+      setCategoryNameDrafts((current) => {
+        const next = { ...current };
+        delete next[area.id];
+        return next;
+      });
+      return;
+    }
+
+    if (name !== area.name) {
+      const oldAreaKey = normalizeAreaName(area.name);
+      const linkedItemIds = new Set(area.items.map((item) => item.id));
+
+      onChangeAreas(
+        areas.map((candidate) => candidate.id === area.id ? { ...candidate, name } : candidate)
+      );
+      onChangePhotos(
+        photos.map((photo) =>
+          (photo.itemId && linkedItemIds.has(photo.itemId)) ||
+          normalizeAreaName(photo.areaName || '') === oldAreaKey
+            ? { ...photo, areaName: name }
+            : photo
+        )
+      );
+    }
+
+    setCategoryNameDrafts((current) => {
+      const next = { ...current };
+      delete next[area.id];
+      return next;
+    });
+  };
+
   const addItem = (areaId: string) => {
     const newItem: InspectionItem = {
       id: `bm-item-${crypto.randomUUID()}`,
@@ -97,6 +164,10 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   const addCategory = () => {
     const name = prompt('Enter the new Building Management report category:')?.trim();
     if (!name) return;
+    if (areas.some((area) => normalizeAreaName(area.name) === normalizeAreaName(name))) {
+      alert(`A category named "${name}" already exists. Category names must be unique.`);
+      return;
+    }
     const area: InspectionArea = {
       id: `bm-area-${crypto.randomUUID()}`,
       name,
@@ -107,7 +178,13 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   };
 
   const deleteCategory = (area: InspectionArea) => {
-    const linked = photos.filter((photo) => photo.areaName === area.name).length;
+    const linkedItemIds = new Set(area.items.map((item) => item.id));
+    const areaKey = normalizeAreaName(area.name);
+    const linked = photos.filter(
+      (photo) =>
+        (photo.itemId && linkedItemIds.has(photo.itemId)) ||
+        normalizeAreaName(photo.areaName || '') === areaKey
+    ).length;
     if (linked > 0) {
       alert(`This category has ${linked} linked photo${linked === 1 ? '' : 's'}. Reassign or delete those photos before removing the category.`);
       return;
@@ -176,8 +253,8 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                 <h3 className="text-sm font-bold text-neutral-900">{template.findingsTitle}</h3>
                 <p className="text-xs text-neutral-500 mt-1">
                   {monthlyPilot
-                    ? 'Add individual reporting items under the same categories used by the Building Management report. Use the arrow controls to set the order shown in the report. Photos are linked to the specific reporting item from the Photos tab and appear directly beneath that item in the report.'
-                    : 'Add individual reporting items under the same categories used by the Building Management report. Photos are linked to the specific reporting item from the Photos tab.'}
+                    ? 'Rename and reorder categories using the controls below, then add individual reporting items within each category. Use the item arrow controls to set their order. Photos remain linked to their reporting item and follow category name changes automatically.'
+                    : 'Rename and reorder categories using the controls below, then add individual reporting items within each category. Photos remain linked to their reporting item and follow category name changes automatically.'}
                 </p>
               </div>
               <button onClick={addCategory} className="px-3 py-1.5 bg-[#0a2540] text-white rounded-lg text-xs font-bold flex items-center gap-1.5">
@@ -185,7 +262,7 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
               </button>
             </div>
 
-            {areas.map((area) => {
+            {areas.map((area, areaIndex) => {
               const expanded = expandedAreaId === area.id;
               return (
                 <div key={area.id} className="border border-neutral-300 rounded-xl bg-white overflow-hidden">
@@ -193,16 +270,55 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                     className="p-3 bg-neutral-100 flex items-center justify-between cursor-pointer"
                     onClick={() => setExpandedAreaId(expanded ? null : area.id)}
                   >
-                    <div className="flex items-center gap-2">
-                      {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                      <span className="font-black text-xs md:text-sm">{area.name}</span>
-                      <span className="text-[11px] bg-neutral-200 px-2 py-0.5 rounded-full">{area.items.length} reporting items</span>
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {expanded ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
+                      <input
+                        value={categoryNameDrafts[area.id] ?? area.name}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) =>
+                          setCategoryNameDrafts((current) => ({ ...current, [area.id]: event.target.value }))
+                        }
+                        onBlur={() => commitCategoryName(area)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.currentTarget.blur();
+                        }}
+                        aria-label="Category name"
+                        title="Edit category name"
+                        className="min-w-0 w-full max-w-md bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 font-black text-xs md:text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                      />
+                      <span className="text-[11px] bg-neutral-200 px-2 py-0.5 rounded-full whitespace-nowrap">{area.items.length} reporting items</span>
                     </div>
-                    <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                    <div className="flex items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => moveCategory(area.id, 'up')}
+                        disabled={areaIndex === 0}
+                        aria-label="Move category up"
+                        title="Move category up"
+                        className="p-1.5 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveCategory(area.id, 'down')}
+                        disabled={areaIndex === areas.length - 1}
+                        aria-label="Move category down"
+                        title="Move category down"
+                        className="p-1.5 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                      >
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
                       <button onClick={() => addItem(area.id)} className="px-2.5 py-1 text-xs border border-neutral-300 rounded bg-white font-semibold">
                         + Reporting Item
                       </button>
-                      <button onClick={() => deleteCategory(area)} className="p-1 text-neutral-400 hover:text-red-600">
+                      <button
+                        type="button"
+                        onClick={() => deleteCategory(area)}
+                        aria-label="Delete category"
+                        title="Delete category"
+                        className="p-1.5 text-neutral-400 hover:text-red-600"
+                      >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
