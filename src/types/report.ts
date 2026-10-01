@@ -177,9 +177,14 @@ export interface ReportExecutionParty {
 }
 
 export interface ReportExecutionField {
+  fieldType?: 'signature' | 'text';
   label: string;
   placementLabel?: string;
   promptText?: string;
+  pageNumber?: number;
+  xPercent?: number;
+  yPercent?: number;
+  widthPercent?: number;
   valueText?: string;
   partyId?: string;
 }
