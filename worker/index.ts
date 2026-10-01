@@ -5,6 +5,7 @@ import { migrateReportData } from '../src/lib/reportMigration';
 import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
 import { CURRENT_REPORT_SCHEMA_VERSION, isReportType } from '../src/types/report';
 import type { ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
+import { handlePublicWorkflowApi, handleWorkflowApi } from './workflowPlatform';
 
 interface Env {
   DB: D1Database;
@@ -12,6 +13,9 @@ interface Env {
   TEAM_DOMAIN?: string;
   POLICY_AUD?: string;
   DEV_USER_EMAIL?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
+  SIGNING_BASE_URL?: string;
 }
 
 interface PropertyRow {
@@ -275,6 +279,9 @@ async function deleteReportObjects(env: Env, reportId: string): Promise<void> {
 
 async function handleApi(request: Request, env: Env): Promise<Response> {
   const userEmail = await authenticate(request, env);
+  const workflowResponse = await handleWorkflowApi(request, env, userEmail);
+  if (workflowResponse) return workflowResponse;
+
   const url = new URL(request.url);
   const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
 
@@ -643,6 +650,10 @@ export default {
       if (!url.pathname.startsWith('/api/')) {
         return new Response('Not found', { status: 404, headers: securityHeaders() });
       }
+
+      const publicWorkflowResponse = await handlePublicWorkflowApi(request, env);
+      if (publicWorkflowResponse) return publicWorkflowResponse;
+
       return await handleApi(request, env);
     } catch (error) {
       if (error instanceof HttpError) return json({ error: error.message }, error.status);
