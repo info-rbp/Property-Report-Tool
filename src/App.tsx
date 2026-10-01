@@ -30,6 +30,7 @@ import { processInspectionImage } from './lib/imageProcessor';
 import { normalizeAreaName } from './lib/reportFormatting';
 import {
   countOfflineOperations,
+  hydrateOfflinePhotoPreviews,
   optimisticOfflinePhoto,
   queueOfflinePhoto,
   queueOfflineSave,
@@ -192,7 +193,7 @@ export default function App() {
           const cached = lastReportId ? await getCachedReport(lastReportId).catch(() => null) : null;
           const property = propertyJson ? JSON.parse(propertyJson) as PropertyRecord : null;
           if (cached && property) {
-            const normalized = normalizeReport(cached);
+            const normalized = await hydrateOfflinePhotoPreviews(normalizeReport(cached));
             setSelectedProperty(property);
             setReport(normalized);
             reportRef.current = normalized;
@@ -573,7 +574,7 @@ export default function App() {
               isCover: false,
             };
             await queueOfflinePhoto(latestTargetReport.id!, processed.blob, metadata);
-            const pendingPhoto = optimisticOfflinePhoto(metadata);
+            const pendingPhoto = optimisticOfflinePhoto(metadata, processed.blob);
             setReport((current) => {
               if (!current || current.id !== latestTargetReport.id) return current;
               const updated = { ...current, photos: [...current.photos, pendingPhoto] };
