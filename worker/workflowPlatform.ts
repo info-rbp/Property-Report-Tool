@@ -646,6 +646,7 @@ export async function handlePublicWorkflowApi(request: Request, env: WorkflowEnv
         requestId: loaded.request.id,
         completedAt: now,
         parties: (signedRows.results || []).map((party) => ({
+          id: party.id,
           name: party.name,
           email: party.email,
           roleLabel: party.role_label,
