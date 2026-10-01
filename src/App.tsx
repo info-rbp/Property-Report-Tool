@@ -56,7 +56,8 @@ export default function App() {
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const [pendingPhotoUploads, setPendingPhotoUploads] = useState(0);
+  const isUploadingPhotos = pendingPhotoUploads > 0;
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [exportProgressText, setExportProgressText] = useState<string | null>(null);
@@ -66,6 +67,13 @@ export default function App() {
   const serverVersionsRef = useRef<Record<string, string | undefined>>({});
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const queuedSaveCountRef = useRef(0);
+  const photoUploadQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const queuedPhotoCountRef = useRef(0);
+  const reportRef = useRef<ReportData | null>(null);
+
+  useEffect(() => {
+    reportRef.current = report;
+  }, [report]);
 
   const loadProperties = async () => {
     const list = await api.listProperties();
@@ -129,14 +137,14 @@ export default function App() {
   useEffect(() => {
     if (!report?.id || report.status === 'completed') return;
 
-    cacheReport({
-      ...report,
-      updatedAt: serverVersionsRef.current[report.id] || report.updatedAt,
-    }).catch(() => undefined);
     if (isUploadingPhotos || isCompleting) {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
       return;
     }
+    cacheReport({
+      ...report,
+      updatedAt: serverVersionsRef.current[report.id] || report.updatedAt,
+    }).catch(() => undefined);
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
 
     saveTimerRef.current = window.setTimeout(async () => {
@@ -312,84 +320,147 @@ export default function App() {
     }
   };
 
-  const handleUploadCoverPhoto = async (file: File) => {
-    if (!report?.id || report.status === 'completed') return;
-    setIsUploadingPhotos(true);
-    setStatusMessage(null);
+  const enqueuePhotoWork = (count: number, work: () => Promise<void>): Promise<void> => {
+    queuedPhotoCountRef.current += count;
+    setPendingPhotoUploads(queuedPhotoCountRef.current);
 
-    try {
-      const savedDraft = await saveDraftImmediately(report);
-      const processed = await processInspectionImage(file);
-      const updated = normalizeReport(await api.uploadCoverPhoto(savedDraft.id!, processed.blob));
-      if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
-      setReport(updated);
-      await cacheReport(updated).catch(() => undefined);
-      setStatusMessage({
-        text: savedDraft.details.coverPhotoUrl ? 'Cover photo replaced.' : 'Cover photo uploaded.',
-        type: 'success',
-      });
-    } catch (error: any) {
-      setStatusMessage({ text: error.message || 'Unable to upload cover photo.', type: 'error' });
-    } finally {
-      setIsUploadingPhotos(false);
-    }
+    return new Promise<void>((resolve) => {
+      photoUploadQueueRef.current = photoUploadQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            await work();
+          } finally {
+            queuedPhotoCountRef.current = Math.max(0, queuedPhotoCountRef.current - count);
+            setPendingPhotoUploads(queuedPhotoCountRef.current);
+            if (queuedPhotoCountRef.current === 0) {
+              const latest = reportRef.current;
+              if (latest?.id) {
+                await cacheReport({
+                  ...latest,
+                  updatedAt: serverVersionsRef.current[latest.id] || latest.updatedAt,
+                }).catch(() => undefined);
+              }
+            }
+            resolve();
+          }
+        });
+    });
   };
 
-  const handleUploadPhotos = async (files: File[], areaName: string, itemId?: string) => {
-    if (!report?.id || report.status === 'completed') return;
-    setIsUploadingPhotos(true);
-    setStatusMessage(null);
+  const mergePhotoMutationResult = (updated: ReportData) => {
+    if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
+    setReport((current) => {
+      if (!current || current.id !== updated.id) return current;
+      const merged: ReportData = {
+        ...current,
+        photos: updated.photos,
+        updatedAt: updated.updatedAt,
+        details: {
+          ...current.details,
+          coverPhotoUrl: updated.details.coverPhotoUrl,
+          coverPhotoStorageKey: updated.details.coverPhotoStorageKey,
+        },
+      };
+      reportRef.current = merged;
+      return merged;
+    });
+  };
 
-    try {
-      if (report.areas.length > 0) {
-        const validAreas = new Set(report.areas.map((area) => normalizeAreaName(area.name)));
-        if (!validAreas.has(normalizeAreaName(areaName))) {
-          throw new Error('Select one of the current commentary areas before uploading photos.');
-        }
-      }
-      const savedDraft = await saveDraftImmediately(report);
-      const item = itemId
-        ? savedDraft.areas.flatMap((area) => area.items).find((candidate) => candidate.id === itemId)
-        : undefined;
-      if (itemId && !item) {
-        throw new Error('The selected reporting item no longer exists. Select the item again before uploading.');
-      }
+  const handleUploadCoverPhoto = async (file: File) => {
+    if (!reportRef.current?.id || reportRef.current.status === 'completed') return;
 
-      let current = savedDraft;
-      let nextAreaPhotoIndex = current.photos
-        .filter((photo) => photo.areaName === areaName)
-        .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
+    setStatusMessage({
+      text: 'Cover photo queued for upload. You can continue working while it uploads.',
+      type: 'info',
+    });
 
-      for (const file of files) {
+    return enqueuePhotoWork(1, async () => {
+      try {
+        const latest = reportRef.current;
+        if (!latest?.id || latest.status === 'completed') return;
+        await saveDraftImmediately(latest);
         const processed = await processInspectionImage(file);
-        const photoIndex = ++nextAreaPhotoIndex;
-        const photoId = crypto.randomUUID();
-        const name = item
-          ? `${areaName}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
-          : `${areaName}: Overall (photo ${photoIndex})`;
-        current = normalizeReport(await api.uploadPhoto(current.id!, processed.blob, {
-          id: photoId,
-          name,
-          areaName,
-          itemId: item?.id,
-          itemName: item?.name,
-          photoIndex,
-          isCover: current.photos.length === 0,
-        }));
-        if (current.id) serverVersionsRef.current[current.id] = current.updatedAt;
-        setReport(current);
-        await cacheReport(current).catch(() => undefined);
+        const updated = normalizeReport(await api.uploadCoverPhoto(latest.id, processed.blob));
+        mergePhotoMutationResult(updated);
+        setStatusMessage({ text: 'Cover photo uploaded.', type: 'success' });
+      } catch (error: any) {
+        setStatusMessage({ text: error.message || 'Unable to upload cover photo.', type: 'error' });
       }
+    });
+  };
 
-      setStatusMessage({
-        text: `Uploaded ${files.length} photo${files.length === 1 ? '' : 's'} to cloud storage.`,
-        type: 'success',
-      });
-    } catch (error: any) {
-      setStatusMessage({ text: error.message || 'Unable to upload photos.', type: 'error' });
-    } finally {
-      setIsUploadingPhotos(false);
-    }
+  const handleUploadPhotos = async (
+    files: File[],
+    areaName: string,
+    itemId?: string,
+    areaId?: string
+  ) => {
+    const activeReport = reportRef.current;
+    if (!activeReport?.id || activeReport.status === 'completed' || files.length === 0) return;
+
+    setStatusMessage({
+      text: `Queued ${files.length} photo${files.length === 1 ? '' : 's'} for upload. You can continue editing or queue photos to other categories/items.`,
+      type: 'info',
+    });
+
+    return enqueuePhotoWork(files.length, async () => {
+      try {
+        const latestBeforeSave = reportRef.current;
+        if (!latestBeforeSave?.id || latestBeforeSave.status === 'completed') return;
+        const savedDraft = await saveDraftImmediately(latestBeforeSave);
+
+        const latestTargetReport = reportRef.current || savedDraft;
+        const targetArea = areaId
+          ? latestTargetReport.areas.find((area) => area.id === areaId)
+          : latestTargetReport.areas.find((area) => normalizeAreaName(area.name) === normalizeAreaName(areaName));
+        if (!targetArea) {
+          throw new Error('The selected photo category no longer exists. Drop the photos onto the category again.');
+        }
+
+        const item = itemId
+          ? targetArea.items.find((candidate) => candidate.id === itemId)
+          : undefined;
+        if (itemId && !item) {
+          throw new Error('The selected reporting item no longer exists. Drop the photos onto the item again.');
+        }
+
+        let currentServerReport = savedDraft;
+        let nextAreaPhotoIndex = currentServerReport.photos
+          .filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
+          .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
+
+        for (const file of files) {
+          const processed = await processInspectionImage(file);
+          const photoIndex = ++nextAreaPhotoIndex;
+          const photoId = crypto.randomUUID();
+          const name = item
+            ? `${targetArea.name}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
+            : `${targetArea.name}: Category photo ${photoIndex}`;
+
+          currentServerReport = normalizeReport(await api.uploadPhoto(currentServerReport.id!, processed.blob, {
+            id: photoId,
+            name,
+            areaName: targetArea.name,
+            itemId: item?.id,
+            itemName: item?.name,
+            photoIndex,
+            isCover: false,
+          }));
+          mergePhotoMutationResult(currentServerReport);
+
+          // Give the browser a rendering opportunity between large image operations.
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        }
+
+        setStatusMessage({
+          text: `Uploaded ${files.length} photo${files.length === 1 ? '' : 's'} to ${item?.name || targetArea.name}.`,
+          type: 'success',
+        });
+      } catch (error: any) {
+        setStatusMessage({ text: error.message || 'Unable to upload photos.', type: 'error' });
+      }
+    });
   };
 
   const handleDeletePhoto = async (photoId: string) => {
@@ -699,6 +770,8 @@ export default function App() {
                 details={report.details}
                 areas={report.areas}
                 photos={report.photos}
+                pendingPhotoUploads={pendingPhotoUploads}
+                onUploadPhotos={handleUploadPhotos}
                 onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
                 onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
                 onChangePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
@@ -721,6 +794,7 @@ export default function App() {
               areas={report.areas}
               coverPhotoUrl={report.details.coverPhotoUrl}
               isUploading={isUploadingPhotos}
+              pendingUploadCount={pendingPhotoUploads}
               onUploadPhotos={handleUploadPhotos}
               onUploadCoverPhoto={handleUploadCoverPhoto}
               onUpdatePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
