@@ -55,8 +55,9 @@ The sending domain must be verified in Resend.
 Send-only delivery:
 - requires a completed report;
 - always uses the stored completed PDF from R2;
-- records a `report_deliveries` row;
+- records recipients, CC, subject, message and delivery status in `report_deliveries`;
 - uses a Resend idempotency key;
+- uses a conservative 25 MB attachment ceiling so base64/MIME overhead remains below Resend's overall message-size ceiling;
 - currently treats successful Resend API acceptance as `sent`.
 
 The branch intentionally does not yet mark emails as `delivered`/bounced from webhooks. Resend webhook integration can be enabled as a later hardening step without changing report/signature data.
@@ -80,10 +81,13 @@ Supported flows:
 - optional signatory commentary;
 - custom text fields;
 - per-field label, prompt and location/purpose description;
+- optional PDF page/X/Y/width placement for signature or text fields;
+- fields with no page coordinates remain on the dedicated execution/audit page;
 - expiring tokenised signing links;
-- deterministic executed PDF generation;
+- deterministic executed PDF generation using the same production renderer as issued reports;
+- resumable final execution if the final signer's browser closes after signing;
 - executed PDF stored in R2;
-- fully executed copy sent individually to all parties.
+- fully executed copy sent individually to all parties with fresh 30-day download links.
 
 ### Public signing hostname
 
@@ -111,7 +115,10 @@ The branch adds:
 - IndexedDB mutation outbox;
 - offline report saves;
 - offline compressed photo blob storage;
-- ordered replay after connectivity returns.
+- ordered replay after connectivity returns;
+- locally queued photo previews survive an offline app reload;
+- report photos/covers already viewed on the device are selectively cached for field use;
+- atomic D1 compare-and-set updates prevent concurrent browser/device mutations from silently overwriting one another.
 
 Operational workflow:
 1. Open the property/report while online before attending site.
@@ -174,7 +181,10 @@ On compatible mobile browsers:
 - expired token;
 - reused signed token;
 - all parties receive executed copy;
-- executed PDF contains execution/signature page.
+- reopen a signed link before execution finishes and confirm execution resumes;
+- place a signature/text field on an existing PDF page by page/X/Y/width;
+- leave coordinates blank and confirm the field appears only on the execution page;
+- executed PDF contains the complete execution/signature audit page.
 
 ### Offline
 - open report online, then airplane mode;
