@@ -433,7 +433,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         const headers = new Headers();
         object.writeHttpMetadata(headers);
         headers.set('ETag', object.httpEtag);
-        headers.set('Cache-Control', 'private, max-age=3600');
+        headers.set('Cache-Control', 'private, no-store');
         return new Response(object.body, { headers: securityHeaders(headers) });
       }
 
@@ -505,10 +505,6 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (itemId && !linkedItem) {
         throw new HttpError(400, 'The selected reporting item does not belong to the selected report category.');
       }
-      if (isBuildingManagementTemplate(report.details.reportType) && !linkedItem) {
-        throw new HttpError(400, 'Building Manager photos must be linked to a reporting item.');
-      }
-
       const key = `reports/${reportId}/photos/${photoId}.jpg`;
       await env.REPORT_STORAGE.put(key, await file.arrayBuffer(), {
         httpMetadata: { contentType: 'image/jpeg' },
@@ -551,7 +547,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         const headers = new Headers();
         object.writeHttpMetadata(headers);
         headers.set('ETag', object.httpEtag);
-        headers.set('Cache-Control', 'private, max-age=3600');
+        headers.set('Cache-Control', 'private, no-store');
         return new Response(object.body, { headers: securityHeaders(headers) });
       }
 
