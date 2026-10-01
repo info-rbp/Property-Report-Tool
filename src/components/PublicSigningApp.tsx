@@ -100,23 +100,60 @@ export const PublicSigningApp: React.FC<{ token: string }> = ({ token }) => {
   const [status, setStatus] = useState<'loading' | 'ready' | 'submitting' | 'complete' | 'waiting' | 'error'>('loading');
   const [message, setMessage] = useState('');
 
+  const storeExecutedCopy = async (executedReport: import('../types/report').ReportData) => {
+    setStatus('submitting');
+    setMessage('All signatures received. Preparing the fully executed copy...');
+    const pdf = await generateReportPdf(executedReport, (progress) => setMessage(progress));
+    await api.uploadExecutedPdf(token, pdf);
+    setStatus('complete');
+    setMessage('Signing is complete. A fully executed copy has been sent to all parties.');
+  };
+
   useEffect(() => {
-    api.publicSigningPacket(token)
-      .then((result) => {
+    let active = true;
+    (async () => {
+      try {
+        const result = await api.publicSigningPacket(token);
+        if (!active) return;
         setPacket(result);
         setSignedName(result.party.name);
-        if (result.status === 'completed' || result.party.status === 'signed') {
+
+        if (result.status === 'completed') {
           setStatus('complete');
-        } else if (!result.canSign) {
+          return;
+        }
+
+        if (result.party.status === 'signed') {
+          const execution = await api.publicExecutionPayload(token);
+          if (!active) return;
+          if (execution.readyForExecution && execution.report) {
+            await storeExecutedCopy(execution.report);
+            return;
+          }
+          setStatus('complete');
+          setMessage(
+            execution.alreadyStored
+              ? 'Signing is complete. The fully executed copy is available.'
+              : 'Your signature has been recorded. The remaining signing workflow is still in progress.'
+          );
+          return;
+        }
+
+        if (!result.canSign) {
           setStatus('waiting');
         } else {
           setStatus('ready');
         }
-      })
-      .catch((error: Error) => {
-        setMessage(error.message);
+      } catch (error: any) {
+        if (!active) return;
+        setMessage(error.message || 'Unable to load signing request.');
         setStatus('error');
-      });
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, [token]);
 
   const submit = async () => {
@@ -132,11 +169,7 @@ export const PublicSigningApp: React.FC<{ token: string }> = ({ token }) => {
       });
 
       if (result.readyForExecution && result.report) {
-        setMessage('All signatures received. Preparing the fully executed copy...');
-        const pdf = await generateReportPdf(result.report, (progress) => setMessage(progress));
-        await api.uploadExecutedPdf(token, pdf);
-        setStatus('complete');
-        setMessage('Signing is complete. A fully executed copy has been sent to all parties.');
+        await storeExecutedCopy(result.report);
         return;
       }
 
