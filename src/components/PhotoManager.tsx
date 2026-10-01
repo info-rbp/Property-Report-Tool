@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Upload, Trash2, Tag, Filter, Plus, Star } from 'lucide-react';
+import { CloudDownload, Image, Upload, Trash2, Tag, Filter, Plus, Star } from 'lucide-react';
 import { normalizeAreaName, renumberPhotosByArea } from '../lib/reportFormatting';
+import { pickGoogleDriveImages } from '../lib/googleDrive';
 import { InspectionArea, ReportPhoto } from '../types/report';
 
 interface PhotoManagerProps {
@@ -38,6 +39,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   const [selectedUploadItemId, setSelectedUploadItemId] = useState<string>('');
   const [targetUploadItemId, setTargetUploadItemId] = useState<string>('');
   const [visiblePhotoCount, setVisiblePhotoCount] = useState(60);
+  const [isDriveImporting, setIsDriveImporting] = useState(false);
 
   const reportAreaNames = useMemo(
     () => Array.from(new Set(areas.map((area) => area.name.trim()).filter(Boolean))),
@@ -105,6 +107,20 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     if (!files.length) return;
     const areaId = areaByName.get(areaName)?.id;
     await onUploadPhotos(files, areaName || 'General', itemId || undefined, areaId);
+  };
+
+  const handleDriveImport = async () => {
+    setIsDriveImporting(true);
+    try {
+      const files = await pickGoogleDriveImages();
+      if (!files.length) return;
+      const area = areaByName.get(selectedUploadArea);
+      await onUploadPhotos(files, selectedUploadArea || 'General', selectedUploadItemId || undefined, area?.id);
+    } catch (error: any) {
+      alert(error.message || 'Unable to import photos from Google Drive.');
+    } finally {
+      setIsDriveImporting(false);
+    }
   };
 
   const handleCoverFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -298,6 +314,16 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
               ))}
             </select>
           )}
+          <button
+            type="button"
+            onClick={handleDriveImport}
+            disabled={isDriveImporting}
+            className="px-3 py-1.5 border-l border-neutral-300 bg-white text-neutral-800 font-bold flex items-center gap-1.5 disabled:opacity-50"
+            title="Import multiple images from Google Drive"
+          >
+            <CloudDownload className="w-3.5 h-3.5" />
+            {isDriveImporting ? 'Opening Drive...' : 'Google Drive'}
+          </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             className="px-3 py-1.5 bg-[#0a2540] text-white font-bold flex items-center gap-1.5"
