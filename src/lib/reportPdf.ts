@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
-import { formatAustralianDate, splitTenantNames } from './reportFormatting';
+import { formatAustralianDate, normalizeAreaName, splitTenantNames } from './reportFormatting';
 import { assertReportReadyForPdf } from './reportValidation';
 import { InspectionArea, InspectionItem, ReportData, ReportPhoto, ReportType } from '../types/report';
 
@@ -1382,6 +1382,13 @@ function buildingManagementItemPhotos(report: ReportData, itemId: string): numbe
   return buildingManagementItemPhotoList(report, itemId).length;
 }
 
+function buildingManagementCategoryPhotoList(report: ReportData, area: InspectionArea): ReportPhoto[] {
+  const areaKey = normalizeAreaName(area.name);
+  return report.photos
+    .filter((photo) => !photo.itemId && normalizeAreaName(photo.areaName) === areaKey)
+    .sort((a, b) => (a.photoIndex || 0) - (b.photoIndex || 0));
+}
+
 function buildingManagementPeriodText(item: InspectionItem, daily: boolean): string {
   const when = daily
     ? value(item.activityTime)
@@ -1494,6 +1501,94 @@ async function drawBuildingManagementItemPhotoEvidence(
   return y + 1;
 }
 
+async function drawBuildingManagementCategoryPhotoEvidence(
+  pdf: jsPDF,
+  report: ReportData,
+  area: InspectionArea,
+  startY: number,
+  onProgress?: (message: string) => void
+): Promise<number> {
+  const photos = buildingManagementCategoryPhotoList(report, area);
+  if (!photos.length) return startY;
+
+  const template = getReportTemplate(report.details.reportType);
+  const runningTitle = template.shortLabel;
+  const columns = 3;
+  const gapX = 3;
+  const gapY = 2.5;
+  const cellWidth = (CONTENT_WIDTH - (gapX * (columns - 1))) / columns;
+  const captionHeight = 6;
+  const imageHeight = 38;
+  const cellHeight = captionHeight + imageHeight;
+  const evidenceItem: InspectionItem = {
+    id: `category-evidence-${area.id}`,
+    name: `Category evidence - ${area.name}`,
+    agentComments: '',
+  };
+  let y = startY;
+  let embedded = 0;
+
+  const beginEvidenceBlock = (continuation: boolean) => {
+    if (y + 7.2 + 2 + cellHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, runningTitle);
+      y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+    }
+    y = drawBuildingManagementPhotoEvidenceHeader(pdf, y, evidenceItem, photos.length, continuation);
+  };
+
+  beginEvidenceBlock(false);
+  onProgress?.(`Rendering ${photos.length} category photo${photos.length === 1 ? '' : 's'} for "${area.name}"...`);
+
+  for (let rowStart = 0; rowStart < photos.length; rowStart += columns) {
+    if (y + cellHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, runningTitle);
+      y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+      y = drawBuildingManagementPhotoEvidenceHeader(pdf, y, evidenceItem, photos.length, true);
+    }
+
+    const rowPhotos = photos.slice(rowStart, rowStart + columns);
+    for (let column = 0; column < rowPhotos.length; column++) {
+      const photo = rowPhotos[column];
+      const x = MARGIN_X + (column * (cellWidth + gapX));
+      drawBox(pdf, x, y, cellWidth, cellHeight, undefined, LIGHT_BORDER);
+
+      setFont(pdf, 5.4, 'bold');
+      setTextColor(pdf, TEXT);
+      pdf.text(`Photo ${rowStart + column + 1} of ${photos.length}`, x + 1.2, y + 3.8);
+
+      const source = photoSource(photo);
+      if (!source) {
+        throw new Error(`Photo "${photo.name || photo.id}" has no image source. The report was not finalised.`);
+      }
+
+      const image = await prepareImageForPdf(source, photo.name || `category photo ${rowStart + column + 1}`, 720, 45_000);
+      const fit = containRect(image.width, image.height, cellWidth - 1.6, imageHeight - 1.6);
+      const imageY = y + captionHeight;
+      pdf.addImage(
+        image.bytes,
+        'JPEG',
+        x + 0.8 + fit.xOffset,
+        imageY + 0.8 + fit.yOffset,
+        fit.width,
+        fit.height,
+        undefined,
+        'FAST'
+      );
+
+      embedded += 1;
+      if (embedded % 4 === 0) await yieldToBrowser();
+    }
+
+    y += cellHeight + gapY;
+  }
+
+  if (embedded !== photos.length) {
+    throw new Error(`Building Manager category photo validation failed for "${area.name}".`);
+  }
+
+  return y + 1;
+}
+
 async function drawBuildingManagementActivityPages(
   pdf: jsPDF,
   report: ReportData,
@@ -1531,6 +1626,9 @@ async function drawBuildingManagementActivityPages(
       setTextColor(pdf, MUTED);
       pdf.text('No activity recorded in this category for the reporting period.', MARGIN_X + 2, y + 5.6);
       y += h + 2.5;
+      if (inlinePhotos && buildingManagementCategoryPhotoList(report, area).length > 0) {
+        y = await drawBuildingManagementCategoryPhotoEvidence(pdf, report, area, y, onProgress);
+      }
       continue;
     }
 
@@ -1614,6 +1712,10 @@ async function drawBuildingManagementActivityPages(
           y = drawBuildingManagementTableHeader(pdf, y, daily);
         }
       }
+    }
+
+    if (inlinePhotos && buildingManagementCategoryPhotoList(report, area).length > 0) {
+      y = await drawBuildingManagementCategoryPhotoEvidence(pdf, report, area, y, onProgress);
     }
 
     y += 2.5;
