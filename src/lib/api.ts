@@ -79,7 +79,16 @@ export const api = {
   uploadPhoto: async (
     reportId: string,
     file: Blob,
-    metadata: { id: string; name: string; areaName: string; itemId?: string; itemName?: string; photoIndex: number; isCover?: boolean }
+    metadata: {
+      id: string;
+      name: string;
+      areaName: string;
+      itemId?: string;
+      itemName?: string;
+      photoIndex: number;
+      isCover?: boolean;
+      expectedUpdatedAt?: string;
+    }
   ) => {
     const form = new FormData();
     form.append('file', file, `${metadata.id}.jpg`);
@@ -90,6 +99,7 @@ export const api = {
     if (metadata.itemName) form.append('itemName', metadata.itemName);
     form.append('photoIndex', String(metadata.photoIndex));
     form.append('isCover', metadata.isCover ? 'true' : 'false');
+    if (metadata.expectedUpdatedAt) form.append('expectedUpdatedAt', metadata.expectedUpdatedAt);
 
     return apiRequest<ReportData>(`/api/reports/${encodeURIComponent(reportId)}/photos`, {
       method: 'POST',
