@@ -136,7 +136,13 @@ export async function syncOfflineOperations(
     try {
       let updated: ReportData;
       if (operation.kind === 'save-report') {
-        updated = await api.saveReport(operation.report, operation.expectedUpdatedAt);
+        // Offline photo blobs are replayed as separate upload operations. Do not persist
+        // placeholder photo metadata to D1 before the R2 upload succeeds.
+        const reportForCloud: ReportData = {
+          ...operation.report,
+          photos: operation.report.photos.filter((photo) => !photo.offlinePending),
+        };
+        updated = await api.saveReport(reportForCloud, operation.expectedUpdatedAt);
       } else {
         updated = await api.uploadPhoto(operation.reportId, operation.blob, operation.metadata);
       }
