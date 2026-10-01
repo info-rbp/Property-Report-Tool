@@ -8,7 +8,8 @@ interface PhotoManagerProps {
   areas?: InspectionArea[];
   coverPhotoUrl?: string;
   isUploading?: boolean;
-  onUploadPhotos: (files: File[], areaName: string, itemId?: string) => Promise<void>;
+  pendingUploadCount?: number;
+  onUploadPhotos: (files: File[], areaName: string, itemId?: string, areaId?: string) => Promise<void>;
   onUploadCoverPhoto: (file: File) => Promise<void>;
   onUpdatePhotos: (photos: ReportPhoto[]) => void;
   linkToItems?: boolean;
@@ -20,6 +21,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   areas = [],
   coverPhotoUrl,
   isUploading = false,
+  pendingUploadCount = 0,
   onUploadPhotos,
   onUploadCoverPhoto,
   onUpdatePhotos,
@@ -35,6 +37,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   const [bulkMoveArea, setBulkMoveArea] = useState<string>(areas[0]?.name || '');
   const [selectedUploadItemId, setSelectedUploadItemId] = useState<string>('');
   const [targetUploadItemId, setTargetUploadItemId] = useState<string>('');
+  const [visiblePhotoCount, setVisiblePhotoCount] = useState(60);
 
   const reportAreaNames = useMemo(
     () => Array.from(new Set(areas.map((area) => area.name.trim()).filter(Boolean))),
@@ -73,12 +76,12 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
 
     if (linkToItems) {
       const selectedItems = areaByName.get(selectedUploadArea)?.items || [];
-      if (!selectedItems.some((item) => item.id === selectedUploadItemId)) {
-        setSelectedUploadItemId(selectedItems[0]?.id || '');
+      if (selectedUploadItemId && !selectedItems.some((item) => item.id === selectedUploadItemId)) {
+        setSelectedUploadItemId('');
       }
       const targetItems = areaByName.get(targetUploadArea)?.items || [];
-      if (!targetItems.some((item) => item.id === targetUploadItemId)) {
-        setTargetUploadItemId(targetItems[0]?.id || '');
+      if (targetUploadItemId && !targetItems.some((item) => item.id === targetUploadItemId)) {
+        setTargetUploadItemId('');
       }
     }
   }, [
@@ -100,11 +103,8 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     const files = Array.from(event.target.files || []);
     event.target.value = '';
     if (!files.length) return;
-    if (linkToItems && !itemId) {
-      alert('Select a reporting item before uploading photos.');
-      return;
-    }
-    await onUploadPhotos(files, areaName || 'General', itemId);
+    const areaId = areaByName.get(areaName)?.id;
+    await onUploadPhotos(files, areaName || 'General', itemId || undefined, areaId);
   };
 
   const handleCoverFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,11 +118,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     setTargetUploadArea(areaName);
     const items = areaByName.get(areaName)?.items || [];
     if (linkToItems) {
-      if (!items.length) {
-        alert('Add a reporting item to this category before attaching photos.');
-        return;
-      }
-      setTargetUploadItemId(items[0].id);
+      setTargetUploadItemId('');
     }
     areaFileInputRef.current?.click();
   };
@@ -187,6 +183,12 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     ? photos
     : photos.filter((photo) => (photo.areaName || 'General') === activeAreaFilter);
 
+  useEffect(() => {
+    setVisiblePhotoCount(60);
+  }, [activeAreaFilter]);
+
+  const visiblePhotos = filteredPhotos.slice(0, visiblePhotoCount);
+
   return (
     <div className="bg-white rounded-xl shadow-xs border border-neutral-200 overflow-hidden flex flex-col h-full">
       <input
@@ -236,15 +238,21 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
             <button
               type="button"
               onClick={() => coverFileInputRef.current?.click()}
-              disabled={isUploading}
-              className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+              className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center gap-1.5"
             >
               <Upload className="w-3.5 h-3.5" />
-              {isUploading ? 'Uploading...' : coverPhotoUrl ? 'Replace Cover Photo' : 'Upload Cover Photo'}
+              {coverPhotoUrl ? 'Queue Replacement Cover' : 'Queue Cover Photo'}
             </button>
           </div>
         </div>
       </div>
+
+      {pendingUploadCount > 0 && (
+        <div className="px-4 py-2.5 bg-cyan-50 border-b border-cyan-200 text-cyan-900 text-xs flex items-center justify-between gap-3">
+          <span><strong>{pendingUploadCount}</strong> photo{pendingUploadCount === 1 ? '' : 's'} queued/uploading in the background.</span>
+          <span className="text-cyan-700">You can continue editing and queue more photos.</span>
+        </div>
+      )}
 
       <div className="p-4 border-b border-neutral-200 bg-neutral-50 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -254,8 +262,8 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           </h3>
           <p className="text-xs text-neutral-500">
             {linkToItems
-              ? 'Select the report category and exact reporting item before uploading. Each photo will remain linked to that item in the final PDF.'
-              : 'Upload JPG, PNG or WebP images from this device. Images are resized before cloud storage.'}
+              ? 'Queue photos to a whole category or a specific reporting item. Uploads continue in the background while you keep working.'
+              : 'Upload JPG, PNG or WebP images from this device. Uploads continue in the background while you keep working.'}
           </p>
         </div>
 
@@ -269,7 +277,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
               const areaName = event.target.value;
               setSelectedUploadArea(areaName);
               if (linkToItems) {
-                setSelectedUploadItemId(areaByName.get(areaName)?.items[0]?.id || '');
+                setSelectedUploadItemId('');
               }
             }}
             className="px-2 py-1.5 bg-transparent font-medium text-neutral-800 focus:outline-hidden"
@@ -284,7 +292,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
               disabled={!selectedAreaItems.length}
               title="Reporting item"
             >
-              {!selectedAreaItems.length && <option value="">Add a reporting item first</option>}
+              <option value="">Category-level photos</option>
               {selectedAreaItems.map((item) => (
                 <option key={item.id} value={item.id}>{item.name || 'Untitled reporting item'}</option>
               ))}
@@ -292,11 +300,10 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           )}
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading || (linkToItems && !selectedUploadItemId)}
-            className="px-3 py-1.5 bg-[#0a2540] text-white font-bold flex items-center gap-1.5 disabled:opacity-50"
+            className="px-3 py-1.5 bg-[#0a2540] text-white font-bold flex items-center gap-1.5"
           >
             <Upload className="w-3.5 h-3.5" />
-            {isUploading ? 'Uploading...' : 'Upload Photos'}
+            Queue Photos
           </button>
         </div>
       </div>
@@ -355,7 +362,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
             {validAreaKeys.has(normalizeAreaName(activeAreaFilter)) && (
               <button
                 onClick={() => handleUploadForSpecificArea(activeAreaFilter)}
-                disabled={isUploading}
+                
                 className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg font-semibold flex items-center gap-1 disabled:opacity-50"
               >
                 <Plus className="w-3.5 h-3.5" /> Add to {activeAreaFilter}
@@ -415,7 +422,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
             </p>
             <button
               onClick={() => handleUploadForSpecificArea(activeAreaFilter === 'ALL' ? selectedUploadArea : activeAreaFilter)}
-              disabled={isUploading}
+              
               className="px-4 py-2 bg-[#0a2540] text-white rounded-lg text-xs font-semibold disabled:opacity-50"
             >
               Upload Photos
@@ -423,7 +430,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-            {filteredPhotos.map((photo, index) => (
+            {visiblePhotos.map((photo, index) => (
               <div key={photo.id} className="group border border-neutral-200 rounded-lg overflow-hidden bg-white shadow-xs">
                 <div className="relative aspect-4/3 bg-neutral-100 overflow-hidden">
                   {photo.dataUrl || photo.url ? (
@@ -486,6 +493,17 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                 </div>
               </div>
             ))}
+          </div>
+        )}
+        {filteredPhotos.length > visiblePhotos.length && (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setVisiblePhotoCount((count) => count + 60)}
+              className="px-4 py-2 rounded-lg border border-neutral-300 bg-white text-xs font-semibold text-neutral-700"
+            >
+              Load 60 more photos ({filteredPhotos.length - visiblePhotos.length} remaining)
+            </button>
           </div>
         )}
       </div>
