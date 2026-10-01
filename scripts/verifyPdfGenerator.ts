@@ -705,13 +705,23 @@ executedRoutine.execution = {
   ],
   fields: [
     {
+      fieldType: 'signature',
       label: 'Client signature',
       placementLabel: 'Client acknowledgement',
+      pageNumber: 1,
+      xPercent: 60,
+      yPercent: 78,
+      widthPercent: 28,
       partyId: 'execution-client',
     },
     {
+      fieldType: 'text',
       label: 'Client instructions',
       placementLabel: 'Execution commentary',
+      pageNumber: 1,
+      xPercent: 10,
+      yPercent: 78,
+      widthPercent: 42,
       valueText: 'Proceed with the recommended maintenance items.',
       partyId: 'execution-client',
     },
