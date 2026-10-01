@@ -487,6 +487,14 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       const itemName = String(form.get('itemName') || '').trim() || undefined;
       const photoIndex = Number(form.get('photoIndex') || '0');
       const isCover = String(form.get('isCover') || 'false') === 'true';
+      const expectedUpdatedAt = String(form.get('expectedUpdatedAt') || '').trim();
+
+      if (expectedUpdatedAt && expectedUpdatedAt !== row.updated_at) {
+        throw new HttpError(
+          409,
+          'This draft changed while photos were uploading. Reopen the report to load the latest cloud version before continuing.'
+        );
+      }
 
       if (!(file instanceof File) || !photoId || !name) {
         throw new HttpError(400, 'Photo file and metadata are required.');
@@ -502,11 +510,18 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         ? targetArea?.items.find((item) => item.id === itemId)
         : undefined;
 
+      if (report.areas.length > 0 && !targetArea) {
+        throw new HttpError(400, 'The selected report category does not exist.');
+      }
       if (itemId && !linkedItem) {
         throw new HttpError(400, 'The selected reporting item does not belong to the selected report category.');
       }
-      if (isBuildingManagementTemplate(report.details.reportType) && !linkedItem) {
-        throw new HttpError(400, 'Building Manager photos must be linked to a reporting item.');
+
+      // Building Manager photos may be linked to an exact reporting item or to the
+      // category itself. Item-linked evidence renders beneath the item; category
+      // evidence renders at the end of that category.
+      if (isBuildingManagementTemplate(report.details.reportType) && !targetArea) {
+        throw new HttpError(400, 'Building Manager photos must be assigned to a current category.');
       }
 
       const key = `reports/${reportId}/photos/${photoId}.jpg`;
