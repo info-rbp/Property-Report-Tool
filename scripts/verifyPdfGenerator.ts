@@ -565,14 +565,16 @@ buildingMonthly.photos = [
 
 const maintenanceArea = buildingMonthly.areas[0];
 const securityArea = buildingMonthly.areas[1];
+const maintenanceAreaNameBeforeRename = maintenanceArea.name;
+const securityAreaNameBeforeRename = securityArea.name;
 maintenanceArea.name = 'Maintenance & Contractor Works';
 securityArea.name = 'Security, Access & Resident Support';
 const maintenanceItemIds = new Set(maintenanceArea.items.map((item) => item.id));
 const securityItemIds = new Set(securityArea.items.map((item) => item.id));
 buildingMonthly.photos = buildingMonthly.photos.map((photo) =>
-  photo.itemId && maintenanceItemIds.has(photo.itemId)
+  (photo.itemId && maintenanceItemIds.has(photo.itemId)) || photo.areaName === maintenanceAreaNameBeforeRename
     ? { ...photo, areaName: maintenanceArea.name }
-    : photo.itemId && securityItemIds.has(photo.itemId)
+    : (photo.itemId && securityItemIds.has(photo.itemId)) || photo.areaName === securityAreaNameBeforeRename
     ? { ...photo, areaName: securityArea.name }
     : photo
 );
