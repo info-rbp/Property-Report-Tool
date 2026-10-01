@@ -164,12 +164,38 @@ export interface TenancyDetails {
   disclaimerText: string;
 }
 
+export interface ReportExecutionParty {
+  name: string;
+  email: string;
+  roleLabel: string;
+  signedName: string;
+  signatureDataUrl?: string;
+  commentary?: string;
+  signedAt: string;
+}
+
+export interface ReportExecutionField {
+  label: string;
+  placementLabel?: string;
+  promptText?: string;
+  valueText?: string;
+  partyId?: string;
+}
+
+export interface ReportExecution {
+  requestId: string;
+  completedAt: string;
+  parties: ReportExecutionParty[];
+  fields: ReportExecutionField[];
+}
+
 export interface ReportData {
   schemaVersion?: number;
   id?: string;
   propertyId?: string;
   status?: ReportStatus;
   completedPdfKey?: string;
+  execution?: ReportExecution;
   createdAt?: string;
   updatedAt?: string;
   details: TenancyDetails;
