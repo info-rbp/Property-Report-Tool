@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS report_deliveries (
   delivery_mode TEXT NOT NULL CHECK (delivery_mode IN ('send', 'signature')),
   subject TEXT NOT NULL,
   message TEXT NOT NULL,
+  recipient_json TEXT,
+  cc_json TEXT,
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'queued', 'sent', 'partially_signed', 'completed', 'failed', 'void')),
   resend_email_id TEXT,
   created_at TEXT NOT NULL,
