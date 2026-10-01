@@ -161,9 +161,8 @@ export const ReportDashboard: React.FC<Props> = ({
               {reports.map((report) => (
                 <div key={report.id} className="p-4 flex items-center justify-between gap-4">
                   <button
-                    onClick={() => report.status === 'draft' && onOpen(report.id)}
-                    className="text-left flex-1 min-w-0 disabled:cursor-default"
-                    disabled={report.status === 'completed'}
+                    onClick={() => onOpen(report.id)}
+                    className="text-left flex-1 min-w-0"
                   >
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-neutral-500 shrink-0" />
@@ -183,12 +182,20 @@ export const ReportDashboard: React.FC<Props> = ({
 
                   <div className="flex gap-2">
                     {report.status === 'completed' ? (
-                      <button
-                        onClick={() => onDownloadCompleted(report.id)}
-                        className="px-3 py-1.5 text-xs font-bold border border-neutral-300 rounded-lg bg-white flex items-center gap-1.5"
-                      >
-                        <Download className="w-3.5 h-3.5" /> PDF
-                      </button>
+                      <>
+                        <button
+                          onClick={() => onOpen(report.id)}
+                          className="px-3 py-1.5 text-xs font-bold border border-neutral-300 rounded-lg bg-white"
+                        >
+                          View / Send
+                        </button>
+                        <button
+                          onClick={() => onDownloadCompleted(report.id)}
+                          className="px-3 py-1.5 text-xs font-bold border border-neutral-300 rounded-lg bg-white flex items-center gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" /> PDF
+                        </button>
+                      </>
                     ) : (
                       <>
                         <button
