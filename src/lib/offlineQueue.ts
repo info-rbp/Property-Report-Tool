@@ -62,22 +62,27 @@ async function putOperation(operation: OfflineOperation): Promise<void> {
 export async function queueOfflineSave(report: ReportData, expectedUpdatedAt?: string): Promise<void> {
   if (!report.id) return;
   const reportId = report.id;
-  // Keep only the most recent pending save for a report.
+  // Keep one save operation per report, but retain its original queue position.
+  // This ensures newly created categories/items reach D1 before any photos queued
+  // against them, even if later autosaves update the local draft.
   const existing = await listOfflineOperations();
+  const matching = existing.filter(
+    (operation): operation is OfflineSaveOperation =>
+      operation.kind === 'save-report' && operation.reportId === reportId
+  );
+  const first = matching[0];
   const db = await openDatabase();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite');
     const store = tx.objectStore(STORE);
-    existing
-      .filter((operation) => operation.kind === 'save-report' && operation.reportId === reportId)
-      .forEach((operation) => store.delete(operation.id));
+    matching.slice(1).forEach((operation) => store.delete(operation.id));
     store.put({
-      id: `save-${reportId}-${crypto.randomUUID()}`,
+      id: first?.id || `save-${reportId}-${crypto.randomUUID()}`,
       kind: 'save-report',
       reportId,
-      createdAt: new Date().toISOString(),
+      createdAt: first?.createdAt || new Date().toISOString(),
       report,
-      expectedUpdatedAt,
+      expectedUpdatedAt: first?.expectedUpdatedAt || expectedUpdatedAt,
     } satisfies OfflineSaveOperation);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -160,7 +165,10 @@ export async function syncOfflineOperations(
   return { reports: Array.from(reports.values()), remaining };
 }
 
-export function optimisticOfflinePhoto(metadata: OfflinePhotoOperation['metadata']): ReportPhoto {
+export function optimisticOfflinePhoto(
+  metadata: OfflinePhotoOperation['metadata'],
+  blob?: Blob,
+): ReportPhoto {
   return {
     id: metadata.id,
     name: metadata.name,
@@ -169,6 +177,22 @@ export function optimisticOfflinePhoto(metadata: OfflinePhotoOperation['metadata
     itemName: metadata.itemName,
     photoIndex: metadata.photoIndex,
     isCover: metadata.isCover,
+    url: blob ? URL.createObjectURL(blob) : undefined,
     offlinePending: true,
   };
+}
+
+export async function hydrateOfflinePhotoPreviews(report: ReportData): Promise<ReportData> {
+  if (!report.id) return report;
+  const operations = await listOfflineOperations();
+  const pending = operations.filter(
+    (operation): operation is OfflinePhotoOperation =>
+      operation.kind === 'upload-photo' && operation.reportId === report.id
+  );
+  if (!pending.length) return report;
+
+  const pendingById = new Map(pending.map((operation) => [operation.metadata.id, operation]));
+  const cloudPhotos = report.photos.filter((photo) => !pendingById.has(photo.id));
+  const localPhotos = pending.map((operation) => optimisticOfflinePhoto(operation.metadata, operation.blob));
+  return { ...report, photos: [...cloudPhotos, ...localPhotos] };
 }
