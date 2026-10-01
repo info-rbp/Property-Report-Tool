@@ -97,7 +97,6 @@ export function validateReportStructure(report: ReportData): ReportValidationIss
 
   const photoIds = new Set<string>();
   let coverPhotoCount = 0;
-  const buildingManagement = isBuildingManagementTemplate(report.details.reportType);
 
   for (const photo of report.photos || []) {
     if (!photo.id?.trim()) {
