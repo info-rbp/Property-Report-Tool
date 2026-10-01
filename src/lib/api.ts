@@ -188,6 +188,14 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  publicExecutionPayload: (token: string) =>
+    apiRequest<{
+      completed: boolean;
+      alreadyStored?: boolean;
+      readyForExecution?: boolean;
+      report?: ReportData;
+    }>(`/api/public/signing/${encodeURIComponent(token)}/execution-payload`),
+
   uploadExecutedPdf: async (token: string, pdf: Blob) => {
     const response = await fetch(`/api/public/signing/${encodeURIComponent(token)}/executed`, {
       method: 'POST',
