@@ -102,15 +102,16 @@ export const DeliveryPanel: React.FC<{ report: ReportData }> = ({ report }) => {
     setIsSending(true);
     setNotice(null);
     try {
-      const preparedParties = parties
-        .filter((party) => party.email.trim())
-        .map((party) => ({
-          name: party.name.trim() || party.email.trim(),
-          email: party.email.trim(),
-          roleLabel: party.roleLabel?.trim(),
-          isCountersigner: party.isCountersigner,
-        }));
-      if (!preparedParties.length) throw new Error('Add at least one signing party.');
+      if (!parties.length) throw new Error('Add at least one signing party.');
+      if (parties.some((party) => !party.email.trim())) {
+        throw new Error('Every signing party must have an email address.');
+      }
+      const preparedParties = parties.map((party) => ({
+        name: party.name.trim() || party.email.trim(),
+        email: party.email.trim(),
+        roleLabel: party.roleLabel?.trim(),
+        isCountersigner: party.isCountersigner,
+      }));
 
       await api.sendForSignature(report.id, {
         parties: preparedParties,
@@ -358,6 +359,11 @@ export const DeliveryPanel: React.FC<{ report: ReportData }> = ({ report }) => {
                 <div>
                   <div className="font-bold">{delivery.deliveryMode === 'signature' ? 'Signature request' : 'Report email'}</div>
                   <div className="text-neutral-500 mt-0.5">{delivery.subject}</div>
+                  {delivery.to?.length ? (
+                    <div className="text-neutral-500 mt-1">
+                      To: {delivery.to.map((recipient) => recipient.name || recipient.email).join(', ')}
+                    </div>
+                  ) : null}
                   {delivery.signatureRequest && (
                     <div className="text-neutral-500 mt-1">
                       {delivery.signatureRequest.parties.map((party) => `${party.name}: ${party.status}`).join(' • ')}
