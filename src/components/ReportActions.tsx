@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { CheckCircle2, Download, Mail } from 'lucide-react';
-import { isKeyReceiptTemplate, reportInstanceLabel } from '../data/reportCatalogue';
+import React from 'react';
+import { BookmarkPlus, CheckCircle2, Download } from 'lucide-react';
+import { isKeyReceiptTemplate } from '../data/reportCatalogue';
+import { DeliveryPanel } from './DeliveryPanel';
 import { validateReportForFinalization } from '../lib/reportValidation';
 import { ReportData } from '../types/report';
 
@@ -11,6 +12,7 @@ interface Props {
   onDownloadCompleted: () => void;
   isExporting: boolean;
   isCompleting: boolean;
+  onSaveTemplate?: () => Promise<void>;
 }
 
 export const ReportActions: React.FC<Props> = ({
@@ -20,28 +22,13 @@ export const ReportActions: React.FC<Props> = ({
   onDownloadCompleted,
   isExporting,
   isCompleting,
+  onSaveTemplate,
 }) => {
-  const [recipient, setRecipient] = useState('');
   const details = report.details;
   const completed = report.status === 'completed';
   const validationIssues = completed ? [] : validateReportForFinalization(report);
   const validationMessages = Array.from(new Set(validationIssues.map((issue) => issue.message)));
   const keyItemCount = report.areas.reduce((total, area) => total + area.items.length, 0);
-
-  const prepareEmail = () => {
-    const label = reportInstanceLabel(details);
-    const subject = `${label} - ${details.propertyAddress || 'Property'}`;
-    const body = isKeyReceiptTemplate(details.reportType)
-      ? `Please find attached the completed ${label.toLowerCase()} for ${details.propertyAddress || 'the property'}, recording the key handover on ${details.inspectionDate || 'the recorded receipt date'}.
-
-Regards,
-ProInspect`
-      : `Please find attached the completed ${label.toLowerCase()} for ${details.propertyAddress || 'the property'}, inspected on ${details.inspectionDate || 'the recorded inspection date'}.
-
-Regards,
-ProInspect`;
-    window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  };
 
   return (
     <div className="max-w-3xl mx-auto bg-white border border-neutral-200 rounded-xl p-5 shadow-xs space-y-4">
@@ -67,6 +54,14 @@ ProInspect`;
       )}
 
       <div className="flex flex-wrap gap-2">
+        {!completed && onSaveTemplate && (
+          <button
+            onClick={() => void onSaveTemplate()}
+            className="px-4 py-2 border border-neutral-300 bg-white rounded-lg text-sm font-bold flex items-center gap-2"
+          >
+            <BookmarkPlus className="w-4 h-4" /> Save as Template
+          </button>
+        )}
         {completed ? (
           <button
             onClick={onDownloadCompleted}
@@ -95,27 +90,7 @@ ProInspect`;
         )}
       </div>
 
-      <div className="border-t border-neutral-200 pt-4">
-        <label className="block text-xs font-bold text-neutral-700 mb-1">Recipient email</label>
-        <div className="flex gap-2">
-          <input
-            type="email"
-            value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
-            placeholder="name@example.com"
-            className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-          />
-          <button
-            onClick={prepareEmail}
-            className="px-4 py-2 border border-neutral-300 bg-white rounded-lg text-sm font-bold flex items-center gap-2"
-          >
-            <Mail className="w-4 h-4" /> Prepare Email
-          </button>
-        </div>
-        <p className="text-[11px] text-neutral-500 mt-2">
-          Email is prepared in your email application. Attach the downloaded or stored PDF before sending.
-        </p>
-      </div>
+      {completed && <DeliveryPanel report={report} />}
     </div>
   );
 };
