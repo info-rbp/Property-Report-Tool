@@ -46,5 +46,10 @@ export async function processInspectionImage(
     );
   });
 
+  // Release the backing bitmap/canvas memory promptly before processing the next
+  // queued image. This matters when users add large batches from modern phones.
+  canvas.width = 1;
+  canvas.height = 1;
+
   return { blob, width, height };
 }
