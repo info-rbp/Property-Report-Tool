@@ -49,6 +49,10 @@ export interface SignatureFieldInput {
   label: string;
   placementLabel?: string;
   promptText?: string;
+  pageNumber?: number;
+  xPercent?: number;
+  yPercent?: number;
+  widthPercent?: number;
   required?: boolean;
   displayOrder?: number;
 }
@@ -77,6 +81,10 @@ export interface SignatureFieldRecord {
   label: string;
   placementLabel?: string;
   promptText?: string;
+  pageNumber?: number;
+  xPercent?: number;
+  yPercent?: number;
+  widthPercent?: number;
   required: boolean;
   displayOrder: number;
   valueText?: string;
