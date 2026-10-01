@@ -176,7 +176,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     return !validAreaKeys.has(normalizeAreaName(photo.areaName || 'General'));
   }).length;
   const unlinkedItemPhotoCount = linkToItems
-    ? photos.filter((photo) => !photo.itemId || !validItemIds.has(photo.itemId)).length
+    ? photos.filter((photo) => photo.itemId && !validItemIds.has(photo.itemId)).length
     : 0;
 
   const filteredPhotos = activeAreaFilter === 'ALL'
@@ -401,7 +401,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           )}
           {unlinkedItemPhotoCount > 0 && (
             <div className="mt-1">
-              {unlinkedItemPhotoCount} photo{unlinkedItemPhotoCount === 1 ? '' : 's'} are not linked to a current reporting item. Assign each photo to the exact activity it supports before finalising.
+              {unlinkedItemPhotoCount} photo{unlinkedItemPhotoCount === 1 ? '' : 's'} reference a reporting item that no longer exists. Reassign them to the correct reporting item or leave them as category-level evidence.
             </div>
           )}
           {areasWithoutPhotos.length > 0 && (
@@ -478,7 +478,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                       onChange={(event) => handleReassignPhotoItem(photo.id, event.target.value)}
                       className="w-full bg-cyan-50 border border-cyan-200 rounded px-1.5 py-1 font-semibold text-cyan-900 text-[10px]"
                     >
-                      <option value="">Select reporting item</option>
+                      <option value="">Category-level photo</option>
                       {(areaByName.get(photo.areaName || '')?.items || []).map((item) => (
                         <option key={item.id} value={item.id}>{item.name || 'Untitled reporting item'}</option>
                       ))}
