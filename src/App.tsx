@@ -22,6 +22,7 @@ import { ReportDashboard } from './components/ReportDashboard';
 import { ReportDocument } from './components/ReportDocument';
 import { isBuildingManagementTemplate, isKeyReceiptTemplate, reportInstanceLabel, reportLabel } from './data/reportCatalogue';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
+import { createReportFromTemplate, createTemplateSnapshot } from './lib/templateUtils';
 import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
 import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
@@ -30,6 +31,7 @@ import { normalizeAreaName } from './lib/reportFormatting';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
 import { reportValidationMessage, validateReportForFinalization } from './lib/reportValidation';
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
+import type { ReportTemplateRecord } from './types/workflow';
 
 type ViewMode = 'preview' | 'commentary' | 'photos' | 'actions';
 type StatusMessage = { text: string; type: 'success' | 'info' | 'error' };
@@ -223,6 +225,42 @@ export default function App() {
       setStatusMessage({ text: 'Report created and saved to the cloud.', type: 'success' });
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to create report.', type: 'error' });
+    }
+  };
+
+  const handleCreateReportFromTemplate = async (template: ReportTemplateRecord) => {
+    if (!selectedProperty) return;
+    try {
+      const prepared = createReportFromTemplate(template.templateData, selectedProperty);
+      const created = normalizeReport(await api.createReport(selectedProperty.id, template.reportType, prepared));
+      if (created.id) serverVersionsRef.current[created.id] = created.updatedAt;
+      setReport(created);
+      setViewMode('commentary');
+      await cacheReport(created);
+      await refreshSelectedProperty();
+      setStatusMessage({ text: `Report created from template "${template.name}".`, type: 'success' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to create report from template.', type: 'error' });
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!report || !selectedProperty) return;
+    const name = window.prompt('Template name:', `${reportInstanceLabel(report.details)} - ${selectedProperty.address}`)?.trim();
+    if (!name) return;
+    const propertySpecific = window.confirm(
+      'Save this template only for this property? Select Cancel to make it available globally.'
+    );
+    try {
+      await api.createTemplate({
+        name,
+        scopeType: propertySpecific ? 'property' : 'global',
+        propertyId: propertySpecific ? selectedProperty.id : undefined,
+        templateData: createTemplateSnapshot(report),
+      });
+      setStatusMessage({ text: `Template "${name}" saved.`, type: 'success' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to save report template.', type: 'error' });
     }
   };
 
@@ -596,6 +634,7 @@ export default function App() {
           reports={reportSummaries}
           onBack={handleBackToProperties}
           onCreate={handleCreateReport}
+          onCreateFromTemplate={handleCreateReportFromTemplate}
           onOpen={handleOpenReport}
           onDelete={handleDeleteReport}
           onDownloadCompleted={handleDownloadCompleted}
@@ -813,6 +852,7 @@ export default function App() {
               onDownloadCompleted={() => handleDownloadCompleted(report.id!)}
               isExporting={isExportingPdf}
               isCompleting={isCompleting}
+              onSaveTemplate={handleSaveTemplate}
             />
           </div>
         )}
