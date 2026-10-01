@@ -390,6 +390,55 @@ async function inviteEligibleParties(request: Request, env: WorkflowEnv, request
   }
 }
 
+async function buildExecutedReportForToken(env: WorkflowEnv, rawToken: string): Promise<ReportData> {
+  const loaded = await loadPartyByToken(env, rawToken);
+  const signedRows = await env.DB.prepare('SELECT * FROM signature_parties WHERE request_id = ? ORDER BY sequence_number').bind(loaded.request.id).all<SignaturePartyRow>();
+  const parties = signedRows.results || [];
+  if (!parties.length || parties.some((party) => party.status !== 'signed')) {
+    throw new Error('All parties must sign before the executed report can be generated.');
+  }
+  const fieldRows = await env.DB.prepare('SELECT * FROM signature_fields WHERE request_id = ? ORDER BY display_order').bind(loaded.request.id).all<SignatureFieldRow>();
+  const tokenBase = `/api/public/signing/${encodeURIComponent(rawToken)}`;
+  return {
+    ...loaded.report,
+    details: {
+      ...loaded.report.details,
+      coverPhotoUrl: loaded.report.details.coverPhotoStorageKey ? `${tokenBase}/cover` : loaded.report.details.coverPhotoUrl,
+    },
+    photos: loaded.report.photos.map((photo) => ({
+      ...photo,
+      dataUrl: undefined,
+      url: `${tokenBase}/photos/${encodeURIComponent(photo.id)}`,
+    })),
+    execution: {
+      requestId: loaded.request.id,
+      completedAt: new Date().toISOString(),
+      parties: parties.map((party) => ({
+        id: party.id,
+        name: party.name,
+        email: party.email,
+        roleLabel: party.role_label,
+        signedName: party.signed_name || party.name,
+        signatureDataUrl: party.signature_text || undefined,
+        commentary: party.commentary || undefined,
+        signedAt: party.signed_at || new Date().toISOString(),
+      })),
+      fields: (fieldRows.results || []).map((field) => ({
+        fieldType: field.field_type,
+        label: field.label,
+        placementLabel: field.placement_label || undefined,
+        promptText: field.prompt_text || undefined,
+        pageNumber: field.page_number || undefined,
+        xPercent: field.x_percent ?? undefined,
+        yPercent: field.y_percent ?? undefined,
+        widthPercent: field.width_percent ?? undefined,
+        valueText: field.value_text || undefined,
+        partyId: field.party_id || undefined,
+      })),
+    },
+  };
+}
+
 export async function handleWorkflowApi(request: Request, env: WorkflowEnv, userEmail: string): Promise<Response | null> {
   const url = new URL(request.url);
   const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
@@ -640,48 +689,22 @@ export async function handlePublicWorkflowApi(request: Request, env: WorkflowEnv
       return json({ completed: false, packet: await buildPublicPacket(env, rawToken) });
     }
 
-    const signedRows = await env.DB.prepare('SELECT * FROM signature_parties WHERE request_id = ? ORDER BY sequence_number').bind(loaded.request.id).all<SignaturePartyRow>();
-    const fieldRows = await env.DB.prepare('SELECT * FROM signature_fields WHERE request_id = ? ORDER BY display_order').bind(loaded.request.id).all<SignatureFieldRow>();
-    const tokenBase = `/api/public/signing/${encodeURIComponent(rawToken)}`;
-    const executedReport: ReportData = {
-      ...loaded.report,
-      details: {
-        ...loaded.report.details,
-        coverPhotoUrl: loaded.report.details.coverPhotoStorageKey ? `${tokenBase}/cover` : loaded.report.details.coverPhotoUrl,
-      },
-      photos: loaded.report.photos.map((photo) => ({
-        ...photo,
-        dataUrl: undefined,
-        url: `${tokenBase}/photos/${encodeURIComponent(photo.id)}`,
-      })),
-      execution: {
-        requestId: loaded.request.id,
-        completedAt: now,
-        parties: (signedRows.results || []).map((party) => ({
-          id: party.id,
-          name: party.name,
-          email: party.email,
-          roleLabel: party.role_label,
-          signedName: party.signed_name || party.name,
-          signatureDataUrl: party.signature_text || undefined,
-          commentary: party.commentary || undefined,
-          signedAt: party.signed_at || now,
-        })),
-        fields: (fieldRows.results || []).map((field) => ({
-          fieldType: field.field_type,
-          label: field.label,
-          placementLabel: field.placement_label || undefined,
-          promptText: field.prompt_text || undefined,
-          pageNumber: field.page_number || undefined,
-          xPercent: field.x_percent ?? undefined,
-          yPercent: field.y_percent ?? undefined,
-          widthPercent: field.width_percent ?? undefined,
-          valueText: field.value_text || undefined,
-          partyId: field.party_id || undefined,
-        })),
-      },
-    };
+    const executedReport = await buildExecutedReportForToken(env, rawToken);
     return json({ completed: true, readyForExecution: true, report: executedReport });
+  }
+
+  if (parts.length === 5 && parts[4] === 'execution-payload' && request.method === 'GET') {
+    const loaded = await loadPartyByToken(env, rawToken);
+    const requestRow = await env.DB.prepare('SELECT * FROM signature_requests WHERE id = ?').bind(loaded.request.id).first<SignatureRequestRow>();
+    if (requestRow?.status === 'completed') {
+      return json({ completed: true, alreadyStored: true });
+    }
+    try {
+      const report = await buildExecutedReportForToken(env, rawToken);
+      return json({ completed: true, readyForExecution: true, report });
+    } catch {
+      return json({ completed: false, readyForExecution: false });
+    }
   }
 
   if (parts.length === 5 && parts[4] === 'executed' && request.method === 'POST') {
@@ -709,7 +732,8 @@ export async function handlePublicWorkflowApi(request: Request, env: WorkflowEnv
     for (const party of parties) {
       const token = randomToken();
       const tokenHash = await sha256(token);
-      await env.DB.prepare('UPDATE signature_parties SET token_hash = ?, token_expires_at = ? WHERE id = ?').bind(tokenHash, loaded.request.expires_at, party.id).run();
+      const executedLinkExpiry = new Date(Date.now() + 30 * 86400000).toISOString();
+      await env.DB.prepare('UPDATE signature_parties SET token_hash = ?, token_expires_at = ? WHERE id = ?').bind(tokenHash, executedLinkExpiry, party.id).run();
       const downloadUrl = `${signingBaseUrl(env, request)}/api/public/signing/${encodeURIComponent(token)}/executed-pdf`;
       await sendResendEmail(env, {
         to: [party.email],
