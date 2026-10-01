@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Building2, Camera, ChevronDown, ChevronRight, ClipboardList, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Building2, Camera, ChevronDown, ChevronRight, ClipboardList, Plus, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { getReportTemplate } from '../data/reportCatalogue';
 import { normalizeAreaName } from '../lib/reportFormatting';
 import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
@@ -8,6 +8,8 @@ interface Props {
   details: TenancyDetails;
   areas: InspectionArea[];
   photos: ReportPhoto[];
+  pendingPhotoUploads?: number;
+  onUploadPhotos: (files: File[], areaName: string, itemId?: string, areaId?: string) => Promise<void>;
   onChangeDetails: (details: TenancyDetails) => void;
   onChangeAreas: (areas: InspectionArea[]) => void;
   onChangePhotos: (photos: ReportPhoto[]) => void;
@@ -17,6 +19,8 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   details,
   areas,
   photos,
+  pendingPhotoUploads = 0,
+  onUploadPhotos,
   onChangeDetails,
   onChangeAreas,
   onChangePhotos,
@@ -27,6 +31,7 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   const [tab, setTab] = useState<'activities' | 'details' | 'summary'>('activities');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
   const [categoryNameDrafts, setCategoryNameDrafts] = useState<Record<string, string>>({});
+  const [photoDropTarget, setPhotoDropTarget] = useState<string | null>(null);
 
   const itemPhotoCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -36,6 +41,22 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
     });
     return counts;
   }, [photos]);
+
+  const droppedImageFiles = (event: React.DragEvent): File[] =>
+    Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('image/'));
+
+  const queueDroppedPhotos = (
+    event: React.DragEvent,
+    area: InspectionArea,
+    itemId?: string
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setPhotoDropTarget(null);
+    const files = droppedImageFiles(event);
+    if (!files.length) return;
+    void onUploadPhotos(files, area.name, itemId, area.id);
+  };
 
   const updateDetail = (key: keyof TenancyDetails, value: string) => {
     onChangeDetails({ ...details, [key]: value });
@@ -252,10 +273,14 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
               <div>
                 <h3 className="text-sm font-bold text-neutral-900">{template.findingsTitle}</h3>
                 <p className="text-xs text-neutral-500 mt-1">
-                  {monthlyPilot
-                    ? 'Rename and reorder categories using the controls below, then add individual reporting items within each category. Use the item arrow controls to set their order. Photos remain linked to their reporting item and follow category name changes automatically.'
-                    : 'Rename and reorder categories using the controls below, then add individual reporting items within each category. Photos remain linked to their reporting item and follow category name changes automatically.'}
+                  Rename and reorder categories, then add reporting items. Drag image files directly onto a category for category-level evidence or onto a reporting item for item-specific evidence. Uploads run in the background, so you can continue editing and queue files to other destinations.
                 </p>
+                {pendingPhotoUploads > 0 && (
+                  <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-900 text-[11px] font-semibold">
+                    <Upload className="w-3 h-3" />
+                    {pendingPhotoUploads} photo{pendingPhotoUploads === 1 ? '' : 's'} queued/uploading
+                  </div>
+                )}
               </div>
               <button onClick={addCategory} className="px-3 py-1.5 bg-[#0a2540] text-white rounded-lg text-xs font-bold flex items-center gap-1.5">
                 <Plus className="w-3.5 h-3.5" /> Add Category
@@ -265,7 +290,26 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
             {areas.map((area, areaIndex) => {
               const expanded = expandedAreaId === area.id;
               return (
-                <div key={area.id} className="border border-neutral-300 rounded-xl bg-white overflow-hidden">
+                <div
+                  key={area.id}
+                  className={`border rounded-xl bg-white overflow-hidden transition-colors ${
+                    photoDropTarget === `area:${area.id}`
+                      ? 'border-cyan-500 ring-2 ring-cyan-200'
+                      : 'border-neutral-300'
+                  }`}
+                  onDragOver={(event) => {
+                    if (!event.dataTransfer.types.includes('Files')) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'copy';
+                    setPhotoDropTarget(`area:${area.id}`);
+                  }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      setPhotoDropTarget((current) => current === `area:${area.id}` ? null : current);
+                    }
+                  }}
+                  onDrop={(event) => queueDroppedPhotos(event, area)}
+                >
                   <div
                     className="p-3 bg-neutral-100 flex items-center justify-between cursor-pointer"
                     onClick={() => setExpandedAreaId(expanded ? null : area.id)}
@@ -316,6 +360,12 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                       <button onClick={() => addItem(area.id)} className="px-2.5 py-1 text-xs border border-neutral-300 rounded bg-white font-semibold">
                         + Reporting Item
                       </button>
+                      <span
+                        className="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded bg-cyan-50 border border-cyan-200 text-cyan-800 text-[10px] font-semibold"
+                        title="Drop image files anywhere on this category header for category-level evidence"
+                      >
+                        <Upload className="w-3 h-3" /> Drop category photos
+                      </span>
                       <button
                         type="button"
                         onClick={() => deleteCategory(area)}
@@ -339,7 +389,28 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                       {area.items.map((item, itemIndex) => {
                         const linkedPhotos = itemPhotoCounts.get(item.id) || 0;
                         return (
-                          <div key={item.id} className="p-4 space-y-3">
+                          <div
+                            key={item.id}
+                            className={`p-4 space-y-3 transition-colors ${
+                              photoDropTarget === `item:${item.id}`
+                                ? 'bg-cyan-50/70 ring-2 ring-inset ring-cyan-300'
+                                : ''
+                            }`}
+                            onDragOver={(event) => {
+                              if (!event.dataTransfer.types.includes('Files')) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              event.dataTransfer.dropEffect = 'copy';
+                              setPhotoDropTarget(`item:${item.id}`);
+                            }}
+                            onDragLeave={(event) => {
+                              event.stopPropagation();
+                              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                                setPhotoDropTarget((current) => current === `item:${item.id}` ? null : current);
+                              }
+                            }}
+                            onDrop={(event) => queueDroppedPhotos(event, area, item.id)}
+                          >
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                               <div className="md:col-span-2">
                                 <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">
@@ -371,8 +442,12 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                                 />
                               </div>
                               <div className="md:col-span-2 flex items-end justify-between gap-2">
-                                <div className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 rounded-lg px-2 py-2 flex items-center gap-1">
-                                  <Camera className="w-3.5 h-3.5" /> {linkedPhotos} linked
+                                <div
+                                  className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 rounded-lg px-2 py-2 flex flex-col items-center gap-0.5"
+                                  title="Drop image files anywhere on this reporting item"
+                                >
+                                  <span className="flex items-center gap-1"><Camera className="w-3.5 h-3.5" /> {linkedPhotos} linked</span>
+                                  <span className="flex items-center gap-1 text-[9px]"><Upload className="w-3 h-3" /> Drop photos</span>
                                 </div>
                                 <div className="flex items-center gap-1">
                                   {monthlyPilot && (

@@ -71,6 +71,43 @@ function ItemPhotos({ report, item }: { report: ReportData; item: InspectionItem
   );
 }
 
+function CategoryPhotos({ report, area }: { report: ReportData; area: InspectionArea }) {
+  const areaKey = normalizeAreaName(area.name);
+  const photos = report.photos
+    .filter((photo) => !photo.itemId && normalizeAreaName(photo.areaName) === areaKey)
+    .sort((a, b) => (a.photoIndex || 0) - (b.photoIndex || 0));
+  if (!photos.length) return null;
+
+  return (
+    <div className="border-x border-b border-neutral-300 bg-cyan-50/40 px-3 py-3">
+      <div className="text-[8px] font-extrabold uppercase tracking-wide text-[#0a2540] mb-2">
+        Category-level photo evidence — {area.name}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {photos.map((photo, index) => (
+          <div key={photo.id} className="border border-neutral-200 bg-white flex flex-col min-w-0">
+            <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
+              Photo {index + 1} of {photos.length}
+            </div>
+            <div className="h-[42mm] bg-neutral-50 flex items-center justify-center overflow-hidden">
+              {photo.dataUrl || photo.url ? (
+                <img
+                  src={photo.dataUrl || photo.url}
+                  alt={photo.name}
+                  className="block max-w-full max-h-full object-contain"
+                  loading="lazy"
+                />
+              ) : (
+                <span className="text-[8px] text-neutral-400">Image unavailable</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ItemRows({
   report,
   area,
@@ -128,6 +165,7 @@ function CategoryPage({
       <div className="bg-slate-100 border border-neutral-300 px-3 py-2 text-sm font-extrabold text-[#0a2540]">
         {area.name}
       </div>
+      {inlinePhotos && <CategoryPhotos report={report} area={area} />}
       <div className="grid grid-cols-[38mm_32mm_1fr_44mm_12mm] bg-neutral-50 border-x border-b border-neutral-300 text-[8px] font-bold">
         <div className="p-2 border-r border-neutral-300 text-center">{daily ? 'Time / Party' : 'Date / Party'}</div>
         <div className="p-2 border-r border-neutral-300 text-center">Reporting Item</div>
@@ -184,7 +222,7 @@ function PhotoPages({ report }: { report: ReportData }) {
               return (
               <div key={photo.id} className="border border-neutral-200 flex flex-col min-w-0">
                 <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
-                  {photo.areaName || 'Category'} — {currentItem?.name || photo.itemName || 'Reporting item'}
+                  {photo.areaName || 'Category'} — {currentItem?.name || photo.itemName || 'Category-level photo'}
                 </div>
                 <div className="bg-neutral-50 flex-1 min-h-0 flex items-center justify-center overflow-hidden">
                   {photo.dataUrl || photo.url ? (

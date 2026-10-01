@@ -6,8 +6,8 @@ export interface ProcessedImage {
 
 export async function processInspectionImage(
   file: File,
-  maxDimension = 2000,
-  quality = 0.85
+  maxDimension = 1600,
+  quality = 0.8
 ): Promise<ProcessedImage> {
   if (!file.type.startsWith('image/')) {
     throw new Error(`${file.name} is not an image file.`);

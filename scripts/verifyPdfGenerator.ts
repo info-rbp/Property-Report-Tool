@@ -554,18 +554,27 @@ buildingMonthly.photos = [
     photoIndex: 1,
     dataUrl: PORTRAIT_JPEG,
   },
+  {
+    id: 'bm-monthly-category-photo',
+    name: 'Category overview evidence',
+    areaName: buildingMonthly.areas[1].name,
+    photoIndex: 2,
+    dataUrl: LANDSCAPE_JPEG,
+  },
 ];
 
 const maintenanceArea = buildingMonthly.areas[0];
 const securityArea = buildingMonthly.areas[1];
+const maintenanceAreaNameBeforeRename = maintenanceArea.name;
+const securityAreaNameBeforeRename = securityArea.name;
 maintenanceArea.name = 'Maintenance & Contractor Works';
 securityArea.name = 'Security, Access & Resident Support';
 const maintenanceItemIds = new Set(maintenanceArea.items.map((item) => item.id));
 const securityItemIds = new Set(securityArea.items.map((item) => item.id));
 buildingMonthly.photos = buildingMonthly.photos.map((photo) =>
-  photo.itemId && maintenanceItemIds.has(photo.itemId)
+  (photo.itemId && maintenanceItemIds.has(photo.itemId)) || photo.areaName === maintenanceAreaNameBeforeRename
     ? { ...photo, areaName: maintenanceArea.name }
-    : photo.itemId && securityItemIds.has(photo.itemId)
+    : (photo.itemId && securityItemIds.has(photo.itemId)) || photo.areaName === securityAreaNameBeforeRename
     ? { ...photo, areaName: securityArea.name }
     : photo
 );
@@ -624,11 +633,18 @@ if (validateReportForFinalization(validBuildingManager).length !== 0) {
   throw new Error('Valid Building Manager report failed finalization validation.');
 }
 
+const categoryPhotoBuildingManager = structuredClone(validBuildingManager);
+categoryPhotoBuildingManager.photos[0].itemId = undefined;
+categoryPhotoBuildingManager.photos[0].itemName = undefined;
+if (validateReportForFinalization(categoryPhotoBuildingManager).length !== 0) {
+  throw new Error('Valid Building Manager category-level photo failed finalization validation.');
+}
+
 const invalidBuildingManager = structuredClone(validBuildingManager);
-invalidBuildingManager.photos[0].itemId = undefined;
+invalidBuildingManager.photos[0].itemId = 'missing-building-manager-item';
 const invalidIssues = validateReportForFinalization(invalidBuildingManager);
-if (!invalidIssues.some((issue) => issue.code === 'building-photo-item-required')) {
-  throw new Error('Building Manager photo-link validation regression detected.');
+if (!invalidIssues.some((issue) => issue.code === 'photo-item-missing')) {
+  throw new Error('Building Manager stale photo-link validation regression detected.');
 }
 
 const duplicateAreaReport = createBlankReport('VacantProperty', {
