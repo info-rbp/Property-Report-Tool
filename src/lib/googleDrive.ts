@@ -3,6 +3,7 @@ const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 declare global {
   interface Window {
     google?: any;
+    gapi?: any;
   }
 }
 
@@ -30,22 +31,21 @@ async function ensureGoogleLibraries(): Promise<void> {
   ]);
 
   await new Promise<void>((resolve, reject) => {
-    const google = window.google;
-    if (!google?.accounts?.oauth2 || !google?.picker) {
-      const started = Date.now();
-      const timer = window.setInterval(() => {
-        if (window.google?.accounts?.oauth2 && window.google?.picker) {
-          window.clearInterval(timer);
-          resolve();
-        } else if (Date.now() - started > 10000) {
-          window.clearInterval(timer);
-          reject(new Error('Google Drive libraries did not initialise.'));
-        }
-      }, 100);
+    if (!window.gapi?.load) {
+      reject(new Error('Google API loader did not initialise.'));
       return;
     }
-    resolve();
+    window.gapi.load('picker', {
+      callback: () => resolve(),
+      onerror: () => reject(new Error('Google Picker did not initialise.')),
+      timeout: 10000,
+      ontimeout: () => reject(new Error('Google Picker timed out while initialising.')),
+    });
   });
+
+  if (!window.google?.accounts?.oauth2 || !window.google?.picker) {
+    throw new Error('Google Drive libraries did not initialise.');
+  }
 }
 
 async function requestAccessToken(clientId: string): Promise<string> {
