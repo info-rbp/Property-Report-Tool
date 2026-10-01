@@ -124,6 +124,10 @@ export const DeliveryPanel: React.FC<{ report: ReportData }> = ({ report }) => {
           label: field.label.trim(),
           placementLabel: field.placementLabel?.trim(),
           promptText: field.promptText?.trim(),
+          pageNumber: field.pageNumber,
+          xPercent: field.xPercent,
+          yPercent: field.yPercent,
+          widthPercent: field.widthPercent,
           required: field.required !== false,
         })),
       });
@@ -257,6 +261,61 @@ export const DeliveryPanel: React.FC<{ report: ReportData }> = ({ report }) => {
                 {field.fieldType === 'text' && (
                   <input value={field.promptText || ''} onChange={(e) => setFields((current) => current.map((item) => item.id === field.id ? { ...item, promptText: e.target.value } : item))} placeholder="Prompt shown to signer" className="md:col-span-5 border border-neutral-300 rounded-lg px-2 py-1.5 text-xs" />
                 )}
+                <div className="md:col-span-5 grid grid-cols-2 md:grid-cols-5 gap-2 pt-1">
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="block text-[10px] font-bold text-neutral-500 mb-1">PDF page</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={field.pageNumber || ''}
+                      onChange={(e) => setFields((current) => current.map((item) => item.id === field.id ? { ...item, pageNumber: e.target.value ? Number(e.target.value) : undefined } : item))}
+                      placeholder="Execution page"
+                      className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-500 mb-1">X %</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={field.xPercent ?? ''}
+                      onChange={(e) => setFields((current) => current.map((item) => item.id === field.id ? { ...item, xPercent: e.target.value ? Number(e.target.value) : undefined } : item))}
+                      placeholder="10"
+                      disabled={!field.pageNumber}
+                      className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-xs disabled:bg-neutral-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-500 mb-1">Y %</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={field.yPercent ?? ''}
+                      onChange={(e) => setFields((current) => current.map((item) => item.id === field.id ? { ...item, yPercent: e.target.value ? Number(e.target.value) : undefined } : item))}
+                      placeholder="75"
+                      disabled={!field.pageNumber}
+                      className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-xs disabled:bg-neutral-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-500 mb-1">Width %</label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={100}
+                      value={field.widthPercent ?? ''}
+                      onChange={(e) => setFields((current) => current.map((item) => item.id === field.id ? { ...item, widthPercent: e.target.value ? Number(e.target.value) : undefined } : item))}
+                      placeholder="25"
+                      disabled={!field.pageNumber}
+                      className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-xs disabled:bg-neutral-100"
+                    />
+                  </div>
+                  <div className="text-[10px] text-neutral-500 flex items-end pb-1">
+                    Leave page blank to place this field only on the execution page.
+                  </div>
+                </div>
               </div>
             ))}
           </div>
