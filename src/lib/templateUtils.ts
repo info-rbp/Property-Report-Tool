@@ -68,7 +68,7 @@ export function createTemplateSnapshot(report: ReportData): ReportData {
     completedPdfKey: undefined,
     createdAt: undefined,
     updatedAt: undefined,
-    details: details as ReportData['details'],
+    details: details as unknown as ReportData['details'],
     areas: report.areas.map(cloneAreaForTemplate),
     photos: [],
   });
