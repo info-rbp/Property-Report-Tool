@@ -51,6 +51,8 @@ interface DeliveryRow {
   delivery_mode: 'send' | 'signature';
   subject: string;
   message: string;
+  recipient_json: string | null;
+  cc_json: string | null;
   status: ReportDeliveryRecord['status'];
   resend_email_id: string | null;
   created_at: string;
@@ -111,7 +113,7 @@ interface SignatureFieldRow {
   completed_at: string | null;
 }
 
-const MAX_EMAIL_ATTACHMENT_BYTES = 35 * 1024 * 1024;
+const MAX_EMAIL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 function workflowHeaders(initial?: HeadersInit): Headers {
   const headers = new Headers(initial);
@@ -248,6 +250,8 @@ async function mapDelivery(env: WorkflowEnv, row: DeliveryRow): Promise<ReportDe
     deliveryMode: row.delivery_mode,
     subject: row.subject,
     message: row.message,
+    to: row.recipient_json ? JSON.parse(row.recipient_json) as ReportDeliveryRecord['to'] : undefined,
+    cc: row.cc_json ? JSON.parse(row.cc_json) as string[] : undefined,
     status: row.status,
     resendEmailId: row.resend_email_id || undefined,
     createdAt: row.created_at,
@@ -504,8 +508,8 @@ export async function handleWorkflowApi(request: Request, env: WorkflowEnv, user
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     await env.DB.prepare(
-      "INSERT INTO report_deliveries (id, report_id, delivery_mode, subject, message, status, created_at, created_by) VALUES (?, ?, 'send', ?, ?, 'queued', ?, ?)"
-    ).bind(id, reportRow.id, body.subject, body.message, now, userEmail).run();
+      "INSERT INTO report_deliveries (id, report_id, delivery_mode, subject, message, recipient_json, cc_json, status, created_at, created_by) VALUES (?, ?, 'send', ?, ?, ?, ?, 'queued', ?, ?)"
+    ).bind(id, reportRow.id, body.subject, body.message, JSON.stringify(body.to), JSON.stringify(body.cc || []), now, userEmail).run();
 
     try {
       const sent = await sendResendEmail(env, {
@@ -538,8 +542,8 @@ export async function handleWorkflowApi(request: Request, env: WorkflowEnv, user
 
     await env.DB.batch([
       env.DB.prepare(
-        "INSERT INTO report_deliveries (id, report_id, delivery_mode, subject, message, status, created_at, created_by) VALUES (?, ?, 'signature', ?, ?, 'queued', ?, ?)"
-      ).bind(deliveryId, reportRow.id, body.subject, body.message, now.toISOString(), userEmail),
+        "INSERT INTO report_deliveries (id, report_id, delivery_mode, subject, message, recipient_json, cc_json, status, created_at, created_by) VALUES (?, ?, 'signature', ?, ?, ?, ?, 'queued', ?, ?)"
+      ).bind(deliveryId, reportRow.id, body.subject, body.message, JSON.stringify(body.parties), JSON.stringify([]), now.toISOString(), userEmail),
       env.DB.prepare(
         "INSERT INTO signature_requests (id, delivery_id, report_id, signing_order, status, expires_at, created_at, updated_at, created_by) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)"
       ).bind(requestId, deliveryId, reportRow.id, body.signingOrder || 'sequential', expiresAt, now.toISOString(), now.toISOString(), userEmail),
