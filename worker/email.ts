@@ -52,7 +52,7 @@ export function emailBody(message: string, callToAction?: { label: string; url: 
 
 export async function sendResendEmail(env: ResendEnv, input: SendEmailInput): Promise<{ id: string }> {
   if (!env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not configured.');
-  if (!env.RESEND_FROM_EMAIL) throw new Error('RESEND_FROM_EMAIL is not configured.');
+  const fromEmail = env.RESEND_FROM_EMAIL || 'ProInspect <info@proinspect.systems>';
 
   const attachments = (input.attachments || []).map((attachment) => ({
     filename: attachment.filename,
@@ -68,7 +68,7 @@ export async function sendResendEmail(env: ResendEnv, input: SendEmailInput): Pr
       'Idempotency-Key': input.idempotencyKey.slice(0, 256),
     },
     body: JSON.stringify({
-      from: env.RESEND_FROM_EMAIL,
+      from: fromEmail,
       to: input.to,
       cc: input.cc?.length ? input.cc : undefined,
       subject: input.subject,
