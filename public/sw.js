@@ -1,4 +1,4 @@
-const CACHE = 'proinspect-shell-v2';
+const CACHE = 'proinspect-shell-v3';
 const SHELL = ['/manifest.webmanifest', '/proinspect-icon.svg'];
 
 async function precacheApplication() {
@@ -35,7 +35,28 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+
+  const cacheableReportMedia =
+    url.pathname.startsWith('/api/reports/') &&
+    (url.pathname.includes('/photos/') || url.pathname.endsWith('/cover'));
+
+  if (cacheableReportMedia) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  if (url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(
