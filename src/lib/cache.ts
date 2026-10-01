@@ -18,16 +18,69 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-export async function cacheReport(report: ReportData): Promise<void> {
-  if (!report.id) return;
-  const db = await openDatabase();
-  await new Promise<void>((resolve, reject) => {
+function compactReportForCache(report: ReportData): ReportData {
+  return {
+    ...report,
+    details: {
+      ...report.details,
+      coverPhotoUrl: report.details.coverPhotoUrl?.startsWith('data:')
+        ? undefined
+        : report.details.coverPhotoUrl,
+    },
+    photos: (report.photos || []).map((photo) => ({
+      ...photo,
+      dataUrl: undefined,
+    })),
+  };
+}
+
+function putReport(db: IDBDatabase, report: ReportData): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(REPORT_STORE, 'readwrite');
     tx.objectStore(REPORT_STORE).put(report);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
-  db.close();
+}
+
+function clearReports(db: IDBDatabase): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(REPORT_STORE, 'readwrite');
+    tx.objectStore(REPORT_STORE).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+function isQuotaError(error: unknown): boolean {
+  return error instanceof DOMException && (
+    error.name === 'QuotaExceededError' ||
+    error.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+  );
+}
+
+export async function cacheReport(report: ReportData): Promise<void> {
+  if (!report.id) return;
+  const compact = compactReportForCache(report);
+  const db = await openDatabase();
+
+  try {
+    await putReport(db, compact);
+  } catch (error) {
+    if (!isQuotaError(error)) {
+      db.close();
+      throw error;
+    }
+
+    // Legacy cached reports may contain embedded image data. If browser storage is
+    // full, clear the local recovery cache and retain only the current compact draft.
+    await clearReports(db);
+    await putReport(db, compact);
+  } finally {
+    db.close();
+  }
 }
 
 export async function getCachedReport(id: string): Promise<ReportData | null> {
