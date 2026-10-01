@@ -247,7 +247,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         </div>
       </div>
 
-      {pendingUploadCount > 0 && (
+      {(pendingUploadCount > 0 || isUploading) && (
         <div className="px-4 py-2.5 bg-cyan-50 border-b border-cyan-200 text-cyan-900 text-xs flex items-center justify-between gap-3">
           <span><strong>{pendingUploadCount}</strong> photo{pendingUploadCount === 1 ? '' : 's'} queued/uploading in the background.</span>
           <span className="text-cyan-700">You can continue editing and queue more photos.</span>
