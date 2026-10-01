@@ -97,7 +97,7 @@ export default function App() {
         const currentId = reportRef.current?.id;
         const updated = currentId ? result.reports.filter((candidate) => candidate.id === currentId).at(-1) : undefined;
         if (updated) {
-          const normalized = normalizeReport(updated);
+          const normalized = await hydrateOfflinePhotoPreviews(normalizeReport(updated));
           if (normalized.id) serverVersionsRef.current[normalized.id] = normalized.updatedAt;
           reportRef.current = normalized;
           setReport(normalized);
