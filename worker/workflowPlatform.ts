@@ -101,6 +101,10 @@ interface SignatureFieldRow {
   label: string;
   placement_label: string | null;
   prompt_text: string | null;
+  page_number: number | null;
+  x_percent: number | null;
+  y_percent: number | null;
+  width_percent: number | null;
   required: number;
   display_order: number;
   value_text: string | null;
@@ -206,6 +210,10 @@ function mapField(row: SignatureFieldRow): SignatureFieldRecord {
     label: row.label,
     placementLabel: row.placement_label || undefined,
     promptText: row.prompt_text || undefined,
+    pageNumber: row.page_number || undefined,
+    xPercent: row.x_percent ?? undefined,
+    yPercent: row.y_percent ?? undefined,
+    widthPercent: row.width_percent ?? undefined,
     required: Boolean(row.required),
     displayOrder: row.display_order,
     valueText: row.value_text || undefined,
@@ -522,7 +530,7 @@ export async function handleWorkflowApi(request: Request, env: WorkflowEnv, user
       const field = body.fields[index];
       const partyId = field.partyIndex === undefined ? null : partyRows[field.partyIndex]?.id || null;
       await env.DB.prepare(
-        'INSERT INTO signature_fields (id, request_id, party_id, field_type, label, placement_label, prompt_text, required, display_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO signature_fields (id, request_id, party_id, field_type, label, placement_label, prompt_text, page_number, x_percent, y_percent, width_percent, required, display_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       ).bind(
         crypto.randomUUID(),
         requestId,
@@ -531,6 +539,10 @@ export async function handleWorkflowApi(request: Request, env: WorkflowEnv, user
         field.label.trim() || (field.fieldType === 'signature' ? 'Signature' : 'Comment'),
         field.placementLabel?.trim() || null,
         field.promptText?.trim() || null,
+        field.pageNumber && field.pageNumber > 0 ? Math.floor(field.pageNumber) : null,
+        field.xPercent === undefined ? null : Math.max(0, Math.min(100, field.xPercent)),
+        field.yPercent === undefined ? null : Math.max(0, Math.min(100, field.yPercent)),
+        field.widthPercent === undefined ? null : Math.max(5, Math.min(100, field.widthPercent)),
         field.required === false ? 0 : 1,
         field.displayOrder || index + 1,
       ).run();
@@ -656,9 +668,14 @@ export async function handlePublicWorkflowApi(request: Request, env: WorkflowEnv
           signedAt: party.signed_at || now,
         })),
         fields: (fieldRows.results || []).map((field) => ({
+          fieldType: field.field_type,
           label: field.label,
           placementLabel: field.placement_label || undefined,
           promptText: field.prompt_text || undefined,
+          pageNumber: field.page_number || undefined,
+          xPercent: field.x_percent ?? undefined,
+          yPercent: field.y_percent ?? undefined,
+          widthPercent: field.width_percent ?? undefined,
           valueText: field.value_text || undefined,
           partyId: field.party_id || undefined,
         })),
