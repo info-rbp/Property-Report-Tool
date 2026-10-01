@@ -288,7 +288,11 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                       />
                       <span className="text-[11px] bg-neutral-200 px-2 py-0.5 rounded-full whitespace-nowrap">{area.items.length} reporting items</span>
                     </div>
-                    <div className="flex items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+                    <div
+                      className="flex items-center gap-1.5"
+                      onClick={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => event.preventDefault()}
+                    >
                       <button
                         type="button"
                         onClick={() => moveCategory(area.id, 'up')}
