@@ -37,6 +37,13 @@ function itemPhotoCount(report: ReportData, itemId: string): number {
   return itemPhotos(report, itemId).length;
 }
 
+function categoryPhotos(report: ReportData, area: InspectionArea) {
+  const areaKey = normalizeAreaName(area.name);
+  return report.photos
+    .filter((photo) => !photo.itemId && normalizeAreaName(photo.areaName) === areaKey)
+    .sort((a, b) => (a.photoIndex || 0) - (b.photoIndex || 0));
+}
+
 function ItemPhotos({ report, item }: { report: ReportData; item: InspectionItem }) {
   const photos = itemPhotos(report, item.id);
   if (!photos.length) return null;
@@ -45,6 +52,40 @@ function ItemPhotos({ report, item }: { report: ReportData; item: InspectionItem
     <div className="border-x border-b border-neutral-300 bg-neutral-50 px-3 py-3">
       <div className="text-[8px] font-extrabold uppercase tracking-wide text-[#0a2540] mb-2">
         Photo evidence — {item.name || 'Reporting item'}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {photos.map((photo, index) => (
+          <div key={photo.id} className="border border-neutral-200 bg-white flex flex-col min-w-0">
+            <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
+              Photo {index + 1} of {photos.length}
+            </div>
+            <div className="h-[42mm] bg-neutral-50 flex items-center justify-center overflow-hidden">
+              {photo.dataUrl || photo.url ? (
+                <img
+                  src={photo.dataUrl || photo.url}
+                  alt={photo.name}
+                  className="block max-w-full max-h-full object-contain"
+                  loading="lazy"
+                />
+              ) : (
+                <span className="text-[8px] text-neutral-400">Image unavailable</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CategoryPhotos({ report, area }: { report: ReportData; area: InspectionArea }) {
+  const photos = categoryPhotos(report, area);
+  if (!photos.length) return null;
+
+  return (
+    <div className="border-x border-b border-neutral-300 bg-cyan-50/40 px-3 py-3">
+      <div className="text-[8px] font-extrabold uppercase tracking-wide text-[#0a2540] mb-2">
+        Category photo evidence — {area.name}
       </div>
       <div className="grid grid-cols-3 gap-2">
         {photos.map((photo, index) => (
@@ -138,6 +179,7 @@ function CategoryPage({
         <div className="p-2 text-center">Photos</div>
       </div>
       <ItemRows report={report} area={area} daily={daily} inlinePhotos={inlinePhotos} />
+      {inlinePhotos && <CategoryPhotos report={report} area={area} />}
       <Footer />
     </div>
   );
@@ -173,7 +215,7 @@ function PhotoPages({ report }: { report: ReportData }) {
           <Header report={report} title="Building Manager Photo Evidence" />
           {pageIndex === 0 && (
             <div className="bg-slate-100 border border-neutral-300 px-3 py-2 text-sm font-extrabold text-[#0a2540] mb-3">
-              Item-linked Photo Evidence ({ordered.length} photos)
+              Building Manager Photo Evidence ({ordered.length} photos)
             </div>
           )}
           <div className="grid grid-cols-3 grid-rows-4 gap-2 flex-1 min-h-0">
@@ -184,7 +226,7 @@ function PhotoPages({ report }: { report: ReportData }) {
               return (
               <div key={photo.id} className="border border-neutral-200 flex flex-col min-w-0">
                 <div className="px-1.5 py-1 text-[8px] font-bold leading-tight">
-                  {photo.areaName || 'Category'} — {currentItem?.name || photo.itemName || 'Reporting item'}
+                  {photo.areaName || 'Category'} — {currentItem?.name || photo.itemName || 'Category evidence'}
                 </div>
                 <div className="bg-neutral-50 flex-1 min-h-0 flex items-center justify-center overflow-hidden">
                   {photo.dataUrl || photo.url ? (
