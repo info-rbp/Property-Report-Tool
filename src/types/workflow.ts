@@ -111,6 +111,8 @@ export interface ReportDeliveryRecord {
   deliveryMode: DeliveryMode;
   subject: string;
   message: string;
+  to?: DeliveryRecipient[];
+  cc?: string[];
   status: DeliveryStatus;
   resendEmailId?: string;
   createdAt: string;
