@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
 import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
-import { formatAustralianDate, splitTenantNames } from './reportFormatting';
+import { formatAustralianDate, normalizeAreaName, splitTenantNames } from './reportFormatting';
 import { assertReportReadyForPdf } from './reportValidation';
 import { InspectionArea, InspectionItem, ReportData, ReportPhoto, ReportType } from '../types/report';
 
