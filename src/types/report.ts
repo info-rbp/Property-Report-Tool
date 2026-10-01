@@ -82,6 +82,7 @@ export interface ReportPhoto {
   itemName?: string;
   photoIndex?: number;
   isCover?: boolean;
+  offlinePending?: boolean;
 }
 
 export interface TenancyDetails {
