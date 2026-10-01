@@ -555,6 +555,25 @@ buildingMonthly.photos = [
     dataUrl: PORTRAIT_JPEG,
   },
 ];
+
+const maintenanceArea = buildingMonthly.areas[0];
+const securityArea = buildingMonthly.areas[1];
+maintenanceArea.name = 'Maintenance & Contractor Works';
+securityArea.name = 'Security, Access & Resident Support';
+const maintenanceItemIds = new Set(maintenanceArea.items.map((item) => item.id));
+const securityItemIds = new Set(securityArea.items.map((item) => item.id));
+buildingMonthly.photos = buildingMonthly.photos.map((photo) =>
+  photo.itemId && maintenanceItemIds.has(photo.itemId)
+    ? { ...photo, areaName: maintenanceArea.name }
+    : photo.itemId && securityItemIds.has(photo.itemId)
+    ? { ...photo, areaName: securityArea.name }
+    : photo
+);
+[buildingMonthly.areas[0], buildingMonthly.areas[1]] = [buildingMonthly.areas[1], buildingMonthly.areas[0]];
+
+if (validateReportForFinalization(buildingMonthly).length !== 0) {
+  throw new Error('Renamed/reordered Building Manager categories failed finalization validation.');
+}
 await verifyPdf('BuildingManagementMonthlyFilled', buildingMonthly, 6, 10_000);
 
 const commonPropertyStress = createBlankReport('CommonProperty', {
