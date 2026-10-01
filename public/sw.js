@@ -1,8 +1,27 @@
-const CACHE = 'proinspect-shell-v1';
-const SHELL = ['/', '/manifest.webmanifest', '/proinspect-icon.svg'];
+const CACHE = 'proinspect-shell-v2';
+const SHELL = ['/manifest.webmanifest', '/proinspect-icon.svg'];
+
+async function precacheApplication() {
+  const cache = await caches.open(CACHE);
+  await cache.addAll(SHELL);
+  try {
+    const response = await fetch('/', { credentials: 'include', cache: 'reload' });
+    if (!response.ok) return;
+    const html = await response.text();
+    await cache.put('/', new Response(html, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    }));
+    const assetPaths = Array.from(html.matchAll(/(?:src|href)="([^"]+)"/g))
+      .map((match) => match[1])
+      .filter((path) => path.startsWith('/') && !path.startsWith('/api/'));
+    await Promise.all(assetPaths.map((path) => cache.add(path).catch(() => undefined)));
+  } catch {
+    // The existing cache remains usable if refresh fails.
+  }
+}
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
+  event.waitUntil(precacheApplication());
   self.skipWaiting();
 });
 
@@ -22,8 +41,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put('/', copy));
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put('/', copy));
+          }
           return response;
         })
         .catch(() => caches.match('/'))
