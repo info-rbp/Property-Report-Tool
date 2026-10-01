@@ -236,10 +236,10 @@ async function updateReportData(
     })),
   };
 
-  await env.DB.prepare(
+  const result = await env.DB.prepare(
     `UPDATE reports
      SET report_type = ?, status = ?, report_data = ?, completed_pdf_key = ?, updated_at = ?, updated_by = ?
-     WHERE id = ?`
+     WHERE id = ? AND updated_at = ?`
   )
     .bind(
       storageReportType(stored.details.reportType),
@@ -248,9 +248,17 @@ async function updateReportData(
       completedPdfKey,
       now,
       userEmail,
-      row.id
+      row.id,
+      row.updated_at
     )
     .run();
+
+  if ((result.meta.changes || 0) !== 1) {
+    throw new HttpError(
+      409,
+      'This report changed in another browser or device before the update completed. Reload the latest cloud version before retrying.'
+    );
+  }
 
   return parseReport({
     ...row,
