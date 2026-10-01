@@ -2486,6 +2486,61 @@ function addFooters(pdf: jsPDF, report: ReportData) {
   }
 }
 
+function drawPlacedExecutionFields(pdf: jsPDF, report: ReportData) {
+  const execution = report.execution;
+  if (!execution?.fields?.length) return;
+
+  const originalPage = pdf.getCurrentPageInfo().pageNumber;
+  const totalPages = pdf.getNumberOfPages();
+
+  for (const field of execution.fields) {
+    if (!field.pageNumber || field.pageNumber < 1 || field.pageNumber > totalPages) continue;
+    const party = field.partyId
+      ? execution.parties.find((candidate) => candidate.id === field.partyId)
+      : execution.parties[0];
+    if (!party) continue;
+
+    const xPercent = Math.max(0, Math.min(100, field.xPercent ?? 10));
+    const yPercent = Math.max(0, Math.min(100, field.yPercent ?? 75));
+    const widthPercent = Math.max(5, Math.min(100, field.widthPercent ?? 25));
+    const width = Math.min(CONTENT_WIDTH, CONTENT_WIDTH * (widthPercent / 100));
+    const x = Math.min(PAGE_WIDTH - MARGIN_X - width, MARGIN_X + CONTENT_WIDTH * (xPercent / 100));
+    const y = Math.min(BODY_BOTTOM - 16, BODY_TOP + (BODY_BOTTOM - BODY_TOP) * (yPercent / 100));
+
+    pdf.setPage(field.pageNumber);
+    drawBox(pdf, x, y, width, 15, [255, 255, 255], BORDER);
+    setFont(pdf, 4.8, 'bold');
+    setTextColor(pdf, MUTED);
+    pdf.text(truncateTextToWidth(pdf, field.label || field.placementLabel || 'Execution field', width - 3), x + 1.5, y + 3.2);
+
+    if (field.fieldType === 'text') {
+      setFont(pdf, 6, 'normal');
+      setTextColor(pdf, TEXT);
+      const lines = wrapText(pdf, field.valueText || '', width - 3);
+      drawWrappedLines(pdf, lines, x + 1.5, y + 7, 2.4, { maxLines: 3 });
+    } else {
+      if (party.signatureDataUrl) {
+        try {
+          pdf.addImage(party.signatureDataUrl, 'PNG', x + 1.5, y + 4.5, width - 3, 8.5, undefined, 'FAST');
+        } catch {
+          setFont(pdf, 7, 'italic');
+          setTextColor(pdf, TEXT);
+          pdf.text(truncateTextToWidth(pdf, party.signedName, width - 3), x + 1.5, y + 10);
+        }
+      } else {
+        setFont(pdf, 7, 'italic');
+        setTextColor(pdf, TEXT);
+        pdf.text(truncateTextToWidth(pdf, party.signedName, width - 3), x + 1.5, y + 10);
+      }
+      setFont(pdf, 4.8, 'normal');
+      setTextColor(pdf, MUTED);
+      pdf.text(truncateTextToWidth(pdf, party.roleLabel, width - 3), x + 1.5, y + 13.6);
+    }
+  }
+
+  pdf.setPage(originalPage);
+}
+
 function drawExecutionPages(pdf: jsPDF, report: ReportData) {
   const execution = report.execution;
   if (!execution?.parties?.length) return;
@@ -2649,6 +2704,8 @@ export async function generateReportPdf(
   }
 
   if (report.execution?.parties?.length) {
+    onProgress?.('Applying placed signature and text fields...');
+    drawPlacedExecutionFields(pdf, report);
     onProgress?.('Building execution and signature pages...');
     drawExecutionPages(pdf, report);
   }
