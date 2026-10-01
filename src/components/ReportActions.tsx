@@ -54,12 +54,12 @@ export const ReportActions: React.FC<Props> = ({
       )}
 
       <div className="flex flex-wrap gap-2">
-        {!completed && onSaveTemplate && (
+        {onSaveTemplate && (
           <button
             onClick={() => void onSaveTemplate()}
             className="px-4 py-2 border border-neutral-300 bg-white rounded-lg text-sm font-bold flex items-center gap-2"
           >
-            <BookmarkPlus className="w-4 h-4" /> Save as Template
+            <BookmarkPlus className="w-4 h-4" /> Save Layout as Template
           </button>
         )}
         {completed ? (
