@@ -680,4 +680,48 @@ if (!futureSchemaRejected) {
   throw new Error('Future report schema versions must be rejected until the application supports them.');
 }
 
+const executedRoutine = structuredClone(routineReport);
+executedRoutine.execution = {
+  requestId: 'execution-regression-request',
+  completedAt: '2026-10-02T09:30:00+08:00',
+  parties: [
+    {
+      id: 'execution-client',
+      name: 'Alex Client',
+      email: 'alex@example.com',
+      roleLabel: 'Client / Owner',
+      signedName: 'Alex Client',
+      commentary: 'Reviewed and accepted.',
+      signedAt: '2026-10-02T09:10:00+08:00',
+    },
+    {
+      id: 'execution-manager',
+      name: 'Morgan Manager',
+      email: 'manager@example.com',
+      roleLabel: 'Property Manager / Countersigner',
+      signedName: 'Morgan Manager',
+      signedAt: '2026-10-02T09:30:00+08:00',
+    },
+  ],
+  fields: [
+    {
+      label: 'Client signature',
+      placementLabel: 'Client acknowledgement',
+      partyId: 'execution-client',
+    },
+    {
+      label: 'Client instructions',
+      placementLabel: 'Execution commentary',
+      valueText: 'Proceed with the recommended maintenance items.',
+      partyId: 'execution-client',
+    },
+    {
+      label: 'Property manager countersignature',
+      placementLabel: 'Management countersignature',
+      partyId: 'execution-manager',
+    },
+  ],
+};
+await verifyPdf('RoutineFullyExecuted', executedRoutine, 4, 5_000);
+
 console.log(`All ${REPORT_TEMPLATES.length} catalogue templates, rendering stress fixtures, schema migrations and report-integrity checks passed.`);
