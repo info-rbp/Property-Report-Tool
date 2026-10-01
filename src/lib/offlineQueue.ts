@@ -61,6 +61,7 @@ async function putOperation(operation: OfflineOperation): Promise<void> {
 
 export async function queueOfflineSave(report: ReportData, expectedUpdatedAt?: string): Promise<void> {
   if (!report.id) return;
+  const reportId = report.id;
   // Keep only the most recent pending save for a report.
   const existing = await listOfflineOperations();
   const db = await openDatabase();
@@ -68,12 +69,12 @@ export async function queueOfflineSave(report: ReportData, expectedUpdatedAt?: s
     const tx = db.transaction(STORE, 'readwrite');
     const store = tx.objectStore(STORE);
     existing
-      .filter((operation) => operation.kind === 'save-report' && operation.reportId === report.id)
+      .filter((operation) => operation.kind === 'save-report' && operation.reportId === reportId)
       .forEach((operation) => store.delete(operation.id));
     store.put({
-      id: `save-${report.id}-${crypto.randomUUID()}`,
+      id: `save-${reportId}-${crypto.randomUUID()}`,
       kind: 'save-report',
-      reportId: report.id,
+      reportId,
       createdAt: new Date().toISOString(),
       report,
       expectedUpdatedAt,
