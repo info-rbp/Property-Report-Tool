@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Building2, Camera, ChevronDown, ChevronRight, ClipboardList, Plus, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { getReportTemplate } from '../data/reportCatalogue';
 import { normalizeAreaName } from '../lib/reportFormatting';
@@ -32,6 +32,8 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
   const [categoryNameDrafts, setCategoryNameDrafts] = useState<Record<string, string>>({});
   const [photoDropTarget, setPhotoDropTarget] = useState<string | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [cameraTarget, setCameraTarget] = useState<{ areaId: string; areaName: string; itemId: string } | null>(null);
 
   const itemPhotoCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -41,6 +43,18 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
     });
     return counts;
   }, [photos]);
+
+  const openItemCamera = (area: InspectionArea, itemId: string) => {
+    setCameraTarget({ areaId: area.id, areaName: area.name, itemId });
+    cameraInputRef.current?.click();
+  };
+
+  const handleCameraCapture = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length || !cameraTarget) return;
+    void onUploadPhotos(files, cameraTarget.areaName, cameraTarget.itemId, cameraTarget.areaId);
+  };
 
   const droppedImageFiles = (event: React.DragEvent): File[] =>
     Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('image/'));
@@ -245,6 +259,14 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
 
   return (
     <div className="bg-white rounded-xl shadow-xs border border-neutral-200 overflow-hidden flex flex-col h-full">
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleCameraCapture}
+        className="hidden"
+      />
       <div className="flex border-b border-neutral-200 bg-neutral-50 px-4 overflow-x-auto">
         <button
           onClick={() => setTab('activities')}
@@ -442,12 +464,22 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                                 />
                               </div>
                               <div className="md:col-span-2 flex items-end justify-between gap-2">
-                                <div
-                                  className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 rounded-lg px-2 py-2 flex flex-col items-center gap-0.5"
-                                  title="Drop image files anywhere on this reporting item"
-                                >
-                                  <span className="flex items-center gap-1"><Camera className="w-3.5 h-3.5" /> {linkedPhotos} linked</span>
-                                  <span className="flex items-center gap-1 text-[9px]"><Upload className="w-3 h-3" /> Drop photos</span>
+                                <div className="flex flex-col gap-1">
+                                  <div
+                                    className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 rounded-lg px-2 py-2 flex flex-col items-center gap-0.5"
+                                    title="Drop image files anywhere on this reporting item"
+                                  >
+                                    <span className="flex items-center gap-1"><Camera className="w-3.5 h-3.5" /> {linkedPhotos} linked</span>
+                                    <span className="flex items-center gap-1 text-[9px]"><Upload className="w-3 h-3" /> Drop photos</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => openItemCamera(area, item.id)}
+                                    className="px-2 py-1.5 rounded-lg bg-[#0a2540] text-white text-[10px] font-bold flex items-center justify-center gap-1"
+                                    title="Open the phone camera and attach the photo to this reporting item"
+                                  >
+                                    <Camera className="w-3 h-3" /> Take Photo
+                                  </button>
                                 </div>
                                 <div className="flex items-center gap-1">
                                   {monthlyPilot && (
