@@ -144,12 +144,6 @@ export function validateReportStructure(report: ReportData): ReportValidationIss
           itemId: photo.itemId,
         });
       }
-    } else if (buildingManagement) {
-      issues.push({
-        code: 'building-photo-item-required',
-        message: `Building Manager photo "${photo.name || photo.id}" must be linked to a specific reporting item.`,
-        photoId: photo.id,
-      });
     }
   }
 
