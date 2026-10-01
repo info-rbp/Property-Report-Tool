@@ -165,6 +165,7 @@ export interface TenancyDetails {
 }
 
 export interface ReportExecutionParty {
+  id?: string;
   name: string;
   email: string;
   roleLabel: string;
