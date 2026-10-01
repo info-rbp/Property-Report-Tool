@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Download, FileText, Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowLeft, Bookmark, Download, FileText, Plus, Trash2 } from 'lucide-react';
+import { api } from '../lib/api';
 import { isKeyReceiptTemplate, REPORT_CATEGORIES, REPORT_TEMPLATES, reportLabel } from '../data/reportCatalogue';
 import { PropertyRecord, ReportSummary, ReportType } from '../types/report';
+import type { ReportTemplateRecord } from '../types/workflow';
 
 interface Props {
   property: PropertyRecord;
   reports: ReportSummary[];
   onBack: () => void;
   onCreate: (type: ReportType) => Promise<void>;
+  onCreateFromTemplate: (template: ReportTemplateRecord) => Promise<void>;
   onOpen: (id: string) => void;
   onDelete: (id: string) => Promise<void>;
   onDownloadCompleted: (id: string) => void;
@@ -18,12 +21,24 @@ export const ReportDashboard: React.FC<Props> = ({
   reports,
   onBack,
   onCreate,
+  onCreateFromTemplate,
   onOpen,
   onDelete,
   onDownloadCompleted,
 }) => {
   const [type, setType] = useState<ReportType>('Entry');
   const [isCreating, setIsCreating] = useState(false);
+  const [templates, setTemplates] = useState<ReportTemplateRecord[]>([]);
+  const [templateId, setTemplateId] = useState('');
+
+  useEffect(() => {
+    api.listTemplates(property.id)
+      .then((items) => {
+        setTemplates(items);
+        if (items.length) setTemplateId((current) => current || items[0].id);
+      })
+      .catch(() => setTemplates([]));
+  }, [property.id]);
 
   const create = async () => {
     setIsCreating(true);
@@ -32,6 +47,25 @@ export const ReportDashboard: React.FC<Props> = ({
     } finally {
       setIsCreating(false);
     }
+  };
+
+  const createFromTemplate = async () => {
+    const template = templates.find((item) => item.id === templateId);
+    if (!template) return;
+    setIsCreating(true);
+    try {
+      await onCreateFromTemplate(template);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const removeTemplate = async (id: string) => {
+    if (!confirm('Delete this saved report template?')) return;
+    await api.deleteTemplate(id);
+    const next = templates.filter((item) => item.id !== id);
+    setTemplates(next);
+    setTemplateId(next[0]?.id || '');
   };
 
   return (
@@ -69,6 +103,50 @@ export const ReportDashboard: React.FC<Props> = ({
             >
               <Plus className="w-4 h-4" /> {isCreating ? 'Creating...' : 'Create Report'}
             </button>
+          </div>
+        </section>
+
+        <section className="bg-white border border-neutral-200 rounded-xl p-5 shadow-xs">
+          <div className="flex items-start gap-3">
+            <Bookmark className="w-5 h-5 text-[#0a2540] mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <h2 className="font-bold text-neutral-900">Saved report templates</h2>
+              <p className="text-xs text-neutral-500 mt-1">
+                Create a fresh report from a saved layout. Photos, historical commentary, dates and signatures are not copied.
+              </p>
+              {templates.length === 0 ? (
+                <div className="mt-3 text-xs text-neutral-500">No saved templates are available for this property yet.</div>
+              ) : (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <select
+                    value={templateId}
+                    onChange={(e) => setTemplateId(e.target.value)}
+                    className="min-w-64 border border-neutral-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  >
+                    {templates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name} {template.scopeType === 'property' ? '• Property' : '• Global'}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={createFromTemplate}
+                    disabled={isCreating || !templateId}
+                    className="px-4 py-2 rounded-lg bg-[#0a2540] text-white text-sm font-bold disabled:opacity-50"
+                  >
+                    Create from Template
+                  </button>
+                  <button
+                    onClick={() => templateId && void removeTemplate(templateId)}
+                    disabled={!templateId}
+                    className="p-2 text-red-600 border border-neutral-300 rounded-lg disabled:opacity-40"
+                    title="Delete selected template"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
