@@ -97,8 +97,6 @@ export function validateReportStructure(report: ReportData): ReportValidationIss
 
   const photoIds = new Set<string>();
   let coverPhotoCount = 0;
-  const buildingManagement = isBuildingManagementTemplate(report.details.reportType);
-
   for (const photo of report.photos || []) {
     if (!photo.id?.trim()) {
       issues.push({ code: 'blank-photo-id', message: 'A report photo is missing its internal ID.' });
@@ -144,12 +142,6 @@ export function validateReportStructure(report: ReportData): ReportValidationIss
           itemId: photo.itemId,
         });
       }
-    } else if (buildingManagement) {
-      issues.push({
-        code: 'building-photo-item-required',
-        message: `Building Manager photo "${photo.name || photo.id}" must be linked to a specific reporting item.`,
-        photoId: photo.id,
-      });
     }
   }
 
