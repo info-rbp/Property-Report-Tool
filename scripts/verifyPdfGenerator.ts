@@ -251,7 +251,22 @@ const exitReport: ReportData = {
   photos: [],
 };
 
-await verifyPdf('Entry', report, 5, 10_000);
+report.areas[0].items[0].maintenanceRequired = true;
+report.areas[0].items[0].maintenanceCommentary =
+  'Door closer is not consistently latching. Engage a general maintenance contractor to adjust the closer and confirm secure operation.';
+report.photos = [
+  {
+    id: 'entry-maintenance-photo',
+    name: 'Entry door closer maintenance evidence',
+    areaName: report.areas[0].name,
+    itemId: report.areas[0].items[0].id,
+    itemName: report.areas[0].items[0].name,
+    photoIndex: 1,
+    dataUrl: LANDSCAPE_JPEG,
+  },
+];
+
+await verifyPdf('Entry', report, 6, 10_000);
 await verifyPdf('Routine', routineReport, 3, 4_000);
 await verifyPdf('Exit', exitReport, 4);
 
@@ -298,6 +313,15 @@ for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', '
         working: template.family === 'condition' ? true : undefined,
         agentComments:
           `Representative ${template.shortLabel} observation for ${area.name}. The deterministic renderer must preserve wrapping, page geometry and ProInspect branding.`,
+        activityParty: ['inspection', 'maintenance', 'operations', 'event'].includes(template.family)
+          ? 'ProInspect / Assigned Contractor'
+          : undefined,
+        status: ['inspection', 'maintenance', 'operations', 'event'].includes(template.family)
+          ? 'In Progress'
+          : undefined,
+        dueDate: ['inspection', 'maintenance', 'operations', 'event'].includes(template.family)
+          ? '2026-10-15'
+          : undefined,
       },
       {
         id: `extra-${template.type}-${areaIndex}`,
@@ -622,6 +646,9 @@ updatedBusinessManagement.areas[0].items = [
     agentComments:
       'Water ingress was reported above Apartment 18. ABC Roofing attended, identified deterioration around a service penetration and completed temporary sealing. A quotation has been requested for permanent membrane repairs.',
     actionComments: '',
+    maintenanceRequired: true,
+    maintenanceCommentary:
+      'Permanent waterproofing repair is required. Obtain and review the contractor quotation, then schedule the approved repair works.',
   },
   {
     id: 'ubm-maintenance-2',
@@ -693,7 +720,7 @@ if (updatedBusinessIssues.length !== 0) {
     `Valid Updated Business Management Report failed finalization validation: ${updatedBusinessIssues.map((issue) => issue.message).join(' ')}`
   );
 }
-await verifyPdf('UpdatedBusinessManagementFilled', updatedBusinessManagement, 5, 9_000);
+await verifyPdf('UpdatedBusinessManagementFilled', updatedBusinessManagement, 6, 9_000);
 
 const commonPropertyStress = createBlankReport('CommonProperty', {
   id: 'common-property-stress',
@@ -778,6 +805,13 @@ delete legacyReport.schemaVersion;
 const migratedLegacyReport = migrateReportData(legacyReport);
 if (migratedLegacyReport.schemaVersion !== CURRENT_REPORT_SCHEMA_VERSION) {
   throw new Error('Legacy report schema migration regression detected.');
+}
+if (
+  migratedLegacyReport.areas.some((area) =>
+    area.items.some((item) => item.maintenanceRequired === undefined || item.maintenanceCommentary === undefined)
+  )
+) {
+  throw new Error('Maintenance flag schema migration regression detected.');
 }
 
 let futureSchemaRejected = false;
