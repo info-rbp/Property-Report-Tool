@@ -741,6 +741,17 @@ export async function handleWorkflowApi(request: Request, env: WorkflowEnv, user
 
 export async function handlePublicWorkflowApi(request: Request, env: WorkflowEnv): Promise<Response | null> {
   const url = new URL(request.url);
+
+  if (url.pathname === '/api/public/workflow-health' && request.method === 'GET') {
+    await ensureWorkflowSchema(env);
+    return json({
+      status: 'ok',
+      resendConfigured: Boolean(env.RESEND_API_KEY),
+      signingBaseConfigured: Boolean(env.SIGNING_BASE_URL),
+      workflowSchema: 'ready',
+    });
+  }
+
   if (!url.pathname.startsWith('/api/public/signing/')) return null;
   await ensureWorkflowSchema(env);
   const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
