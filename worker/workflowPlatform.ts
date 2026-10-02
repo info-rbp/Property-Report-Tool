@@ -266,7 +266,12 @@ async function mapDelivery(env: WorkflowEnv, row: DeliveryRow): Promise<ReportDe
 }
 
 function signingBaseUrl(env: WorkflowEnv, request: Request): string {
-  return (env.SIGNING_BASE_URL || new URL(request.url).origin).replace(/\/$/, '');
+  const requestOrigin = new URL(request.url).origin;
+  const fallbackOrigin =
+    requestOrigin.includes('report.creation.proinspect.systems')
+      ? 'https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev'
+      : requestOrigin;
+  return (env.SIGNING_BASE_URL || fallbackOrigin).replace(/\/$/, '');
 }
 
 async function sendSigningInvite(
