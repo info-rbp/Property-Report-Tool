@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { InspectionArea, InspectionItem, TenancyDetails } from '../types/report';
+import { supportsMaintenanceRegister } from '../data/reportCatalogue';
+import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
+import { ItemWorkflowControls } from './ItemWorkflowControls';
 import {
   Plus,
   Trash2,
@@ -12,24 +14,31 @@ import {
   Calendar,
   User,
   ShieldCheck,
-  CheckSquare
+  CheckSquare,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 
 interface CommentaryEditorProps {
   details: TenancyDetails;
   areas: InspectionArea[];
+  photos: ReportPhoto[];
   onChangeDetails: (details: TenancyDetails) => void;
   onChangeAreas: (areas: InspectionArea[]) => void;
+  onUploadPhotos: (files: File[], areaName: string, itemId?: string, areaId?: string) => Promise<void>;
 }
 
 export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   details,
   areas,
+  photos,
   onChangeDetails,
   onChangeAreas,
+  onUploadPhotos,
 }) => {
   const [activeTab, setActiveTab] = useState<'areas' | 'details' | 'compliance' | 'notes'>('areas');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
+  const maintenanceEnabled = supportsMaintenanceRegister(details.reportType);
 
   const handleUpdateDetail = (key: keyof TenancyDetails, value: any) => {
     onChangeDetails({
@@ -58,6 +67,33 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
       };
     });
     onChangeAreas(updated);
+  };
+
+  const handleUpdateAreaName = (areaId: string, name: string) => {
+    onChangeAreas(areas.map((area) => area.id === areaId ? { ...area, name } : area));
+  };
+
+  const moveArea = (areaId: string, direction: 'up' | 'down') => {
+    const index = areas.findIndex((area) => area.id === areaId);
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (index < 0 || target < 0 || target >= areas.length) return;
+    const next = [...areas];
+    [next[index], next[target]] = [next[target], next[index]];
+    onChangeAreas(next);
+  };
+
+  const moveItem = (areaId: string, itemId: string, direction: 'up' | 'down') => {
+    onChangeAreas(
+      areas.map((area) => {
+        if (area.id !== areaId) return area;
+        const index = area.items.findIndex((item) => item.id === itemId);
+        const target = direction === 'up' ? index - 1 : index + 1;
+        if (index < 0 || target < 0 || target >= area.items.length) return area;
+        const items = [...area.items];
+        [items[index], items[target]] = [items[target], items[index]];
+        return { ...area, items };
+      })
+    );
   };
 
   const handleAddItem = (areaId: string) => {
@@ -251,9 +287,13 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                         ) : (
                           <ChevronRight className="w-4 h-4 text-neutral-500" />
                         )}
-                        <span className="font-black text-xs md:text-sm text-neutral-900 tracking-wide">
-                          {area.name}
-                        </span>
+                        <input
+                          value={area.name}
+                          onChange={(event) => handleUpdateAreaName(area.id, event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          className="min-w-[150px] max-w-[300px] border border-neutral-300 rounded-lg px-2 py-1 font-black text-xs md:text-sm bg-white"
+                          aria-label="Room or area name"
+                        />
                         <span className="text-[11px] font-semibold text-neutral-600 bg-neutral-200 px-2 py-0.5 rounded-full">
                           {area.items.length} items
                         </span>
@@ -264,7 +304,13 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                         ) : null}
                       </div>
 
-                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <button type="button" onClick={() => moveArea(area.id, 'up')} disabled={areas.findIndex((candidate) => candidate.id === area.id) === 0} className="p-1.5 text-neutral-500 disabled:opacity-25" title="Move area up">
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <button type="button" onClick={() => moveArea(area.id, 'down')} disabled={areas.findIndex((candidate) => candidate.id === area.id) === areas.length - 1} className="p-1.5 text-neutral-500 disabled:opacity-25" title="Move area down">
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleAddItem(area.id)}
                           className="px-2.5 py-1 text-xs font-semibold bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-700 rounded-lg flex items-center gap-1"
@@ -284,7 +330,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                     {/* Area Item List */}
                     {isExpanded && (
                       <div className="divide-y divide-neutral-200">
-                        {area.items.map((item) => (
+                        {area.items.map((item, itemIndex) => (
                           <div key={item.id} className="p-3 flex flex-col md:flex-row gap-3 items-start text-xs">
                             {/* Left: Item name and Y/N toggles */}
                             <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
@@ -382,7 +428,13 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                             </div>
 
                             {/* Right: Actions */}
-                            <div className="pt-4 shrink-0">
+                            <div className="pt-4 shrink-0 flex items-center gap-1">
+                              <button type="button" onClick={() => moveItem(area.id, item.id, 'up')} disabled={itemIndex === 0} className="p-1 text-neutral-500 disabled:opacity-25" title="Move condition row up">
+                                <ArrowUp className="w-4 h-4" />
+                              </button>
+                              <button type="button" onClick={() => moveItem(area.id, item.id, 'down')} disabled={itemIndex === area.items.length - 1} className="p-1 text-neutral-500 disabled:opacity-25" title="Move condition row down">
+                                <ArrowDown className="w-4 h-4" />
+                              </button>
                               <button
                                 onClick={() => handleDeleteItem(area.id, item.id)}
                                 className="text-neutral-300 hover:text-red-600 p-1"
@@ -390,6 +442,30 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
+                            </div>
+                            <div className="w-full md:pl-56 md:-mt-2">
+                              <ItemWorkflowControls
+                                area={area}
+                                item={item}
+                                photos={photos}
+                                maintenanceEnabled={maintenanceEnabled}
+                                showGeneralPhotoControls={true}
+                                onChangeItem={(patch) => {
+                                  onChangeAreas(
+                                    areas.map((candidate) =>
+                                      candidate.id !== area.id
+                                        ? candidate
+                                        : {
+                                            ...candidate,
+                                            items: candidate.items.map((candidateItem) =>
+                                              candidateItem.id === item.id ? { ...candidateItem, ...patch } : candidateItem
+                                            ),
+                                          }
+                                    )
+                                  );
+                                }}
+                                onUploadPhotos={onUploadPhotos}
+                              />
                             </div>
                           </div>
                         ))}
