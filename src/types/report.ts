@@ -82,6 +82,7 @@ export interface ReportPhoto {
   itemName?: string;
   photoIndex?: number;
   isCover?: boolean;
+  offlinePending?: boolean;
 }
 
 export interface TenancyDetails {
@@ -164,12 +165,44 @@ export interface TenancyDetails {
   disclaimerText: string;
 }
 
+export interface ReportExecutionParty {
+  id?: string;
+  name: string;
+  email: string;
+  roleLabel: string;
+  signedName: string;
+  signatureDataUrl?: string;
+  commentary?: string;
+  signedAt: string;
+}
+
+export interface ReportExecutionField {
+  fieldType?: 'signature' | 'text';
+  label: string;
+  placementLabel?: string;
+  promptText?: string;
+  pageNumber?: number;
+  xPercent?: number;
+  yPercent?: number;
+  widthPercent?: number;
+  valueText?: string;
+  partyId?: string;
+}
+
+export interface ReportExecution {
+  requestId: string;
+  completedAt: string;
+  parties: ReportExecutionParty[];
+  fields: ReportExecutionField[];
+}
+
 export interface ReportData {
   schemaVersion?: number;
   id?: string;
   propertyId?: string;
   status?: ReportStatus;
   completedPdfKey?: string;
+  execution?: ReportExecution;
   createdAt?: string;
   updatedAt?: string;
   details: TenancyDetails;

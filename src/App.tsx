@@ -22,14 +22,24 @@ import { ReportDashboard } from './components/ReportDashboard';
 import { ReportDocument } from './components/ReportDocument';
 import { isBuildingManagementTemplate, isKeyReceiptTemplate, reportInstanceLabel, reportLabel } from './data/reportCatalogue';
 import { createBlankReport, normalizeReport } from './data/reportTemplates';
+import { createReportFromTemplate, createTemplateSnapshot } from './lib/templateUtils';
 import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
 import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
 import { processInspectionImage } from './lib/imageProcessor';
 import { normalizeAreaName } from './lib/reportFormatting';
+import {
+  countOfflineOperations,
+  hydrateOfflinePhotoPreviews,
+  optimisticOfflinePhoto,
+  queueOfflinePhoto,
+  queueOfflineSave,
+  syncOfflineOperations,
+} from './lib/offlineQueue';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
 import { reportValidationMessage, validateReportForFinalization } from './lib/reportValidation';
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
+import type { ReportTemplateRecord } from './types/workflow';
 
 type ViewMode = 'preview' | 'commentary' | 'photos' | 'actions';
 type StatusMessage = { text: string; type: 'success' | 'info' | 'error' };
@@ -61,6 +71,8 @@ export default function App() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [exportProgressText, setExportProgressText] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
+  const [pendingOfflineOperations, setPendingOfflineOperations] = useState(0);
 
   const csvInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<number | null>(null);
@@ -74,6 +86,52 @@ export default function App() {
   useEffect(() => {
     reportRef.current = report;
   }, [report]);
+
+
+  useEffect(() => {
+    const refreshCount = () => countOfflineOperations().then(setPendingOfflineOperations).catch(() => undefined);
+    const sync = async () => {
+      setIsOffline(false);
+      try {
+        const result = await syncOfflineOperations((remaining) => setPendingOfflineOperations(remaining));
+        const currentId = reportRef.current?.id;
+        const updated = currentId ? result.reports.filter((candidate) => candidate.id === currentId).at(-1) : undefined;
+        if (updated) {
+          const normalized = await hydrateOfflinePhotoPreviews(normalizeReport(updated));
+          if (normalized.id) serverVersionsRef.current[normalized.id] = normalized.updatedAt;
+          reportRef.current = normalized;
+          setReport(normalized);
+          await cacheReport(normalized).catch(() => undefined);
+        }
+        setPendingOfflineOperations(result.remaining);
+        if (result.remaining === 0) {
+          setStatusMessage({ text: 'Offline changes synced to the cloud.', type: 'success' });
+        } else {
+          setStatusMessage({
+            text: `${result.remaining} offline change${result.remaining === 1 ? '' : 's'} still need attention. A cloud conflict or connection error stopped automatic sync.`,
+            type: 'error',
+          });
+        }
+      } catch (error: any) {
+        setStatusMessage({ text: error.message || 'Unable to sync offline changes.', type: 'error' });
+      }
+    };
+    const offline = () => {
+      setIsOffline(true);
+      void refreshCount();
+      setStatusMessage({ text: 'Offline field mode. Changes and photos will be stored on this device until reception returns.', type: 'info' });
+    };
+
+    window.addEventListener('online', sync);
+    window.addEventListener('offline', offline);
+    void refreshCount();
+    if (navigator.onLine) void sync();
+
+    return () => {
+      window.removeEventListener('online', sync);
+      window.removeEventListener('offline', offline);
+    };
+  }, []);
 
   const loadProperties = async () => {
     const list = await api.listProperties();
@@ -93,6 +151,14 @@ export default function App() {
         .then(async () => {
           try {
             const expectedUpdatedAt = serverVersionsRef.current[reportId] || draft.updatedAt;
+            if (!navigator.onLine) {
+              await cacheReport(draft).catch(() => undefined);
+              await queueOfflineSave(draft, expectedUpdatedAt);
+              setPendingOfflineOperations(await countOfflineOperations().catch(() => 1));
+              setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+              resolve(draft);
+              return;
+            }
             const saved = normalizeReport(await api.saveReport(draft, expectedUpdatedAt));
             serverVersionsRef.current[reportId] = saved.updatedAt;
             await cacheReport(saved).catch(() => undefined);
@@ -121,10 +187,34 @@ export default function App() {
         setProperties(list);
       } catch (error: any) {
         if (!active) return;
-        setStatusMessage({
-          text: error.message || 'Unable to connect to ProInspect cloud storage.',
-          type: 'error',
-        });
+        if (!navigator.onLine) {
+          const lastReportId = localStorage.getItem('proinspect:lastReportId');
+          const propertyJson = localStorage.getItem('proinspect:lastProperty');
+          const cached = lastReportId ? await getCachedReport(lastReportId).catch(() => null) : null;
+          const property = propertyJson ? JSON.parse(propertyJson) as PropertyRecord : null;
+          if (cached && property) {
+            const normalized = await hydrateOfflinePhotoPreviews(normalizeReport(cached));
+            setSelectedProperty(property);
+            setReport(normalized);
+            reportRef.current = normalized;
+            setViewMode('commentary');
+            setUserEmail('Offline field mode');
+            setStatusMessage({
+              text: 'Offline field mode restored the last locally cached report. Finalising, sending and Google Drive import require connectivity.',
+              type: 'info',
+            });
+          } else {
+            setStatusMessage({
+              text: 'No reception and no previously cached field report is available on this device.',
+              type: 'error',
+            });
+          }
+        } else {
+          setStatusMessage({
+            text: error.message || 'Unable to connect to ProInspect cloud storage.',
+            type: 'error',
+          });
+        }
       } finally {
         if (active) setIsLoading(false);
       }
@@ -183,6 +273,7 @@ export default function App() {
       setIsLoading(true);
       const result = await api.getProperty(property.id);
       setSelectedProperty(result.property);
+      localStorage.setItem('proinspect:lastProperty', JSON.stringify(result.property));
       setReportSummaries(result.reports);
       setReport(null);
     } catch (error: any) {
@@ -226,12 +317,49 @@ export default function App() {
     }
   };
 
+  const handleCreateReportFromTemplate = async (template: ReportTemplateRecord) => {
+    if (!selectedProperty) return;
+    try {
+      const prepared = createReportFromTemplate(template.templateData, selectedProperty);
+      const created = normalizeReport(await api.createReport(selectedProperty.id, template.reportType, prepared));
+      if (created.id) serverVersionsRef.current[created.id] = created.updatedAt;
+      setReport(created);
+      setViewMode('commentary');
+      await cacheReport(created);
+      await refreshSelectedProperty();
+      setStatusMessage({ text: `Report created from template "${template.name}".`, type: 'success' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to create report from template.', type: 'error' });
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!report || !selectedProperty) return;
+    const name = window.prompt('Template name:', `${reportInstanceLabel(report.details)} - ${selectedProperty.address}`)?.trim();
+    if (!name) return;
+    const propertySpecific = window.confirm(
+      'Save this template only for this property? Select Cancel to make it available globally.'
+    );
+    try {
+      await api.createTemplate({
+        name,
+        scopeType: propertySpecific ? 'property' : 'global',
+        propertyId: propertySpecific ? selectedProperty.id : undefined,
+        templateData: createTemplateSnapshot(report),
+      });
+      setStatusMessage({ text: `Template "${name}" saved.`, type: 'success' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to save report template.', type: 'error' });
+    }
+  };
+
   const handleOpenReport = async (id: string) => {
     try {
       setIsLoading(true);
       const cloudReport = normalizeReport(await api.getReport(id));
       if (cloudReport.id) serverVersionsRef.current[cloudReport.id] = cloudReport.updatedAt;
       setReport(cloudReport);
+      localStorage.setItem('proinspect:lastReportId', id);
       await cacheReport(cloudReport);
       setViewMode('preview');
     } catch (error: any) {
@@ -425,6 +553,43 @@ export default function App() {
           throw new Error('The selected reporting item no longer exists. Drop the photos onto the item again.');
         }
 
+        if (!navigator.onLine) {
+          let nextAreaPhotoIndex = latestTargetReport.photos
+            .filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
+            .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
+
+          for (const file of files) {
+            const processed = await processInspectionImage(file);
+            const photoIndex = ++nextAreaPhotoIndex;
+            const photoId = crypto.randomUUID();
+            const metadata = {
+              id: photoId,
+              name: item
+                ? `${targetArea.name}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
+                : `${targetArea.name}: Category photo ${photoIndex}`,
+              areaName: targetArea.name,
+              itemId: item?.id,
+              itemName: item?.name,
+              photoIndex,
+              isCover: false,
+            };
+            await queueOfflinePhoto(latestTargetReport.id!, processed.blob, metadata);
+            const pendingPhoto = optimisticOfflinePhoto(metadata, processed.blob);
+            setReport((current) => {
+              if (!current || current.id !== latestTargetReport.id) return current;
+              const updated = { ...current, photos: [...current.photos, pendingPhoto] };
+              reportRef.current = updated;
+              return updated;
+            });
+          }
+          setPendingOfflineOperations(await countOfflineOperations());
+          setStatusMessage({
+            text: `Saved ${files.length} photo${files.length === 1 ? '' : 's'} on this device for upload when reception returns.`,
+            type: 'info',
+          });
+          return;
+        }
+
         let currentServerReport = savedDraft;
         let nextAreaPhotoIndex = currentServerReport.photos
           .filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
@@ -499,6 +664,10 @@ export default function App() {
 
   const handleCompleteReport = async () => {
     if (!report?.id || report.status === 'completed') return;
+    if (!navigator.onLine) {
+      setStatusMessage({ text: 'Reconnect before finalising. Offline work is preserved locally until it can be synced.', type: 'error' });
+      return;
+    }
     setIsCompleting(true);
     setExportProgressText('Saving final report data...');
     try {
@@ -596,6 +765,7 @@ export default function App() {
           reports={reportSummaries}
           onBack={handleBackToProperties}
           onCreate={handleCreateReport}
+          onCreateFromTemplate={handleCreateReportFromTemplate}
           onOpen={handleOpenReport}
           onDelete={handleDeleteReport}
           onDownloadCompleted={handleDownloadCompleted}
@@ -622,7 +792,15 @@ export default function App() {
         <div className="flex items-center gap-2">
           {!completed && (
             <span className="hidden lg:inline text-[11px] text-neutral-500">
-              {isSaving ? 'Saving to cloud...' : lastSavedTime ? `Saved ${lastSavedTime}` : 'Cloud draft'}
+              {isOffline
+                ? `Offline • ${pendingOfflineOperations} pending`
+                : isSaving
+                ? 'Saving to cloud...'
+                : pendingOfflineOperations > 0
+                ? `Syncing • ${pendingOfflineOperations} pending`
+                : lastSavedTime
+                ? `Saved ${lastSavedTime}`
+                : 'Cloud draft'}
             </span>
           )}
           <button
@@ -813,6 +991,7 @@ export default function App() {
               onDownloadCompleted={() => handleDownloadCompleted(report.id!)}
               isExporting={isExportingPdf}
               isCompleting={isCompleting}
+              onSaveTemplate={handleSaveTemplate}
             />
           </div>
         )}

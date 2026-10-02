@@ -2486,6 +2486,155 @@ function addFooters(pdf: jsPDF, report: ReportData) {
   }
 }
 
+function drawPlacedExecutionFields(pdf: jsPDF, report: ReportData) {
+  const execution = report.execution;
+  if (!execution?.fields?.length) return;
+
+  const originalPage = pdf.getCurrentPageInfo().pageNumber;
+  const totalPages = pdf.getNumberOfPages();
+
+  for (const field of execution.fields) {
+    if (!field.pageNumber || field.pageNumber < 1 || field.pageNumber > totalPages) continue;
+    const party = field.partyId
+      ? execution.parties.find((candidate) => candidate.id === field.partyId)
+      : execution.parties[0];
+    if (!party) continue;
+
+    const xPercent = Math.max(0, Math.min(100, field.xPercent ?? 10));
+    const yPercent = Math.max(0, Math.min(100, field.yPercent ?? 75));
+    const widthPercent = Math.max(5, Math.min(100, field.widthPercent ?? 25));
+    const width = Math.min(CONTENT_WIDTH, CONTENT_WIDTH * (widthPercent / 100));
+    const x = Math.min(PAGE_WIDTH - MARGIN_X - width, MARGIN_X + CONTENT_WIDTH * (xPercent / 100));
+    const y = Math.min(BODY_BOTTOM - 16, BODY_TOP + (BODY_BOTTOM - BODY_TOP) * (yPercent / 100));
+
+    pdf.setPage(field.pageNumber);
+    drawBox(pdf, x, y, width, 15, [255, 255, 255], BORDER);
+    setFont(pdf, 4.8, 'bold');
+    setTextColor(pdf, MUTED);
+    pdf.text(truncateTextToWidth(pdf, field.label || field.placementLabel || 'Execution field', width - 3), x + 1.5, y + 3.2);
+
+    if (field.fieldType === 'text') {
+      setFont(pdf, 6, 'normal');
+      setTextColor(pdf, TEXT);
+      const lines = wrapText(pdf, field.valueText || '', width - 3);
+      drawWrappedLines(pdf, lines, x + 1.5, y + 7, 2.4, { maxLines: 3 });
+    } else {
+      if (party.signatureDataUrl) {
+        try {
+          pdf.addImage(party.signatureDataUrl, 'PNG', x + 1.5, y + 4.5, width - 3, 8.5, undefined, 'FAST');
+        } catch {
+          setFont(pdf, 7, 'italic');
+          setTextColor(pdf, TEXT);
+          pdf.text(truncateTextToWidth(pdf, party.signedName, width - 3), x + 1.5, y + 10);
+        }
+      } else {
+        setFont(pdf, 7, 'italic');
+        setTextColor(pdf, TEXT);
+        pdf.text(truncateTextToWidth(pdf, party.signedName, width - 3), x + 1.5, y + 10);
+      }
+      setFont(pdf, 4.8, 'normal');
+      setTextColor(pdf, MUTED);
+      pdf.text(truncateTextToWidth(pdf, party.roleLabel, width - 3), x + 1.5, y + 13.6);
+    }
+  }
+
+  pdf.setPage(originalPage);
+}
+
+function drawExecutionPages(pdf: jsPDF, report: ReportData) {
+  const execution = report.execution;
+  if (!execution?.parties?.length) return;
+
+  let y = addContentPage(pdf, report, 'Execution & Signatures');
+  y = drawRoutinePageHeading(pdf, y, 'Execution & Signatures');
+
+  setFont(pdf, 6.2, 'normal');
+  setTextColor(pdf, TEXT);
+  const intro = wrapText(
+    pdf,
+    `This execution page records the signatures and acknowledgements completed for this report. Signing request: ${execution.requestId}. Fully executed: ${formatAustralianDate(execution.completedAt) || execution.completedAt}.`,
+    CONTENT_WIDTH
+  );
+  drawWrappedLines(pdf, intro, MARGIN_X, y, 2.7);
+  y += Math.max(7, intro.length * 2.7 + 3);
+
+  for (const party of execution.parties) {
+    const fieldValues = execution.fields.filter((field) => !field.partyId || field.partyId === party.id);
+    const textFields = fieldValues.filter((field) => field.valueText);
+    const commentaryLines = party.commentary ? wrapText(pdf, party.commentary, CONTENT_WIDTH - 4) : [];
+    const fieldLineCount = textFields.reduce(
+      (total, field) => total + wrapText(pdf, `${field.label}: ${field.valueText}`, CONTENT_WIDTH - 4).length,
+      0
+    );
+    const h = Math.max(34, 24 + commentaryLines.length * 2.5 + fieldLineCount * 2.5);
+
+    if (y + h > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, 'Execution & Signatures');
+      y = drawRoutinePageHeading(pdf, y, 'Execution & Signatures (continued)');
+    }
+
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, LIGHT_FILL, BORDER);
+    setFont(pdf, 7, 'bold');
+    setTextColor(pdf, NAVY);
+    pdf.text(`${party.roleLabel || 'Signatory'} — ${party.name}`, MARGIN_X + 2, y + 5);
+
+    setFont(pdf, 5.8, 'normal');
+    setTextColor(pdf, TEXT);
+    pdf.text(`Email: ${party.email}`, MARGIN_X + 2, y + 9);
+    pdf.text(`Signed by: ${party.signedName}`, MARGIN_X + 2, y + 12.5);
+    pdf.text(`Signed at: ${formatAustralianDate(party.signedAt) || party.signedAt}`, MARGIN_X + 2, y + 16);
+
+    const partySignatureField = fieldValues.find((field) => field.placementLabel);
+    if (partySignatureField?.placementLabel) {
+      setFont(pdf, 5.5, 'italic');
+      setTextColor(pdf, MUTED);
+      pdf.text(
+        truncateTextToWidth(pdf, `Signature location: ${partySignatureField.placementLabel}`, CONTENT_WIDTH - 70),
+        MARGIN_X + 2,
+        y + 19.5
+      );
+    }
+
+    const sigX = PAGE_WIDTH - MARGIN_X - 55;
+    const sigY = y + 5;
+    const sigW = 51;
+    const sigH = 17;
+    drawBox(pdf, sigX, sigY, sigW, sigH, [255, 255, 255], LIGHT_BORDER);
+    if (party.signatureDataUrl) {
+      try {
+        pdf.addImage(party.signatureDataUrl, 'PNG', sigX + 2, sigY + 2, sigW - 4, sigH - 4, undefined, 'FAST');
+      } catch {
+        setFont(pdf, 7, 'italic');
+        setTextColor(pdf, TEXT);
+        pdf.text(truncateTextToWidth(pdf, party.signedName, sigW - 4), sigX + 2, sigY + 10);
+      }
+    } else {
+      setFont(pdf, 7, 'italic');
+      setTextColor(pdf, TEXT);
+      pdf.text(truncateTextToWidth(pdf, party.signedName, sigW - 4), sigX + 2, sigY + 10);
+    }
+
+    let detailY = y + 24;
+    for (const field of textFields) {
+      setFont(pdf, 5.7, 'normal');
+      setTextColor(pdf, TEXT);
+      const lines = wrapText(pdf, `${field.label}: ${field.valueText}`, CONTENT_WIDTH - 4);
+      drawWrappedLines(pdf, lines, MARGIN_X + 2, detailY, 2.5);
+      detailY += lines.length * 2.5 + 1;
+    }
+
+    if (commentaryLines.length) {
+      setFont(pdf, 5.7, 'bold');
+      pdf.text('Signatory commentary', MARGIN_X + 2, detailY + 1);
+      detailY += 4;
+      setFont(pdf, 5.7, 'normal');
+      drawWrappedLines(pdf, commentaryLines, MARGIN_X + 2, detailY, 2.5);
+    }
+
+    y += h + 3;
+  }
+}
+
 export async function generateReportPdf(
   report: ReportData,
   onProgress?: (message: string) => void
@@ -2552,6 +2701,13 @@ export async function generateReportPdf(
     await drawPhotoPages(pdf, report, onProgress);
     onProgress?.('Building report summary and sign-off...');
     drawGenericClosingPages(pdf, report);
+  }
+
+  if (report.execution?.parties?.length) {
+    onProgress?.('Applying placed signature and text fields...');
+    drawPlacedExecutionFields(pdf, report);
+    onProgress?.('Building execution and signature pages...');
+    drawExecutionPages(pdf, report);
   }
 
   addFooters(pdf, report);

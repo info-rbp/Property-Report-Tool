@@ -1,4 +1,11 @@
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from '../types/report';
+import type {
+  PublicSigningPacket,
+  ReportDeliveryRecord,
+  ReportTemplateRecord,
+  SendForSignatureInput,
+  SendReportInput,
+} from '../types/workflow';
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -119,4 +126,90 @@ export const api = {
 
   completedPdfUrl: (reportId: string) =>
     `/api/reports/${encodeURIComponent(reportId)}/pdf`,
+
+  listTemplates: (propertyId?: string) =>
+    apiRequest<ReportTemplateRecord[]>(
+      `/api/templates${propertyId ? `?propertyId=${encodeURIComponent(propertyId)}` : ''}`
+    ),
+
+  createTemplate: (input: {
+    name: string;
+    scopeType: 'global' | 'property';
+    propertyId?: string;
+    templateData: ReportData;
+  }) =>
+    apiRequest<ReportTemplateRecord>('/api/templates', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  deleteTemplate: (id: string) =>
+    apiRequest<{ success: true }>(`/api/templates/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+
+  listDeliveries: (reportId: string) =>
+    apiRequest<ReportDeliveryRecord[]>(`/api/reports/${encodeURIComponent(reportId)}/deliveries`),
+
+  sendReport: (reportId: string, input: SendReportInput) =>
+    apiRequest<ReportDeliveryRecord>(`/api/reports/${encodeURIComponent(reportId)}/send`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  sendForSignature: (reportId: string, input: SendForSignatureInput) =>
+    apiRequest<ReportDeliveryRecord>(`/api/reports/${encodeURIComponent(reportId)}/signature-request`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  publicSigningPacket: (token: string) =>
+    apiRequest<PublicSigningPacket>(`/api/public/signing/${encodeURIComponent(token)}`),
+
+  publicSigningPdfUrl: (token: string) =>
+    `/api/public/signing/${encodeURIComponent(token)}/pdf`,
+
+  submitPublicSignature: (
+    token: string,
+    input: {
+      signedName: string;
+      signatureText: string;
+      commentary?: string;
+      fieldValues?: Record<string, string>;
+    }
+  ) =>
+    apiRequest<{
+      completed: boolean;
+      readyForExecution?: boolean;
+      packet?: PublicSigningPacket;
+      report?: ReportData;
+    }>(`/api/public/signing/${encodeURIComponent(token)}/sign`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  publicExecutionPayload: (token: string) =>
+    apiRequest<{
+      completed: boolean;
+      alreadyStored?: boolean;
+      readyForExecution?: boolean;
+      report?: ReportData;
+    }>(`/api/public/signing/${encodeURIComponent(token)}/execution-payload`),
+
+  uploadExecutedPdf: async (token: string, pdf: Blob) => {
+    const response = await fetch(`/api/public/signing/${encodeURIComponent(token)}/executed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/pdf' },
+      body: pdf,
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      throw new Error(data.error || `Unable to store executed report (${response.status})`);
+    }
+    return response.json() as Promise<{ success: true }>;
+  },
+
+  executedPdfUrl: (token: string) =>
+    `/api/public/signing/${encodeURIComponent(token)}/executed-pdf`,
 };
