@@ -43,6 +43,8 @@ function cloneItemForTemplate(item: InspectionItem): InspectionItem {
     activityParty: '',
     status: undefined,
     dueDate: '',
+    maintenanceRequired: false,
+    maintenanceCommentary: '',
     tenantComments: '',
     tenantAgrees: null,
   };
