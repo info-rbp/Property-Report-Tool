@@ -382,11 +382,11 @@ async function mapDelivery(env: WorkflowEnv, row: DeliveryRow): Promise<ReportDe
 
 function signingBaseUrl(env: WorkflowEnv, request: Request): string {
   const requestOrigin = new URL(request.url).origin;
-  const fallbackOrigin =
-    requestOrigin.includes('report.creation.proinspect.systems')
-      ? 'https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev'
-      : requestOrigin;
-  return (env.SIGNING_BASE_URL || fallbackOrigin).replace(/\/$/, '');
+  const localOrigin =
+    requestOrigin.includes('localhost') || requestOrigin.includes('127.0.0.1')
+      ? requestOrigin
+      : 'https://sign.proinspect.systems';
+  return (env.SIGNING_BASE_URL || localOrigin).replace(/\/$/, '');
 }
 
 async function sendSigningInvite(
