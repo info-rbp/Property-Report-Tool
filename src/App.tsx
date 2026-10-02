@@ -936,6 +936,7 @@ export default function App() {
                 photos={report.photos}
                 onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
                 onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
+                onChangePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
                 onUploadPhotos={handleUploadPhotos}
               />
             ) : isKeyReceiptTemplate(report.details.reportType) ? (
@@ -963,6 +964,7 @@ export default function App() {
                 photos={report.photos}
                 onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
                 onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
+                onChangePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
                 onUploadPhotos={handleUploadPhotos}
               />
             )}
