@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supportsMaintenanceRegister } from '../data/reportCatalogue';
 import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
 import { ItemWorkflowControls } from './ItemWorkflowControls';
+import { normalizeAreaName } from '../lib/reportFormatting';
 import {
   Plus,
   Trash2,
@@ -25,6 +26,7 @@ interface CommentaryEditorProps {
   photos: ReportPhoto[];
   onChangeDetails: (details: TenancyDetails) => void;
   onChangeAreas: (areas: InspectionArea[]) => void;
+  onChangePhotos: (photos: ReportPhoto[]) => void;
   onUploadPhotos: (files: File[], areaName: string, itemId?: string, areaId?: string) => Promise<void>;
 }
 
@@ -34,6 +36,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   photos,
   onChangeDetails,
   onChangeAreas,
+  onChangePhotos,
   onUploadPhotos,
 }) => {
   const [activeTab, setActiveTab] = useState<'areas' | 'details' | 'compliance' | 'notes'>('areas');
@@ -70,7 +73,19 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   };
 
   const handleUpdateAreaName = (areaId: string, name: string) => {
+    const currentArea = areas.find((area) => area.id === areaId);
+    if (!currentArea) return;
+    const previousName = currentArea.name;
+    const itemIds = new Set(currentArea.items.map((item) => item.id));
     onChangeAreas(areas.map((area) => area.id === areaId ? { ...area, name } : area));
+    onChangePhotos(
+      photos.map((photo) =>
+        (photo.itemId && itemIds.has(photo.itemId)) ||
+        normalizeAreaName(photo.areaName) === normalizeAreaName(previousName)
+          ? { ...photo, areaName: name }
+          : photo
+      )
+    );
   };
 
   const moveArea = (areaId: string, direction: 'up' | 'down') => {
@@ -120,6 +135,10 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   };
 
   const handleDeleteItem = (areaId: string, itemId: string) => {
+    if (photos.some((photo) => photo.itemId === itemId)) {
+      alert('This item still has linked photos. Reassign or delete those photos before removing the item.');
+      return;
+    }
     const updated = areas.map((area) => {
       if (area.id !== areaId) return area;
       return {
@@ -184,6 +203,18 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   };
 
   const handleDeleteArea = (areaId: string) => {
+    const area = areas.find((candidate) => candidate.id === areaId);
+    if (!area) return;
+    const itemIds = new Set(area.items.map((item) => item.id));
+    const linked = photos.some(
+      (photo) =>
+        (photo.itemId && itemIds.has(photo.itemId)) ||
+        normalizeAreaName(photo.areaName) === normalizeAreaName(area.name)
+    );
+    if (linked) {
+      alert('This area still has linked photos. Reassign or delete those photos before removing the area.');
+      return;
+    }
     if (confirm('Are you sure you want to remove this area and all its condition items?')) {
       onChangeAreas(areas.filter((a) => a.id !== areaId));
     }
