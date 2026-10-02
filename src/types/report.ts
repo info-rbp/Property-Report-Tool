@@ -16,6 +16,7 @@ export const REPORT_TYPES = [
   'BuildingManagement',
   'BuildingManagementDaily',
   'BuildingManagementMonthly',
+  'UpdatedBusinessManagement',
   'Incident',
   'ContractorWorks',
   'PropertyHandover',
@@ -57,6 +58,7 @@ export interface InspectionItem {
   activityParty?: string;
   actionComments?: string;
   status?: string;
+  dueDate?: string;
   tenantAgrees?: boolean | null;
   tenantComments?: string;
   quantity?: string;
