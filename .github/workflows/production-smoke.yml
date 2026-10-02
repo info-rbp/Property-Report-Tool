@@ -17,7 +17,26 @@ jobs:
           ROOT_URL="https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev/"
 
           for attempt in $(seq 1 24); do
-            body="$(curl -fsS --max-time 15 "$HEALTH_URL" || true)"
+            response="$(curl -sS --max-time 15 -w 
+               printf '%s' "$body" | grep -q '"workflowSchema":"ready"' &&
+               printf '%s' "$body" | grep -q '"resendConfigured":true"'; then
+              echo "Workflow health is ready."
+              root_status="$(curl -sS -o /tmp/root.html -w '%{http_code}' --max-time 15 "$ROOT_URL" || true)"
+              test "$root_status" = "200"
+              grep -q "ProInspect" /tmp/root.html
+              exit 0
+            fi
+            echo "Production deployment not ready yet (attempt $attempt/24)."
+            sleep 10
+          done
+
+          echo "Production health did not become ready."
+          exit 1
+\nHTTP_STATUS:%{http_code}' "$HEALTH_URL" || true)"
+            body="$(printf '%s' "$response" | sed '/HTTP_STATUS:/d')"
+            http_status="$(printf '%s' "$response" | sed -n 's/^HTTP_STATUS://p')"
+            echo "Health HTTP status: ${http_status:-curl-error}"
+            echo "Health response: ${body:-<empty>}"
             if printf '%s' "$body" | grep -q '"status":"ok"' &&
                printf '%s' "$body" | grep -q '"workflowSchema":"ready"' &&
                printf '%s' "$body" | grep -q '"resendConfigured":true"'; then
