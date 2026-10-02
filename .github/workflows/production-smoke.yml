@@ -13,8 +13,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          HEALTH_URL="https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev/api/public/workflow-health"
-          ROOT_URL="https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev/"
+          HEALTH_URL="https://sign.proinspect.systems/api/public/workflow-health"
+          ROOT_URL="https://sign.proinspect.systems/"
 
           for attempt in $(seq 1 24); do
             tmp_body="$(mktemp)"
