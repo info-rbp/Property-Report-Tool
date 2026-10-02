@@ -4,6 +4,7 @@ import { getReportTemplate, ReportFieldDefinition } from '../data/reportCatalogu
 import { formatAustralianDate, normalizeAreaName } from '../lib/reportFormatting';
 import { ReportData, TenancyDetails } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
+import { MaintenanceRegisterPreview } from './MaintenanceRegisterPreview';
 
 interface Props {
   report: ReportData;
@@ -203,7 +204,16 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
                       <div className="p-1.5 text-center border-r">{item.undamaged == null ? '' : item.undamaged ? 'Y' : 'N'}</div>
                       <div className="p-1.5 text-center border-r">{item.working == null ? '' : item.working ? 'Y' : 'N'}</div>
                     </>}
-                    <div className="p-1.5 whitespace-pre-wrap">{item.agentComments || 'No observation recorded.'}</div>
+                    <div className="p-1.5 whitespace-pre-wrap">
+                      {item.agentComments || 'No observation recorded.'}
+                      {(item.activityParty || item.status || item.dueDate) && (
+                        <div className="mt-1.5 pt-1.5 border-t border-neutral-200 text-[7px] text-neutral-600">
+                          <strong>Responsible:</strong> {item.activityParty || 'Not assigned'} &nbsp;•&nbsp;
+                          <strong>Status:</strong> {item.status || 'Open'} &nbsp;•&nbsp;
+                          <strong>Due:</strong> {formatAustralianDate(item.dueDate) || 'No due date'}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -246,6 +256,7 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
       </div>
 
       <PhotoPreviewPages report={report} />
+      <MaintenanceRegisterPreview report={report} />
     </div>
   );
 };

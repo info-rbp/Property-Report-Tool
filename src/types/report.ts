@@ -1,4 +1,4 @@
-export const CURRENT_REPORT_SCHEMA_VERSION = 4;
+export const CURRENT_REPORT_SCHEMA_VERSION = 5;
 
 export const REPORT_TYPES = [
   'Entry',
@@ -59,6 +59,8 @@ export interface InspectionItem {
   actionComments?: string;
   status?: string;
   dueDate?: string;
+  maintenanceRequired?: boolean;
+  maintenanceCommentary?: string;
   tenantAgrees?: boolean | null;
   tenantComments?: string;
   quantity?: string;

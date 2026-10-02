@@ -10,6 +10,8 @@ import { CURRENT_REPORT_SCHEMA_VERSION, ReportData } from '../types/report';
  * Version 4 registers the Custom Report type. It adds no new structural fields,
  * but marks persisted data as requiring an application version that understands
  * the Custom Report catalogue entry.
+ * Version 5 adds optional item-level maintenance flags and maintenance commentary
+ * used to generate the consolidated Maintenance register.
  *
  * Future schema changes must add an explicit migration step here before
  * CURRENT_REPORT_SCHEMA_VERSION is increased.
@@ -60,6 +62,21 @@ export function migrateReportData(input: ReportData): ReportData {
         items: (area.items || []).map((item) => ({ ...item })),
       })),
       photos: migrated.photos.map((photo) => ({ ...photo })),
+    };
+  }
+
+  if ((migrated.schemaVersion || 1) < 5) {
+    migrated = {
+      ...migrated,
+      schemaVersion: 5,
+      areas: migrated.areas.map((area) => ({
+        ...area,
+        items: (area.items || []).map((item) => ({
+          ...item,
+          maintenanceRequired: Boolean(item.maintenanceRequired),
+          maintenanceCommentary: item.maintenanceCommentary || '',
+        })),
+      })),
     };
   }
 

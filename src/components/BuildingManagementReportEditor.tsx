@@ -1,7 +1,8 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Building2, Camera, ChevronDown, ChevronRight, ClipboardList, Plus, ShieldCheck, Trash2, Upload } from 'lucide-react';
-import { getReportTemplate } from '../data/reportCatalogue';
+import { getReportTemplate, supportsMaintenanceRegister } from '../data/reportCatalogue';
 import { normalizeAreaName } from '../lib/reportFormatting';
+import { ItemWorkflowControls } from './ItemWorkflowControls';
 import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
 
 interface Props {
@@ -29,6 +30,7 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   const isDaily = details.reportType === 'BuildingManagementDaily';
   const monthlyPilot = details.reportType === 'BuildingManagementMonthly';
   const updatedBusinessManagement = details.reportType === 'UpdatedBusinessManagement';
+  const maintenanceEnabled = supportsMaintenanceRegister(details.reportType);
   const supportsItemReorder = monthlyPilot || updatedBusinessManagement;
   const statusOptions = [
     'Open',
@@ -686,6 +688,17 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                                 </div>
                               </>
                             )}
+
+                            <ItemWorkflowControls
+                              area={area}
+                              item={item}
+                              photos={photos}
+                              maintenanceEnabled={maintenanceEnabled}
+                              showActionTracking={false}
+                              showGeneralPhotoControls={false}
+                              onChangeItem={(patch) => updateItem(area.id, item.id, patch)}
+                              onUploadPhotos={onUploadPhotos}
+                            />
                           </div>
                         );
                       })}

@@ -3,6 +3,7 @@ import { PROINSPECT_COMPANY } from '../config/company';
 import { formatAustralianDate, normalizeAreaName } from '../lib/reportFormatting';
 import { InspectionArea, ReportData } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
+import { MaintenanceRegisterPreview } from './MaintenanceRegisterPreview';
 
 interface Props {
   report: ReportData;
@@ -401,6 +402,7 @@ export const SimpleReportDocument: React.FC<Props> = ({ report }) => {
       <PhotoPreviewPages report={report} />
 
       {!isRoutine && <ExitClosingPreview report={report} />}
+      <MaintenanceRegisterPreview report={report} />
     </div>
   );
 };
