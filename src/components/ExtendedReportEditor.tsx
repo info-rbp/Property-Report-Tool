@@ -1,13 +1,16 @@
 import React, { useMemo, useState } from 'react';
-import { Building2, ChevronDown, ChevronRight, FileText, Plus, ShieldCheck, Trash2 } from 'lucide-react';
-import { getReportTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
-import { InspectionArea, InspectionItem, TenancyDetails } from '../types/report';
+import { ArrowDown, ArrowUp, Building2, ChevronDown, ChevronRight, FileText, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { getReportTemplate, ReportFieldDefinition, supportsItemActionTracking, supportsMaintenanceRegister } from '../data/reportCatalogue';
+import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
+import { ItemWorkflowControls } from './ItemWorkflowControls';
 
 interface Props {
   details: TenancyDetails;
   areas: InspectionArea[];
+  photos: ReportPhoto[];
   onChangeDetails: (details: TenancyDetails) => void;
   onChangeAreas: (areas: InspectionArea[]) => void;
+  onUploadPhotos: (files: File[], areaName: string, itemId?: string, areaId?: string) => Promise<void>;
 }
 
 function FieldInput({
@@ -49,12 +52,16 @@ function FieldInput({
 export const ExtendedReportEditor: React.FC<Props> = ({
   details,
   areas,
+  photos,
   onChangeDetails,
   onChangeAreas,
+  onUploadPhotos,
 }) => {
   const template = getReportTemplate(details.reportType);
   const showRatings = template.family === 'condition';
   const isCustomReport = details.reportType === 'Custom';
+  const maintenanceEnabled = supportsMaintenanceRegister(details.reportType);
+  const actionTracking = supportsItemActionTracking(details.reportType);
   const [tab, setTab] = useState<'findings' | 'details' | 'summary'>('findings');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
 
@@ -84,6 +91,29 @@ export const ExtendedReportEditor: React.FC<Props> = ({
               items: area.items.map((item) => item.id === itemId ? { ...item, [field]: value } : item),
             }
       )
+    );
+  };
+
+  const moveArea = (areaId: string, direction: 'up' | 'down') => {
+    const index = areas.findIndex((area) => area.id === areaId);
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (index < 0 || target < 0 || target >= areas.length) return;
+    const next = [...areas];
+    [next[index], next[target]] = [next[target], next[index]];
+    onChangeAreas(next);
+  };
+
+  const moveItem = (areaId: string, itemId: string, direction: 'up' | 'down') => {
+    onChangeAreas(
+      areas.map((area) => {
+        if (area.id !== areaId) return area;
+        const index = area.items.findIndex((item) => item.id === itemId);
+        const target = direction === 'up' ? index - 1 : index + 1;
+        if (index < 0 || target < 0 || target >= area.items.length) return area;
+        const items = [...area.items];
+        [items[index], items[target]] = [items[target], items[index]];
+        return { ...area, items };
+      })
     );
   };
 
@@ -201,20 +231,22 @@ export const ExtendedReportEditor: React.FC<Props> = ({
                     >
                       <div className="flex items-center gap-2">
                         {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                        {isCustomReport ? (
-                          <input
-                            value={area.name}
-                            onChange={(event) => updateAreaName(area.id, event.target.value)}
-                            onClick={(event) => event.stopPropagation()}
-                            className="min-w-[180px] max-w-[360px] border border-neutral-300 rounded-lg px-2 py-1 font-black text-xs md:text-sm bg-white"
-                            aria-label="Custom report section name"
-                          />
-                        ) : (
-                          <span className="font-black text-xs md:text-sm">{area.name}</span>
-                        )}
+                        <input
+                          value={area.name}
+                          onChange={(event) => updateAreaName(area.id, event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          className="min-w-[180px] max-w-[360px] border border-neutral-300 rounded-lg px-2 py-1 font-black text-xs md:text-sm bg-white"
+                          aria-label="Report section name"
+                        />
                         <span className="text-[11px] bg-neutral-200 px-2 py-0.5 rounded-full">{area.items.length} items</span>
                       </div>
-                      <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                      <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                        <button type="button" onClick={() => moveArea(area.id, 'up')} disabled={areas.findIndex((candidate) => candidate.id === area.id) === 0} className="p-1.5 text-neutral-500 disabled:opacity-25" title="Move section up">
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <button type="button" onClick={() => moveArea(area.id, 'down')} disabled={areas.findIndex((candidate) => candidate.id === area.id) === areas.length - 1} className="p-1.5 text-neutral-500 disabled:opacity-25" title="Move section down">
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
                         <button onClick={() => addItem(area.id)} className="px-2 py-1 text-xs border rounded bg-white">
                           + Item
                         </button>
@@ -226,7 +258,7 @@ export const ExtendedReportEditor: React.FC<Props> = ({
 
                     {expanded && (
                       <div className="divide-y divide-neutral-200">
-                        {area.items.map((item) => (
+                        {area.items.map((item, itemIndex) => (
                           <div key={item.id} className="p-3 flex flex-col md:flex-row gap-3 text-xs">
                             <div className="w-full md:w-56 shrink-0 space-y-2">
                               <input
@@ -268,12 +300,43 @@ export const ExtendedReportEditor: React.FC<Props> = ({
                               />
                             </div>
 
-                            <button
-                              onClick={() => deleteItem(area.id, item.id)}
-                              className="self-start mt-5 p-1 text-neutral-300 hover:text-red-600"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="self-start mt-5 flex items-center gap-1">
+                              <button type="button" onClick={() => moveItem(area.id, item.id, 'up')} disabled={itemIndex === 0} className="p-1 text-neutral-500 disabled:opacity-25" title="Move item up">
+                                <ArrowUp className="w-4 h-4" />
+                              </button>
+                              <button type="button" onClick={() => moveItem(area.id, item.id, 'down')} disabled={itemIndex === area.items.length - 1} className="p-1 text-neutral-500 disabled:opacity-25" title="Move item down">
+                                <ArrowDown className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => deleteItem(area.id, item.id)}
+                                className="p-1 text-neutral-300 hover:text-red-600"
+                                title="Delete item"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <ItemWorkflowControls
+                              area={area}
+                              item={item}
+                              photos={photos}
+                              maintenanceEnabled={maintenanceEnabled}
+                              showActionTracking={actionTracking}
+                              onChangeItem={(patch) => {
+                                onChangeAreas(
+                                  areas.map((candidate) =>
+                                    candidate.id !== area.id
+                                      ? candidate
+                                      : {
+                                          ...candidate,
+                                          items: candidate.items.map((candidateItem) =>
+                                            candidateItem.id === item.id ? { ...candidateItem, ...patch } : candidateItem
+                                          ),
+                                        }
+                                  )
+                                );
+                              }}
+                              onUploadPhotos={onUploadPhotos}
+                            />
                           </div>
                         ))}
                       </div>
