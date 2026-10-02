@@ -1697,8 +1697,24 @@ async function drawUpdatedBusinessManagementItem(
   let offset = 0;
   let continued = false;
 
-  const metaProbeY = drawUpdatedBusinessManagementItemMeta(pdf, report, item, -1000, false);
-  const metaHeight = metaProbeY + 1000;
+  setFont(pdf, 5.8, 'normal');
+  const metaValues = [
+    formatAustralianDate(item.activityDate) || value(item.activityDate) || 'Not recorded',
+    value(item.name) || 'Untitled item',
+    value(item.activityParty) || 'Not assigned',
+    value(item.status) || 'Open',
+    formatAustralianDate(item.dueDate) || value(item.dueDate) || 'No due date',
+    String(buildingManagementItemPhotos(report, item.id)),
+  ];
+  const metaHeight = Math.max(
+    7.5,
+    Math.max(
+      ...metaValues.map((text, index) =>
+        wrapText(pdf, text, UPDATED_BUSINESS_MANAGEMENT_WIDTHS[index] - 2.6).length
+      ),
+      1
+    ) * 2.5 + 3
+  );
 
   while (offset < allLines.length || (allLines.length === 0 && offset === 0)) {
     const minimumDescriptionHeight = 12;
