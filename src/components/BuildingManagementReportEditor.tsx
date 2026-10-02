@@ -28,6 +28,19 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   const template = getReportTemplate(details.reportType);
   const isDaily = details.reportType === 'BuildingManagementDaily';
   const monthlyPilot = details.reportType === 'BuildingManagementMonthly';
+  const updatedBusinessManagement = details.reportType === 'UpdatedBusinessManagement';
+  const supportsItemReorder = monthlyPilot || updatedBusinessManagement;
+  const statusOptions = [
+    'Open',
+    'In Progress',
+    'Awaiting Contractor',
+    'Awaiting Quote',
+    'Awaiting Approval',
+    'Scheduled',
+    'Monitoring',
+    'Completed',
+    'Closed',
+  ];
   const [tab, setTab] = useState<'activities' | 'details' | 'summary'>('activities');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
   const [categoryNameDrafts, setCategoryNameDrafts] = useState<Record<string, string>>({});
@@ -176,6 +189,8 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
       activityParty: '',
       agentComments: '',
       actionComments: '',
+      status: updatedBusinessManagement ? 'Open' : undefined,
+      dueDate: '',
     };
     onChangeAreas(
       areas.map((area) => area.id === areaId ? { ...area, items: [...area.items, newItem] } : area)
@@ -249,6 +264,14 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
         ['mattersForApproval', 'Matters Requiring Approval / Escalation', 4],
         ['additionalComments', 'Additional Comments', 4],
       ]
+    : updatedBusinessManagement
+    ? [
+        ['buildingSummary', 'Overall Management Summary', 5],
+        ['outstandingItems', 'Outstanding Works / Issues', 5],
+        ['mattersForApproval', 'Matters Requiring Approval', 4],
+        ['recommendedAction', 'Planned / Next Period Actions', 4],
+        ['additionalComments', 'Additional Comments', 4],
+      ]
     : [
         ['buildingSummary', 'Overall Monthly Summary', 5],
         ['outstandingItems', 'Outstanding Works / Issues', 5],
@@ -272,7 +295,7 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
           onClick={() => setTab('activities')}
           className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap ${tab === 'activities' ? 'border-neutral-900 text-neutral-900 bg-white' : 'border-transparent text-neutral-500'}`}
         >
-          <ClipboardList className="w-3.5 h-3.5" /> {isDaily ? 'Daily Activities' : 'Monthly Activities'}
+          <ClipboardList className="w-3.5 h-3.5" /> {isDaily ? 'Daily Activities' : updatedBusinessManagement ? 'Management Register' : 'Monthly Activities'}
         </button>
         <button
           onClick={() => setTab('details')}
@@ -295,7 +318,9 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
               <div>
                 <h3 className="text-sm font-bold text-neutral-900">{template.findingsTitle}</h3>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Rename and reorder categories, then add reporting items. Drag image files directly onto a category for category-level evidence or onto a reporting item for item-specific evidence. Uploads run in the background, so you can continue editing and queue files to other destinations.
+                  {updatedBusinessManagement
+                    ? 'Use the broad management categories below and record each matter as Date, Item, Description / Action, Responsible Party, Status and Due Date. Photos can be dropped or captured directly against the relevant item.'
+                    : 'Rename and reorder categories, then add reporting items. Drag image files directly onto a category for category-level evidence or onto a reporting item for item-specific evidence. Uploads run in the background, so you can continue editing and queue files to other destinations.'}
                 </p>
                 {pendingPhotoUploads > 0 && (
                   <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-900 text-[11px] font-semibold">
@@ -433,116 +458,234 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
                             }}
                             onDrop={(event) => queueDroppedPhotos(event, area, item.id)}
                           >
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                              <div className="md:col-span-2">
-                                <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">
-                                  {isDaily ? 'Time' : 'Date'}
-                                </label>
-                                <input
-                                  value={isDaily ? item.activityTime || '' : item.activityDate || ''}
-                                  onChange={(event) => updateItem(area.id, item.id, isDaily ? { activityTime: event.target.value } : { activityDate: event.target.value })}
-                                  className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
-                                  placeholder={isDaily ? 'e.g. 10:30 am' : 'DD/MM/YYYY'}
-                                />
-                              </div>
-                              <div className="md:col-span-3">
-                                <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Contractor / Resident / Party</label>
-                                <input
-                                  value={item.activityParty || ''}
-                                  onChange={(event) => updateItem(area.id, item.id, { activityParty: event.target.value })}
-                                  className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
-                                  placeholder="e.g. Rescom Electrical"
-                                />
-                              </div>
-                              <div className="md:col-span-5">
-                                <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Reporting Item</label>
-                                <input
-                                  value={item.name}
-                                  onChange={(event) => updateItem(area.id, item.id, { name: event.target.value })}
-                                  className="w-full border border-neutral-300 rounded-lg p-2 text-xs font-semibold"
-                                  placeholder="Short description / subject"
-                                />
-                              </div>
-                              <div className="md:col-span-2 flex items-end justify-between gap-2">
-                                <div className="flex flex-col gap-1">
-                                  <div
-                                    className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 rounded-lg px-2 py-2 flex flex-col items-center gap-0.5"
-                                    title="Drop image files anywhere on this reporting item"
-                                  >
-                                    <span className="flex items-center gap-1"><Camera className="w-3.5 h-3.5" /> {linkedPhotos} linked</span>
-                                    <span className="flex items-center gap-1 text-[9px]"><Upload className="w-3 h-3" /> Drop photos</span>
+                            {updatedBusinessManagement ? (
+                              <>
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                                  <div className="md:col-span-2">
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Date</label>
+                                    <input
+                                      type="date"
+                                      value={item.activityDate || ''}
+                                      onChange={(event) => updateItem(area.id, item.id, { activityDate: event.target.value })}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
+                                    />
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => openItemCamera(area, item.id)}
-                                    className="px-2 py-1.5 rounded-lg bg-[#0a2540] text-white text-[10px] font-bold flex items-center justify-center gap-1"
-                                    title="Open the phone camera and attach the photo to this reporting item"
-                                  >
-                                    <Camera className="w-3 h-3" /> Take Photo
-                                  </button>
+                                  <div className="md:col-span-4">
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Item</label>
+                                    <input
+                                      value={item.name}
+                                      onChange={(event) => updateItem(area.id, item.id, { name: event.target.value })}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs font-semibold"
+                                      placeholder="Short subject / matter"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-3">
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Responsible Party</label>
+                                    <input
+                                      value={item.activityParty || ''}
+                                      onChange={(event) => updateItem(area.id, item.id, { activityParty: event.target.value })}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
+                                      placeholder="e.g. Building Manager / ABC Roofing"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-3">
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Status</label>
+                                    <select
+                                      value={item.status || 'Open'}
+                                      onChange={(event) => updateItem(area.id, item.id, { status: event.target.value })}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs bg-white"
+                                    >
+                                      {statusOptions.map((status) => (
+                                        <option key={status} value={status}>{status}</option>
+                                      ))}
+                                    </select>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  {monthlyPilot && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => moveItem(area.id, item.id, 'up')}
-                                        disabled={itemIndex === 0}
-                                        aria-label="Move reporting item up"
-                                        title="Move reporting item up"
-                                        className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
-                                      >
-                                        <ArrowUp className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => moveItem(area.id, item.id, 'down')}
-                                        disabled={itemIndex === area.items.length - 1}
-                                        aria-label="Move reporting item down"
-                                        title="Move reporting item down"
-                                        className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
-                                      >
-                                        <ArrowDown className="w-4 h-4" />
-                                      </button>
-                                    </>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteItem(area.id, item.id)}
-                                    aria-label="Delete reporting item"
-                                    title="Delete reporting item"
-                                    className="p-2 text-neutral-300 hover:text-red-600"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              <div>
-                                <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">
-                                  {isDaily ? 'Brief Summary of Activities Today' : 'Brief Summary of Activities within this period'}
-                                </label>
-                                <textarea
-                                  value={item.agentComments}
-                                  onChange={(event) => updateItem(area.id, item.id, { agentComments: event.target.value })}
-                                  rows={4}
-                                  className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
-                                  placeholder="Describe the attendance, activity, observation or work completed..."
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Actions</label>
-                                <textarea
-                                  value={item.actionComments || ''}
-                                  onChange={(event) => updateItem(area.id, item.id, { actionComments: event.target.value })}
-                                  rows={4}
-                                  className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
-                                  placeholder="Record action taken, follow-up, status or next step..."
-                                />
-                              </div>
-                            </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Description / Action</label>
+                                  <textarea
+                                    value={item.agentComments}
+                                    onChange={(event) => updateItem(area.id, item.id, { agentComments: event.target.value, actionComments: '' })}
+                                    rows={5}
+                                    className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
+                                    placeholder="Describe the matter, what occurred or was observed, action already taken, and the required next step..."
+                                  />
+                                </div>
+
+                                <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
+                                  <div className="w-full md:w-52">
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Due Date</label>
+                                    <input
+                                      type="date"
+                                      value={item.dueDate || ''}
+                                      onChange={(event) => updateItem(area.id, item.id, { dueDate: event.target.value })}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
+                                    />
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center justify-end gap-2">
+                                    <div
+                                      className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 rounded-lg px-2 py-2 flex items-center gap-1.5"
+                                      title="Drop image files anywhere on this reporting item"
+                                    >
+                                      <Camera className="w-3.5 h-3.5" /> {linkedPhotos} photo{linkedPhotos === 1 ? '' : 's'}
+                                      <span className="text-[9px] text-cyan-700">• Drop photos</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => openItemCamera(area, item.id)}
+                                      className="px-2.5 py-2 rounded-lg bg-[#0a2540] text-white text-[10px] font-bold flex items-center gap-1"
+                                      title="Open the phone camera and attach the photo to this reporting item"
+                                    >
+                                      <Camera className="w-3 h-3" /> Take Photo
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => moveItem(area.id, item.id, 'up')}
+                                      disabled={itemIndex === 0}
+                                      aria-label="Move reporting item up"
+                                      title="Move reporting item up"
+                                      className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                    >
+                                      <ArrowUp className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => moveItem(area.id, item.id, 'down')}
+                                      disabled={itemIndex === area.items.length - 1}
+                                      aria-label="Move reporting item down"
+                                      title="Move reporting item down"
+                                      className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                    >
+                                      <ArrowDown className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteItem(area.id, item.id)}
+                                      aria-label="Delete reporting item"
+                                      title="Delete reporting item"
+                                      className="p-2 text-neutral-300 hover:text-red-600"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                                  <div className="md:col-span-2">
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">
+                                      {isDaily ? 'Time' : 'Date'}
+                                    </label>
+                                    <input
+                                      value={isDaily ? item.activityTime || '' : item.activityDate || ''}
+                                      onChange={(event) => updateItem(area.id, item.id, isDaily ? { activityTime: event.target.value } : { activityDate: event.target.value })}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
+                                      placeholder={isDaily ? 'e.g. 10:30 am' : 'DD/MM/YYYY'}
+                                    />
+                                  </div>
+                                  <div className="md:col-span-3">
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Contractor / Resident / Party</label>
+                                    <input
+                                      value={item.activityParty || ''}
+                                      onChange={(event) => updateItem(area.id, item.id, { activityParty: event.target.value })}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
+                                      placeholder="e.g. Rescom Electrical"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-5">
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Reporting Item</label>
+                                    <input
+                                      value={item.name}
+                                      onChange={(event) => updateItem(area.id, item.id, { name: event.target.value })}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs font-semibold"
+                                      placeholder="Short description / subject"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-2 flex items-end justify-between gap-2">
+                                    <div className="flex flex-col gap-1">
+                                      <div
+                                        className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 rounded-lg px-2 py-2 flex flex-col items-center gap-0.5"
+                                        title="Drop image files anywhere on this reporting item"
+                                      >
+                                        <span className="flex items-center gap-1"><Camera className="w-3.5 h-3.5" /> {linkedPhotos} linked</span>
+                                        <span className="flex items-center gap-1 text-[9px]"><Upload className="w-3 h-3" /> Drop photos</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => openItemCamera(area, item.id)}
+                                        className="px-2 py-1.5 rounded-lg bg-[#0a2540] text-white text-[10px] font-bold flex items-center justify-center gap-1"
+                                        title="Open the phone camera and attach the photo to this reporting item"
+                                      >
+                                        <Camera className="w-3 h-3" /> Take Photo
+                                      </button>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      {supportsItemReorder && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => moveItem(area.id, item.id, 'up')}
+                                            disabled={itemIndex === 0}
+                                            aria-label="Move reporting item up"
+                                            title="Move reporting item up"
+                                            className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                          >
+                                            <ArrowUp className="w-4 h-4" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => moveItem(area.id, item.id, 'down')}
+                                            disabled={itemIndex === area.items.length - 1}
+                                            aria-label="Move reporting item down"
+                                            title="Move reporting item down"
+                                            className="p-2 text-neutral-500 hover:text-neutral-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                          >
+                                            <ArrowDown className="w-4 h-4" />
+                                          </button>
+                                        </>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => deleteItem(area.id, item.id)}
+                                        aria-label="Delete reporting item"
+                                        title="Delete reporting item"
+                                        className="p-2 text-neutral-300 hover:text-red-600"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">
+                                      {isDaily ? 'Brief Summary of Activities Today' : 'Brief Summary of Activities within this period'}
+                                    </label>
+                                    <textarea
+                                      value={item.agentComments}
+                                      onChange={(event) => updateItem(area.id, item.id, { agentComments: event.target.value })}
+                                      rows={4}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
+                                      placeholder="Describe the attendance, activity, observation or work completed..."
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-bold uppercase text-neutral-600 mb-1">Actions</label>
+                                    <textarea
+                                      value={item.actionComments || ''}
+                                      onChange={(event) => updateItem(area.id, item.id, { actionComments: event.target.value })}
+                                      rows={4}
+                                      className="w-full border border-neutral-300 rounded-lg p-2 text-xs"
+                                      placeholder="Record action taken, follow-up, status or next step..."
+                                    />
+                                  </div>
+                                </div>
+                              </>
+                            )}
                           </div>
                         );
                       })}
