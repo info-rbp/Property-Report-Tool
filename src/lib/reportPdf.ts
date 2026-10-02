@@ -1,7 +1,8 @@
 import jsPDF from 'jspdf';
 import { PROINSPECT_COMPANY } from '../config/company';
-import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate, ReportFieldDefinition } from '../data/reportCatalogue';
+import { getReportTemplate, isBuildingManagementTemplate, isKeyReceiptTemplate, ReportFieldDefinition, supportsMaintenanceRegister } from '../data/reportCatalogue';
 import { formatAustralianDate, normalizeAreaName, splitTenantNames } from './reportFormatting';
+import { maintenanceNarrative, maintenanceRegisterEntries } from './maintenanceRegister';
 import { assertReportReadyForPdf } from './reportValidation';
 import { InspectionArea, InspectionItem, ReportData, ReportPhoto, ReportType } from '../types/report';
 
@@ -2675,6 +2676,137 @@ function addFooters(pdf: jsPDF, report: ReportData) {
   }
 }
 
+async function drawMaintenanceRegisterPages(
+  pdf: jsPDF,
+  report: ReportData,
+  onProgress?: (message: string) => void
+) {
+  if (!supportsMaintenanceRegister(report.details.reportType)) return;
+  const entries = maintenanceRegisterEntries(report);
+  if (!entries.length) return;
+
+  const runningTitle = 'Maintenance Register';
+  let y = addContentPage(pdf, report, runningTitle);
+  y = drawRoutinePageHeading(pdf, y, 'Maintenance');
+
+  setFont(pdf, 6, 'normal');
+  setTextColor(pdf, MUTED);
+  const intro = wrapText(
+    pdf,
+    'The following items were flagged for maintenance during preparation of this report. Read each item together with its source finding and photographic evidence.',
+    CONTENT_WIDTH
+  );
+  drawWrappedLines(pdf, intro, MARGIN_X, y, 2.6);
+  y += intro.length * 2.6 + 4;
+
+  for (let index = 0; index < entries.length; index++) {
+    const { area, item, photos } = entries[index];
+    onProgress?.(`Rendering maintenance item ${index + 1} of ${entries.length}...`);
+
+    setFont(pdf, 5.7, 'normal');
+    const narrative = maintenanceNarrative(item) || 'Maintenance commentary not recorded.';
+    const narrativeLines = wrapText(pdf, narrative, CONTENT_WIDTH - 4);
+    const metaHeight = 12;
+    const narrativeHeight = Math.max(10, narrativeLines.length * 2.5 + 6);
+    const minimumPhotos = photos.length ? 39 : 0;
+    const required = metaHeight + narrativeHeight + Math.min(minimumPhotos, 39) + 5;
+
+    if (y + Math.min(required, 75) > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, runningTitle);
+      y = drawRoutinePageHeading(pdf, y, 'Maintenance (continued)');
+    }
+
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, metaHeight, SECTION_FILL, BORDER);
+    setFont(pdf, 5.2, 'bold');
+    setTextColor(pdf, MUTED);
+    pdf.text('SOURCE AREA', MARGIN_X + 1.6, y + 3.2);
+    pdf.text('MAINTENANCE ITEM', MARGIN_X + 48, y + 3.2);
+    pdf.text('STATUS / RESPONSIBILITY / DUE', MARGIN_X + 126, y + 3.2);
+
+    setFont(pdf, 6.2, 'bold');
+    setTextColor(pdf, TEXT);
+    pdf.text(truncateTextToWidth(pdf, area.name, 43), MARGIN_X + 1.6, y + 8);
+    pdf.text(truncateTextToWidth(pdf, item.name || 'Untitled item', 73), MARGIN_X + 48, y + 8);
+    setFont(pdf, 5.5, 'normal');
+    const tracking = [
+      value(item.status) || 'Open',
+      value(item.activityParty),
+      item.dueDate ? `Due ${formatAustralianDate(item.dueDate) || value(item.dueDate)}` : '',
+    ].filter(Boolean).join(' | ');
+    pdf.text(truncateTextToWidth(pdf, tracking, CONTENT_WIDTH - 128), MARGIN_X + 126, y + 8);
+    y += metaHeight;
+
+    drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, narrativeHeight, undefined, LIGHT_BORDER);
+    setFont(pdf, 5.2, 'bold');
+    setTextColor(pdf, MUTED);
+    pdf.text('MAINTENANCE COMMENTARY', MARGIN_X + 1.6, y + 3.4);
+    setFont(pdf, 5.9, 'normal');
+    setTextColor(pdf, TEXT);
+    drawWrappedLines(pdf, narrativeLines, MARGIN_X + 1.6, y + 6.8, 2.5);
+    y += narrativeHeight;
+
+    if (photos.length) {
+      const columns = 3;
+      const gap = 3;
+      const cellWidth = (CONTENT_WIDTH - gap * (columns - 1)) / columns;
+      const cellHeight = 37;
+
+      for (let photoIndex = 0; photoIndex < photos.length; photoIndex += columns) {
+        if (y + cellHeight > BODY_BOTTOM) {
+          y = addContentPage(pdf, report, runningTitle);
+          y = drawRoutinePageHeading(pdf, y, 'Maintenance Photo Evidence (continued)');
+          setFont(pdf, 6, 'bold');
+          setTextColor(pdf, TEXT);
+          pdf.text(
+            truncateTextToWidth(pdf, `${area.name} - ${item.name}`, CONTENT_WIDTH),
+            MARGIN_X,
+            y + 1.5
+          );
+          y += 5;
+        }
+
+        const row = photos.slice(photoIndex, photoIndex + columns);
+        for (let column = 0; column < row.length; column++) {
+          const photo = row[column];
+          const x = MARGIN_X + column * (cellWidth + gap);
+          drawBox(pdf, x, y, cellWidth, cellHeight, [255, 255, 255], LIGHT_BORDER);
+          const source = photoSource(photo);
+          if (source) {
+            const image = await prepareImageForPdf(
+              source,
+              photo.name || `maintenance photo ${photoIndex + column + 1}`,
+              720,
+              45_000
+            );
+            const fit = containRect(image.width, image.height, cellWidth - 2, cellHeight - 7);
+            pdf.addImage(
+              image.bytes,
+              'JPEG',
+              x + 1 + fit.xOffset,
+              y + 5 + fit.yOffset,
+              fit.width,
+              fit.height,
+              undefined,
+              'FAST'
+            );
+          }
+          setFont(pdf, 5, 'bold');
+          setTextColor(pdf, TEXT);
+          pdf.text(
+            `Photo ${photoIndex + column + 1} of ${photos.length}`,
+            x + 1.2,
+            y + 3.2
+          );
+        }
+        y += cellHeight + 3;
+        await yieldToBrowser();
+      }
+    }
+
+    y += 4;
+  }
+}
+
 function drawPlacedExecutionFields(pdf: jsPDF, report: ReportData) {
   const execution = report.execution;
   if (!execution?.fields?.length) return;
@@ -2893,6 +3025,11 @@ export async function generateReportPdf(
     await drawPhotoPages(pdf, report, onProgress);
     onProgress?.('Building report summary and sign-off...');
     drawGenericClosingPages(pdf, report);
+  }
+
+  if (supportsMaintenanceRegister(report.details.reportType) && maintenanceRegisterEntries(report).length > 0) {
+    onProgress?.('Building maintenance register...');
+    await drawMaintenanceRegisterPages(pdf, report, onProgress);
   }
 
   if (report.execution?.parties?.length) {
