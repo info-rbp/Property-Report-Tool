@@ -1167,6 +1167,33 @@ function drawGenericOverview(pdf: jsPDF, report: ReportData): number {
   return y;
 }
 
+function drawGenericActionTrackingRow(pdf: jsPDF, y: number, item: InspectionItem): number {
+  const hasTracking = Boolean(value(item.activityParty) || value(item.status) || value(item.dueDate));
+  if (!hasTracking) return y;
+
+  const widths = [72, 54, CONTENT_WIDTH - 126];
+  const values = [
+    value(item.activityParty) || 'Not assigned',
+    value(item.status) || 'Open',
+    formatAustralianDate(item.dueDate) || value(item.dueDate) || 'No due date',
+  ];
+  const labels = ['Responsible Party', 'Status', 'Due Date'];
+  const h = 10;
+
+  let x = MARGIN_X;
+  widths.forEach((width, index) => {
+    drawBox(pdf, x, y, width, h, LIGHT_FILL, LIGHT_BORDER);
+    setFont(pdf, 4.9, 'bold');
+    setTextColor(pdf, MUTED);
+    pdf.text(labels[index].toUpperCase(), x + 1.2, y + 3);
+    setFont(pdf, 5.7, index === 1 ? 'bold' : 'normal');
+    setTextColor(pdf, TEXT);
+    pdf.text(truncateTextToWidth(pdf, values[index], width - 2.4), x + 1.2, y + 7.2);
+    x += width;
+  });
+  return y + h;
+}
+
 function drawGenericFindingsPages(
   pdf: jsPDF,
   report: ReportData,
@@ -1225,6 +1252,15 @@ function drawGenericFindingsPages(
         }
         y = drawRoutineFindingFragment(pdf, y, fragment);
       });
+      const hasTracking = Boolean(value(item.activityParty) || value(item.status) || value(item.dueDate));
+      if (hasTracking) {
+        if (y + 10 > BODY_BOTTOM) {
+          y = addContentPage(pdf, report, runningTitle);
+          y = drawRoutinePageHeading(pdf, y, `${template.findingsTitle} (continued)`);
+          y = drawRoutineAreaHeader(pdf, y, area, count, true);
+        }
+        y = drawGenericActionTrackingRow(pdf, y, item);
+      }
     });
     y += 2.5;
   });
