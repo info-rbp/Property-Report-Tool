@@ -4,6 +4,7 @@ import { getReportTemplate, ReportFieldDefinition } from '../data/reportCatalogu
 import { formatAustralianDate, normalizeAreaName } from '../lib/reportFormatting';
 import { ReportData, TenancyDetails } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
+import { MaintenanceRegisterPreview } from './MaintenanceRegisterPreview';
 
 interface Props {
   report: ReportData;
@@ -246,6 +247,7 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
       </div>
 
       <PhotoPreviewPages report={report} />
+      <MaintenanceRegisterPreview report={report} />
     </div>
   );
 };
