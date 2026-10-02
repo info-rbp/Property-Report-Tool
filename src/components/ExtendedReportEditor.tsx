@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, Building2, ChevronDown, ChevronRight, FileText, Plu
 import { getReportTemplate, ReportFieldDefinition, supportsItemActionTracking, supportsMaintenanceRegister } from '../data/reportCatalogue';
 import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
 import { ItemWorkflowControls } from './ItemWorkflowControls';
+import { normalizeAreaName } from '../lib/reportFormatting';
 
 interface Props {
   details: TenancyDetails;
@@ -10,6 +11,7 @@ interface Props {
   photos: ReportPhoto[];
   onChangeDetails: (details: TenancyDetails) => void;
   onChangeAreas: (areas: InspectionArea[]) => void;
+  onChangePhotos: (photos: ReportPhoto[]) => void;
   onUploadPhotos: (files: File[], areaName: string, itemId?: string, areaId?: string) => Promise<void>;
 }
 
@@ -55,6 +57,7 @@ export const ExtendedReportEditor: React.FC<Props> = ({
   photos,
   onChangeDetails,
   onChangeAreas,
+  onChangePhotos,
   onUploadPhotos,
 }) => {
   const template = getReportTemplate(details.reportType);
@@ -78,7 +81,19 @@ export const ExtendedReportEditor: React.FC<Props> = ({
   };
 
   const updateAreaName = (areaId: string, name: string) => {
+    const currentArea = areas.find((area) => area.id === areaId);
+    if (!currentArea) return;
+    const previousName = currentArea.name;
+    const itemIds = new Set(currentArea.items.map((item) => item.id));
     onChangeAreas(areas.map((area) => area.id === areaId ? { ...area, name } : area));
+    onChangePhotos(
+      photos.map((photo) =>
+        (photo.itemId && itemIds.has(photo.itemId)) ||
+        normalizeAreaName(photo.areaName) === normalizeAreaName(previousName)
+          ? { ...photo, areaName: name }
+          : photo
+      )
+    );
   };
 
   const updateItem = (areaId: string, itemId: string, field: keyof InspectionItem, value: any) => {
@@ -163,11 +178,27 @@ export const ExtendedReportEditor: React.FC<Props> = ({
   };
 
   const deleteArea = (areaId: string) => {
+    const area = areas.find((candidate) => candidate.id === areaId);
+    if (!area) return;
+    const itemIds = new Set(area.items.map((item) => item.id));
+    const linked = photos.some(
+      (photo) =>
+        (photo.itemId && itemIds.has(photo.itemId)) ||
+        normalizeAreaName(photo.areaName) === normalizeAreaName(area.name)
+    );
+    if (linked) {
+      alert('This section still has linked photos. Reassign or delete those photos before removing the section.');
+      return;
+    }
     if (!confirm('Remove this report area and all of its findings?')) return;
-    onChangeAreas(areas.filter((area) => area.id !== areaId));
+    onChangeAreas(areas.filter((candidate) => candidate.id !== areaId));
   };
 
   const deleteItem = (areaId: string, itemId: string) => {
+    if (photos.some((photo) => photo.itemId === itemId)) {
+      alert('This item still has linked photos. Reassign or delete those photos before removing the item.');
+      return;
+    }
     onChangeAreas(
       areas.map((area) =>
         area.id !== areaId ? area : { ...area, items: area.items.filter((item) => item.id !== itemId) }
