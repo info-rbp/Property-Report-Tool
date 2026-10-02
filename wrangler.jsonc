@@ -3,6 +3,17 @@
   "name": "proinspect-property-report-creation-tool",
   "main": "./worker/index.ts",
   "keep_vars": true,
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "report.creation.proinspect.systems",
+      "custom_domain": true
+    },
+    {
+      "pattern": "sign.proinspect.systems",
+      "custom_domain": true
+    }
+  ],
   "compatibility_date": "2026-09-27",
   "assets": {
     "not_found_handling": "single-page-application",
