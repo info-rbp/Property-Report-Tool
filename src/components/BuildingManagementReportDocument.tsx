@@ -113,11 +113,13 @@ function ItemRows({
   area,
   daily,
   inlinePhotos,
+  updatedLayout,
 }: {
   report: ReportData;
   area: InspectionArea;
   daily: boolean;
   inlinePhotos: boolean;
+  updatedLayout: boolean;
 }) {
   if (!area.items.length) {
     return (
@@ -131,16 +133,33 @@ function ItemRows({
     <>
       {area.items.map((item: InspectionItem) => (
         <React.Fragment key={item.id}>
-          <div className="grid grid-cols-[38mm_32mm_1fr_44mm_12mm] border-x border-b border-neutral-300 text-[8px]">
-            <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">
-              <div className="font-bold">{daily ? item.activityTime || 'Time not recorded' : formatAustralianDate(item.activityDate) || 'Date not recorded'}</div>
-              {item.activityParty && <div className="mt-1">{item.activityParty}</div>}
+          {updatedLayout ? (
+            <div className="border-x border-b border-neutral-300 text-[8px]">
+              <div className="grid grid-cols-[24mm_1fr_42mm_28mm_27mm_12mm] bg-neutral-50 border-b border-neutral-200">
+                <div className="p-2 border-r border-neutral-200 font-bold">{formatAustralianDate(item.activityDate) || 'Date not recorded'}</div>
+                <div className="p-2 border-r border-neutral-200 font-bold">{item.name || 'Untitled item'}</div>
+                <div className="p-2 border-r border-neutral-200">{item.activityParty || 'Not assigned'}</div>
+                <div className="p-2 border-r border-neutral-200 font-bold">{item.status || 'Open'}</div>
+                <div className="p-2 border-r border-neutral-200">{formatAustralianDate(item.dueDate) || 'No due date'}</div>
+                <div className="p-2 text-center font-bold text-cyan-700">{itemPhotoCount(report, item.id)}</div>
+              </div>
+              <div className="p-2 whitespace-pre-wrap min-h-[14mm]">
+                <div className="text-[7px] font-bold uppercase text-neutral-500 mb-1">Description / Action</div>
+                {item.agentComments || 'No description / action recorded.'}
+              </div>
             </div>
-            <div className="p-2 border-r border-neutral-200 font-bold">{item.name || 'Untitled reporting item'}</div>
-            <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">{item.agentComments || 'No activity summary recorded.'}</div>
-            <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">{item.actionComments || 'No further action recorded.'}</div>
-            <div className="p-2 text-center font-bold text-cyan-700">{itemPhotoCount(report, item.id)}</div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-[38mm_32mm_1fr_44mm_12mm] border-x border-b border-neutral-300 text-[8px]">
+              <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">
+                <div className="font-bold">{daily ? item.activityTime || 'Time not recorded' : formatAustralianDate(item.activityDate) || 'Date not recorded'}</div>
+                {item.activityParty && <div className="mt-1">{item.activityParty}</div>}
+              </div>
+              <div className="p-2 border-r border-neutral-200 font-bold">{item.name || 'Untitled reporting item'}</div>
+              <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">{item.agentComments || 'No activity summary recorded.'}</div>
+              <div className="p-2 border-r border-neutral-200 whitespace-pre-wrap">{item.actionComments || 'No further action recorded.'}</div>
+              <div className="p-2 text-center font-bold text-cyan-700">{itemPhotoCount(report, item.id)}</div>
+            </div>
+          )}
           {inlinePhotos && <ItemPhotos report={report} item={item} />}
         </React.Fragment>
       ))}
@@ -153,29 +172,42 @@ function CategoryPage({
   area,
   daily,
   inlinePhotos,
+  updatedLayout,
 }: {
   report: ReportData;
   area: InspectionArea;
   daily: boolean;
   inlinePhotos: boolean;
+  updatedLayout: boolean;
 }) {
   return (
     <div className="pdf-page w-[210mm] min-h-[297mm] bg-white p-[12mm] flex flex-col shadow-2xl box-border">
-      <Header report={report} title={daily ? 'Building Manager Daily' : 'Building Manager Monthly'} />
+      <Header report={report} title={getReportTemplate(report.details.reportType).shortLabel} />
       <div className="bg-slate-100 border border-neutral-300 px-3 py-2 text-sm font-extrabold text-[#0a2540]">
         {area.name}
       </div>
       {inlinePhotos && <CategoryPhotos report={report} area={area} />}
-      <div className="grid grid-cols-[38mm_32mm_1fr_44mm_12mm] bg-neutral-50 border-x border-b border-neutral-300 text-[8px] font-bold">
-        <div className="p-2 border-r border-neutral-300 text-center">{daily ? 'Time / Party' : 'Date / Party'}</div>
-        <div className="p-2 border-r border-neutral-300 text-center">Reporting Item</div>
-        <div className="p-2 border-r border-neutral-300 text-center">
-          {daily ? 'Brief Summary of Activities Today' : 'Brief Summary of Activities within this period'}
+      {updatedLayout ? (
+        <div className="grid grid-cols-[24mm_1fr_42mm_28mm_27mm_12mm] bg-neutral-50 border-x border-b border-neutral-300 text-[7px] font-bold">
+          <div className="p-2 border-r border-neutral-300 text-center">Date</div>
+          <div className="p-2 border-r border-neutral-300 text-center">Item</div>
+          <div className="p-2 border-r border-neutral-300 text-center">Responsible Party</div>
+          <div className="p-2 border-r border-neutral-300 text-center">Status</div>
+          <div className="p-2 border-r border-neutral-300 text-center">Due Date</div>
+          <div className="p-2 text-center">Photos</div>
         </div>
-        <div className="p-2 border-r border-neutral-300 text-center">Actions</div>
-        <div className="p-2 text-center">Photos</div>
-      </div>
-      <ItemRows report={report} area={area} daily={daily} inlinePhotos={inlinePhotos} />
+      ) : (
+        <div className="grid grid-cols-[38mm_32mm_1fr_44mm_12mm] bg-neutral-50 border-x border-b border-neutral-300 text-[8px] font-bold">
+          <div className="p-2 border-r border-neutral-300 text-center">{daily ? 'Time / Party' : 'Date / Party'}</div>
+          <div className="p-2 border-r border-neutral-300 text-center">Reporting Item</div>
+          <div className="p-2 border-r border-neutral-300 text-center">
+            {daily ? 'Brief Summary of Activities Today' : 'Brief Summary of Activities within this period'}
+          </div>
+          <div className="p-2 border-r border-neutral-300 text-center">Actions</div>
+          <div className="p-2 text-center">Photos</div>
+        </div>
+      )}
+      <ItemRows report={report} area={area} daily={daily} inlinePhotos={inlinePhotos} updatedLayout={updatedLayout} />
       <Footer />
     </div>
   );
@@ -251,6 +283,8 @@ export const BuildingManagementReportDocument: React.FC<Props> = ({ report }) =>
   const template = getReportTemplate(report.details.reportType);
   const daily = report.details.reportType === 'BuildingManagementDaily';
   const monthlyPilot = report.details.reportType === 'BuildingManagementMonthly';
+  const updatedBusinessManagement = report.details.reportType === 'UpdatedBusinessManagement';
+  const inlinePhotos = monthlyPilot || updatedBusinessManagement;
   const cover = report.photos.find((photo) => photo.isCover) || report.photos[0];
   const coverSource = report.details.coverPhotoUrl || cover?.dataUrl || cover?.url;
   const coverName = report.details.coverPhotoUrl ? 'Report cover' : cover?.name || 'Report cover';
@@ -261,6 +295,14 @@ export const BuildingManagementReportDocument: React.FC<Props> = ({ report }) =>
         ['Daily Summary', details.buildingSummary],
         ['Outstanding Works / Issues', details.outstandingItems],
         ['Matters Requiring Approval / Escalation', details.mattersForApproval],
+        ['Additional Comments', details.additionalComments],
+      ]
+    : updatedBusinessManagement
+    ? [
+        ['Overall Management Summary', details.buildingSummary],
+        ['Outstanding Works / Issues', details.outstandingItems],
+        ['Matters Requiring Approval', details.mattersForApproval],
+        ['Planned / Next Period Actions', details.recommendedAction],
         ['Additional Comments', details.additionalComments],
       ]
     : [
@@ -335,10 +377,10 @@ export const BuildingManagementReportDocument: React.FC<Props> = ({ report }) =>
       </div>
 
       {report.areas.map((area) => (
-        <CategoryPage key={area.id} report={report} area={area} daily={daily} inlinePhotos={monthlyPilot} />
+        <CategoryPage key={area.id} report={report} area={area} daily={daily} inlinePhotos={inlinePhotos} updatedLayout={updatedBusinessManagement} />
       ))}
 
-      {!monthlyPilot && <PhotoPages report={report} />}
+      {!inlinePhotos && <PhotoPages report={report} />}
 
       <div className="pdf-page w-[210mm] min-h-[297mm] bg-white p-[12mm] flex flex-col shadow-2xl box-border">
         <Header report={report} title={template.shortLabel} />

@@ -585,6 +585,116 @@ if (validateReportForFinalization(buildingMonthly).length !== 0) {
 }
 await verifyPdf('BuildingManagementMonthlyFilled', buildingMonthly, 6, 10_000);
 
+const updatedBusinessManagement = createBlankReport('UpdatedBusinessManagement', {
+  id: 'updated-business-management-property',
+  address: '88 Harbour View Parade, Perth WA 6000',
+});
+const expectedUpdatedBusinessCategories = [
+  'Maintenance & Assets',
+  'Building Operations',
+  'Security & Access',
+  'Residents & Occupancy',
+  'Compliance & Safety',
+  'Management & Administration',
+];
+if (
+  updatedBusinessManagement.areas.map((area) => area.name).join('|') !==
+  expectedUpdatedBusinessCategories.join('|')
+) {
+  throw new Error('Updated Business Management default category structure regression detected.');
+}
+updatedBusinessManagement.details.buildingName = 'Harbour View';
+updatedBusinessManagement.details.strataPlan = 'Scheme 12345';
+updatedBusinessManagement.details.reportingPeriod = 'September 2026';
+updatedBusinessManagement.details.clientName = 'Council of Owners';
+updatedBusinessManagement.details.inspectingAgent = 'ProInspect Building Manager';
+updatedBusinessManagement.details.agentSignName = 'ProInspect Building Manager';
+updatedBusinessManagement.details.buildingSummary =
+  'Management operations remained stable during the reporting period, with maintenance, access, resident and compliance matters tracked through the streamlined activity register.';
+updatedBusinessManagement.areas[0].items = [
+  {
+    id: 'ubm-maintenance-1',
+    name: 'Roof membrane leak - Level 3',
+    activityDate: '2026-09-14',
+    activityParty: 'ABC Roofing',
+    status: 'Awaiting Quote',
+    dueDate: '2026-10-09',
+    agentComments:
+      'Water ingress was reported above Apartment 18. ABC Roofing attended, identified deterioration around a service penetration and completed temporary sealing. A quotation has been requested for permanent membrane repairs.',
+    actionComments: '',
+  },
+  {
+    id: 'ubm-maintenance-2',
+    name: 'Lift preventative maintenance',
+    activityDate: '2026-09-19',
+    activityParty: 'Vertical Transport Services',
+    status: 'Completed',
+    dueDate: '2026-09-19',
+    agentComments:
+      'Scheduled preventative maintenance was completed. Service records were received and no further corrective work was identified at this attendance.',
+    actionComments: '',
+  },
+];
+updatedBusinessManagement.areas[2].items = [
+  {
+    id: 'ubm-security-1',
+    name: 'Basement access reader fault',
+    activityDate: '2026-09-22',
+    activityParty: 'SecureTech',
+    status: 'In Progress',
+    dueDate: '2026-10-03',
+    agentComments: longComment,
+    actionComments: '',
+  },
+];
+updatedBusinessManagement.areas[4].items = [
+  {
+    id: 'ubm-compliance-1',
+    name: 'Annual fire systems inspection',
+    activityDate: '2026-09-26',
+    activityParty: 'Fire Compliance WA',
+    status: 'Monitoring',
+    dueDate: '2026-10-15',
+    agentComments:
+      'Annual fire systems inspection completed. Two minor follow-up items were identified and have been assigned for rectification and close-out.',
+    actionComments: '',
+  },
+];
+updatedBusinessManagement.photos = [
+  {
+    id: 'ubm-photo-1',
+    name: 'Roof leak evidence',
+    areaName: updatedBusinessManagement.areas[0].name,
+    itemId: 'ubm-maintenance-1',
+    itemName: 'Roof membrane leak - Level 3',
+    photoIndex: 1,
+    dataUrl: LANDSCAPE_JPEG,
+  },
+  {
+    id: 'ubm-photo-2',
+    name: 'Access reader evidence',
+    areaName: updatedBusinessManagement.areas[2].name,
+    itemId: 'ubm-security-1',
+    itemName: 'Basement access reader fault',
+    photoIndex: 1,
+    dataUrl: PORTRAIT_JPEG,
+  },
+  {
+    id: 'ubm-category-photo',
+    name: 'Compliance overview',
+    areaName: updatedBusinessManagement.areas[4].name,
+    photoIndex: 1,
+    dataUrl: LANDSCAPE_JPEG,
+  },
+];
+const updatedBusinessIssues = validateReportForFinalization(updatedBusinessManagement);
+if (updatedBusinessIssues.length !== 0) {
+  throw new Error(
+    `Valid Updated Business Management Report failed finalization validation: ${updatedBusinessIssues.map((issue) => issue.message).join(' ')}`
+  );
+}
+await verifyPdf('UpdatedBusinessManagementFilled', updatedBusinessManagement, 5, 9_000);
+
 const commonPropertyStress = createBlankReport('CommonProperty', {
   id: 'common-property-stress',
   address: 'A deliberately long common property address used to confirm that detail rows wrap correctly without crossing the report margin, Perth WA 6000',

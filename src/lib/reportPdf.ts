@@ -1307,8 +1307,9 @@ function buildingManagementColumnPositions(): number[] {
 
 function drawBuildingManagementOverview(pdf: jsPDF, report: ReportData): number {
   const daily = isDailyBuildingManagementReport(report.details.reportType);
+  const overviewTitle = getReportTemplate(report.details.reportType).summaryTitle;
   let y = addContentPage(pdf, report, resolvedRunningTitle(report));
-  y = drawRoutinePageHeading(pdf, y, daily ? 'Daily Report Details' : 'Monthly Report Details');
+  y = drawRoutinePageHeading(pdf, y, overviewTitle);
 
   const rows: Array<[string, string]> = [
     ['Building / Scheme Name', value(report.details.buildingName)],
@@ -1324,7 +1325,7 @@ function drawBuildingManagementOverview(pdf: jsPDF, report: ReportData): number 
     const rowHeight = routineDetailRowHeight(pdf, label, content);
     if (y + rowHeight > BODY_BOTTOM) {
       y = addContentPage(pdf, report, resolvedRunningTitle(report));
-      y = drawRoutinePageHeading(pdf, y, daily ? 'Daily Report Details (continued)' : 'Monthly Report Details (continued)');
+      y = drawRoutinePageHeading(pdf, y, `${overviewTitle} (continued)`);
     }
     y = drawRoutineDetailRow(pdf, y, label, content);
   });
@@ -1592,6 +1593,158 @@ async function drawBuildingManagementCategoryPhotoEvidence(
   return y + 1;
 }
 
+const UPDATED_BUSINESS_MANAGEMENT_WIDTHS = [24, 50, 42, 30, 36, 12] as const;
+
+function updatedBusinessManagementColumnPositions(): number[] {
+  const positions: number[] = [MARGIN_X];
+  UPDATED_BUSINESS_MANAGEMENT_WIDTHS.forEach((width) => positions.push(positions[positions.length - 1] + width));
+  return positions;
+}
+
+function drawUpdatedBusinessManagementTableHeader(pdf: jsPDF, y: number): number {
+  const x = updatedBusinessManagementColumnPositions();
+  const h = 8.8;
+  const headings = ['Date', 'Item', 'Responsible Party', 'Status', 'Due Date', 'Photos'];
+  UPDATED_BUSINESS_MANAGEMENT_WIDTHS.forEach((width, index) => drawBox(pdf, x[index], y, width, h, LIGHT_FILL, BORDER));
+  setFont(pdf, 5.4, 'bold');
+  setTextColor(pdf, TEXT);
+  headings.forEach((heading, index) => {
+    const lines = wrapText(pdf, heading, UPDATED_BUSINESS_MANAGEMENT_WIDTHS[index] - 2.2);
+    drawWrappedLines(
+      pdf,
+      lines,
+      x[index] + UPDATED_BUSINESS_MANAGEMENT_WIDTHS[index] / 2,
+      y + 3.2,
+      2.1,
+      { align: 'center', maxLines: 2 }
+    );
+  });
+  return y + h;
+}
+
+function drawUpdatedBusinessManagementItemMeta(
+  pdf: jsPDF,
+  report: ReportData,
+  item: InspectionItem,
+  y: number,
+  continued = false
+): number {
+  const x = updatedBusinessManagementColumnPositions();
+  setFont(pdf, 5.8, 'normal');
+  const values = [
+    formatAustralianDate(item.activityDate) || value(item.activityDate) || 'Not recorded',
+    continued ? `${value(item.name) || 'Untitled item'} (continued)` : value(item.name) || 'Untitled item',
+    value(item.activityParty) || 'Not assigned',
+    value(item.status) || 'Open',
+    formatAustralianDate(item.dueDate) || value(item.dueDate) || 'No due date',
+    String(buildingManagementItemPhotos(report, item.id)),
+  ];
+  const wrapped = values.map((text, index) =>
+    wrapText(pdf, text, UPDATED_BUSINESS_MANAGEMENT_WIDTHS[index] - 2.6)
+  );
+  const lineCount = Math.max(...wrapped.map((lines) => lines.length), 1);
+  const h = Math.max(7.5, lineCount * 2.5 + 3);
+
+  UPDATED_BUSINESS_MANAGEMENT_WIDTHS.forEach((width, index) => drawBox(pdf, x[index], y, width, h, undefined, LIGHT_BORDER));
+  wrapped.forEach((lines, index) => {
+    setFont(pdf, 5.8, index === 1 || index === 3 || index === 5 ? 'bold' : 'normal');
+    setTextColor(pdf, index === 5 && buildingManagementItemPhotos(report, item.id) > 0 ? TEAL : TEXT);
+    drawWrappedLines(
+      pdf,
+      lines,
+      index === 5 ? x[index] + UPDATED_BUSINESS_MANAGEMENT_WIDTHS[index] / 2 : x[index] + 1.3,
+      y + 3.4,
+      2.5,
+      index === 5 ? { align: 'center' } : undefined
+    );
+  });
+  return y + h;
+}
+
+function drawUpdatedBusinessManagementDescriptionChunk(
+  pdf: jsPDF,
+  y: number,
+  lines: string[],
+  continued = false
+): number {
+  const h = Math.max(9, lines.length * 2.55 + 7);
+  drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, undefined, LIGHT_BORDER);
+  setFont(pdf, 5.3, 'bold');
+  setTextColor(pdf, MUTED);
+  pdf.text(continued ? 'DESCRIPTION / ACTION (CONTINUED)' : 'DESCRIPTION / ACTION', MARGIN_X + 1.5, y + 3.4);
+  setFont(pdf, 5.9, 'normal');
+  setTextColor(pdf, TEXT);
+  drawWrappedLines(pdf, lines.length ? lines : ['No description / action recorded.'], MARGIN_X + 1.5, y + 6.5, 2.55);
+  return y + h;
+}
+
+async function drawUpdatedBusinessManagementItem(
+  pdf: jsPDF,
+  report: ReportData,
+  area: InspectionArea,
+  item: InspectionItem,
+  startY: number,
+  onProgress?: (message: string) => void
+): Promise<number> {
+  const template = getReportTemplate(report.details.reportType);
+  const runningTitle = template.shortLabel;
+  const allLines = wrapText(
+    pdf,
+    value(item.agentComments) || 'No description / action recorded.',
+    CONTENT_WIDTH - 3
+  );
+  let y = startY;
+  let offset = 0;
+  let continued = false;
+
+  setFont(pdf, 5.8, 'normal');
+  const metaValues = [
+    formatAustralianDate(item.activityDate) || value(item.activityDate) || 'Not recorded',
+    value(item.name) || 'Untitled item',
+    value(item.activityParty) || 'Not assigned',
+    value(item.status) || 'Open',
+    formatAustralianDate(item.dueDate) || value(item.dueDate) || 'No due date',
+    String(buildingManagementItemPhotos(report, item.id)),
+  ];
+  const metaHeight = Math.max(
+    7.5,
+    Math.max(
+      ...metaValues.map((text, index) =>
+        wrapText(pdf, text, UPDATED_BUSINESS_MANAGEMENT_WIDTHS[index] - 2.6).length
+      ),
+      1
+    ) * 2.5 + 3
+  );
+
+  while (offset < allLines.length || (allLines.length === 0 && offset === 0)) {
+    const minimumDescriptionHeight = 12;
+    if (y + metaHeight + minimumDescriptionHeight > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, runningTitle);
+      y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+      y = drawUpdatedBusinessManagementTableHeader(pdf, y);
+    }
+
+    y = drawUpdatedBusinessManagementItemMeta(pdf, report, item, y, continued);
+    const availableLines = Math.max(1, Math.floor((BODY_BOTTOM - y - 7) / 2.55));
+    const chunk = allLines.slice(offset, offset + availableLines);
+    y = drawUpdatedBusinessManagementDescriptionChunk(pdf, y, chunk, continued);
+    offset += chunk.length || 1;
+
+    if (offset < allLines.length) {
+      y = addContentPage(pdf, report, runningTitle);
+      y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+      y = drawUpdatedBusinessManagementTableHeader(pdf, y);
+      continued = true;
+    }
+  }
+
+  if (buildingManagementItemPhotos(report, item.id) > 0) {
+    y = await drawBuildingManagementItemPhotoEvidence(pdf, report, area, item, y, onProgress);
+  }
+
+  return y;
+}
+
 async function drawBuildingManagementActivityPages(
   pdf: jsPDF,
   report: ReportData,
@@ -1599,7 +1752,9 @@ async function drawBuildingManagementActivityPages(
   onProgress?: (message: string) => void
 ) {
   const daily = isDailyBuildingManagementReport(report.details.reportType);
-  const inlinePhotos = report.details.reportType === 'BuildingManagementMonthly';
+  const updatedLayout = report.details.reportType === 'UpdatedBusinessManagement';
+  const inlinePhotos =
+    report.details.reportType === 'BuildingManagementMonthly' || updatedLayout;
   const template = getReportTemplate(report.details.reportType);
   const runningTitle = template.shortLabel;
   const x = buildingManagementColumnPositions();
@@ -1618,6 +1773,40 @@ async function drawBuildingManagementActivityPages(
     if (inlinePhotos && buildingManagementCategoryPhotoList(report, area).length > 0) {
       y = await drawBuildingManagementCategoryPhotoEvidence(pdf, report, area, y, onProgress);
     }
+
+    if (updatedLayout) {
+      y = drawUpdatedBusinessManagementTableHeader(pdf, y);
+
+      if (!area.items.length) {
+        const h = 9;
+        if (y + h > BODY_BOTTOM) {
+          y = addContentPage(pdf, report, runningTitle);
+          y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+          y = drawUpdatedBusinessManagementTableHeader(pdf, y);
+        }
+        drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, h, undefined, LIGHT_BORDER);
+        setFont(pdf, 6, 'italic');
+        setTextColor(pdf, MUTED);
+        pdf.text('No items recorded in this category for the reporting period.', MARGIN_X + 2, y + 5.6);
+        y += h + 2.5;
+        continue;
+      }
+
+      for (let itemIndex = 0; itemIndex < area.items.length; itemIndex++) {
+        y = await drawUpdatedBusinessManagementItem(pdf, report, area, area.items[itemIndex], y, onProgress);
+        if (itemIndex < area.items.length - 1) {
+          if (y + 18 > BODY_BOTTOM) {
+            y = addContentPage(pdf, report, runningTitle);
+            y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+          }
+          y = drawUpdatedBusinessManagementTableHeader(pdf, y);
+        }
+      }
+
+      y += 2.5;
+      continue;
+    }
+
     y = drawBuildingManagementTableHeader(pdf, y, daily);
 
     if (!area.items.length) {
@@ -2689,7 +2878,10 @@ export async function generateReportPdf(
     const template = getReportTemplate(report.details.reportType);
     onProgress?.(`Building ${template.label}...`);
     await drawBuildingManagementReportPages(pdf, report, onProgress);
-    if (report.details.reportType !== 'BuildingManagementMonthly') {
+    if (
+      report.details.reportType !== 'BuildingManagementMonthly' &&
+      report.details.reportType !== 'UpdatedBusinessManagement'
+    ) {
       await drawPhotoPages(pdf, report, onProgress);
     }
     onProgress?.('Building Building Manager summary and sign-off...');
@@ -2723,7 +2915,8 @@ export async function generateReportPdf(
       ? 3 + photoPageMinimum
       : report.details.reportType === 'Exit'
       ? 2 + (report.areas.length ? 1 : 0) + photoPageMinimum
-      : report.details.reportType === 'BuildingManagementMonthly'
+      : report.details.reportType === 'BuildingManagementMonthly' ||
+        report.details.reportType === 'UpdatedBusinessManagement'
       ? 3
       : template.family === 'condition'
       ? 3 + (report.areas.length ? 1 : 0) + photoPageMinimum

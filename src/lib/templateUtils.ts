@@ -41,6 +41,8 @@ function cloneItemForTemplate(item: InspectionItem): InspectionItem {
     activityDate: '',
     activityTime: '',
     activityParty: '',
+    status: undefined,
+    dueDate: '',
     tenantComments: '',
     tenantAgrees: null,
   };
@@ -104,6 +106,8 @@ export function createReportFromTemplate(
         activityDate: '',
         activityTime: '',
         activityParty: '',
+        status: undefined,
+        dueDate: '',
         tenantComments: '',
         tenantAgrees: null,
       })),
