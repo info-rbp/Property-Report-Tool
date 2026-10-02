@@ -7,6 +7,7 @@ import { KeyReceiptDocument } from './KeyReceiptDocument';
 import { BuildingManagementReportDocument } from './BuildingManagementReportDocument';
 import { ExtendedReportDocument } from './ExtendedReportDocument';
 import { SimpleReportDocument } from './SimpleReportDocument';
+import { MaintenanceRegisterPreview } from './MaintenanceRegisterPreview';
 
 interface ReportPreviewProps {
   report: ReportData;
@@ -810,6 +811,8 @@ export const ReportDocument: React.FC<ReportPreviewProps> = ({ report }) => {
           </div>
         );
       })()}
+
+      <MaintenanceRegisterPreview report={report} />
     </div>
   );
 };
