@@ -647,6 +647,34 @@ export function getReportTemplate(type: ReportType): ReportTemplateDefinition {
   return template;
 }
 
+const MAINTENANCE_REGISTER_REPORT_TYPES = new Set<ReportType>([
+  'Entry',
+  'Routine',
+  'Exit',
+  'PropertyOnboarding',
+  'VacantProperty',
+  'CommercialIngoing',
+  'CommercialPeriodic',
+  'CommercialExit',
+  'CommonProperty',
+  'BuildingManagement',
+  'BuildingManagementDaily',
+  'BuildingManagementMonthly',
+  'UpdatedBusinessManagement',
+  'PropertyHandover',
+  'AnnualPropertySummary',
+  'Custom',
+]);
+
+export function supportsMaintenanceRegister(reportType: ReportType): boolean {
+  return MAINTENANCE_REGISTER_REPORT_TYPES.has(reportType);
+}
+
+export function supportsItemActionTracking(reportType: ReportType): boolean {
+  const family = getReportTemplate(reportType).family;
+  return ['inspection', 'maintenance', 'operations', 'event'].includes(family);
+}
+
 export function isBuildingManagementTemplate(type: ReportType): boolean {
   return getReportTemplate(type).specializedLayout === 'building-management';
 }
