@@ -22,6 +22,22 @@ jobs:
         run: bun run lint
       - name: Production build
         run: bun run build
+      - name: Validate Cloudflare static headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -nF '\\n' public/_headers; then
+            echo "public/_headers contains literal escaped newlines and would be rejected by Cloudflare."
+            exit 1
+          fi
+          awk '
+            /^\// { route=1; next }
+            /^[[:space:]]+[A-Za-z0-9-]+:/ { next }
+            /^[[:space:]]*$/ { next }
+            { print "Invalid _headers line " NR ": " $0; bad=1 }
+            END { exit bad ? 1 : 0 }
+          ' public/_headers
+
       - name: PDF renderer regression
         run: |
           mkdir -p render-artifacts
