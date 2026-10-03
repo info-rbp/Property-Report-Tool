@@ -1,12 +1,16 @@
 import React from 'react';
 import { KeyRound, Plus, Trash2 } from 'lucide-react';
-import { InspectionArea, InspectionItem, TenancyDetails } from '../types/report';
+import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
+import { ItemWorkflowControls } from './ItemWorkflowControls';
 
 interface Props {
   details: TenancyDetails;
   areas: InspectionArea[];
+  photos: ReportPhoto[];
   onChangeDetails: (details: TenancyDetails) => void;
   onChangeAreas: (areas: InspectionArea[]) => void;
+  onChangePhotos: (photos: ReportPhoto[]) => void;
+  onUploadPhotos: (files: File[], areaName: string, itemId?: string, areaId?: string) => Promise<void>;
 }
 
 const STANDARD_KEYS = [
@@ -24,8 +28,11 @@ const STANDARD_KEYS = [
 export const KeyReceiptEditor: React.FC<Props> = ({
   details,
   areas,
+  photos,
   onChangeDetails,
   onChangeAreas,
+  onChangePhotos,
+  onUploadPhotos,
 }) => {
   const keyArea = areas[0] || {
     id: `area-${crypto.randomUUID()}`,
@@ -62,9 +69,20 @@ export const KeyReceiptEditor: React.FC<Props> = ({
       ...keyArea,
       items: keyArea.items.map((item) => item.id === itemId ? { ...item, ...patch } : item),
     });
+    if (typeof patch.name === 'string') {
+      onChangePhotos(
+        photos.map((photo) =>
+          photo.itemId === itemId ? { ...photo, itemName: patch.name } : photo
+        )
+      );
+    }
   };
 
   const deleteItem = (itemId: string) => {
+    if (photos.some((photo) => photo.itemId === itemId)) {
+      alert('This key / access device still has linked photos. Reassign or delete those photos before removing the item.');
+      return;
+    }
     replaceKeyArea({
       ...keyArea,
       items: keyArea.items.filter((item) => item.id !== itemId),
@@ -160,7 +178,7 @@ export const KeyReceiptEditor: React.FC<Props> = ({
           <div className="flex flex-wrap justify-between gap-3 items-start">
             <div>
               <h3 className="font-bold text-sm text-neutral-900">Keys & access devices received</h3>
-              <p className="text-xs text-neutral-500 mt-1">Add only the items actually handed to the tenant.</p>
+              <p className="text-xs text-neutral-500 mt-1">Add only the items actually handed to the tenant. Photos can be uploaded, dropped or taken directly against the relevant key or access device.</p>
             </div>
             <button
               onClick={() => addItem()}
@@ -196,43 +214,58 @@ export const KeyReceiptEditor: React.FC<Props> = ({
               </div>
               <div className="divide-y divide-neutral-200">
                 {keyArea.items.map((item) => (
-                  <div key={item.id} className="grid grid-cols-1 md:grid-cols-[90px_1fr_1.2fr_44px] gap-2 md:gap-0 p-3 md:p-0 text-xs">
-                    <div className="md:p-2 md:border-r">
-                      <label className="md:hidden block text-[10px] font-bold text-neutral-500 mb-1">Quantity</label>
-                      <input
-                        value={item.quantity || ''}
-                        onChange={(event) => updateItem(item.id, { quantity: event.target.value })}
-                        inputMode="numeric"
-                        placeholder="1"
-                        className="w-full border border-neutral-300 rounded-lg p-2"
-                      />
+                  <div key={item.id} className="p-3 md:p-0">
+                    <div className="grid grid-cols-1 md:grid-cols-[90px_1fr_1.2fr_44px] gap-2 md:gap-0 text-xs">
+                      <div className="md:p-2 md:border-r">
+                        <label className="md:hidden block text-[10px] font-bold text-neutral-500 mb-1">Quantity</label>
+                        <input
+                          value={item.quantity || ''}
+                          onChange={(event) => updateItem(item.id, { quantity: event.target.value })}
+                          inputMode="numeric"
+                          placeholder="1"
+                          className="w-full border border-neutral-300 rounded-lg p-2"
+                        />
+                      </div>
+                      <div className="md:p-2 md:border-r">
+                        <label className="md:hidden block text-[10px] font-bold text-neutral-500 mb-1">Key / Access Device</label>
+                        <input
+                          value={item.name}
+                          onChange={(event) => updateItem(item.id, { name: event.target.value })}
+                          placeholder="e.g. Front Door Key"
+                          className="w-full border border-neutral-300 rounded-lg p-2 font-semibold"
+                        />
+                      </div>
+                      <div className="md:p-2 md:border-r">
+                        <label className="md:hidden block text-[10px] font-bold text-neutral-500 mb-1">Identifier / Notes</label>
+                        <input
+                          value={item.identifier || ''}
+                          onChange={(event) => updateItem(item.id, { identifier: event.target.value })}
+                          placeholder="Optional number, colour or identifying note"
+                          className="w-full border border-neutral-300 rounded-lg p-2"
+                        />
+                      </div>
+                      <div className="md:p-2 flex items-start justify-end">
+                        <button
+                          onClick={() => deleteItem(item.id)}
+                          className="p-1 text-neutral-400 hover:text-red-600"
+                          title="Remove item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="md:p-2 md:border-r">
-                      <label className="md:hidden block text-[10px] font-bold text-neutral-500 mb-1">Key / Access Device</label>
-                      <input
-                        value={item.name}
-                        onChange={(event) => updateItem(item.id, { name: event.target.value })}
-                        placeholder="e.g. Front Door Key"
-                        className="w-full border border-neutral-300 rounded-lg p-2 font-semibold"
+
+                    <div className="md:px-2 md:pb-3">
+                      <ItemWorkflowControls
+                        area={keyArea}
+                        item={item}
+                        photos={photos}
+                        maintenanceEnabled={false}
+                        showActionTracking={false}
+                        showGeneralPhotoControls={true}
+                        onChangeItem={(patch) => updateItem(item.id, patch)}
+                        onUploadPhotos={onUploadPhotos}
                       />
-                    </div>
-                    <div className="md:p-2 md:border-r">
-                      <label className="md:hidden block text-[10px] font-bold text-neutral-500 mb-1">Identifier / Notes</label>
-                      <input
-                        value={item.identifier || ''}
-                        onChange={(event) => updateItem(item.id, { identifier: event.target.value })}
-                        placeholder="Optional number, colour or identifying note"
-                        className="w-full border border-neutral-300 rounded-lg p-2"
-                      />
-                    </div>
-                    <div className="md:p-2 flex items-start justify-end">
-                      <button
-                        onClick={() => deleteItem(item.id)}
-                        className="p-1 text-neutral-400 hover:text-red-600"
-                        title="Remove item"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                     </div>
                   </div>
                 ))}
