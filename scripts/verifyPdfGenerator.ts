@@ -467,6 +467,7 @@ keyReceiptStress.areas[0].items = Array.from({ length: 24 }, (_, index) => ({
     `Identifier / handover note ${index + 1}. This text is deliberately extended to verify deterministic row-height calculation and continuation-page table headings.`,
   agentComments: '',
 }));
+keyReceiptStress.photos = [];
 await verifyPdf('KeyReceiptLongList', keyReceiptStress, 2, 6_000);
 
 const invalidKeyReceipt = structuredClone(keyReceipt);
