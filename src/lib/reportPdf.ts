@@ -2540,6 +2540,124 @@ function drawKeyReceiptRow(
   return y + h;
 }
 
+function keyReceiptItemPhotoList(report: ReportData, itemId: string): ReportPhoto[] {
+  return report.photos
+    .filter((photo) => photo.itemId === itemId)
+    .sort((a, b) => (a.photoIndex || 0) - (b.photoIndex || 0));
+}
+
+async function drawKeyReceiptPhotoEvidence(
+  pdf: jsPDF,
+  report: ReportData,
+  items: InspectionItem[],
+  onProgress?: (message: string) => void
+): Promise<number | null> {
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const itemOrder = new Map(items.map((item, index) => [item.id, index]));
+  const photos = report.photos
+    .filter((photo) => photo.itemId && itemById.has(photo.itemId))
+    .sort((a, b) => {
+      const itemDelta =
+        (itemOrder.get(a.itemId || '') ?? Number.MAX_SAFE_INTEGER) -
+        (itemOrder.get(b.itemId || '') ?? Number.MAX_SAFE_INTEGER);
+      if (itemDelta) return itemDelta;
+      return (a.photoIndex || 0) - (b.photoIndex || 0);
+    });
+
+  if (!photos.length) return null;
+
+  const columns = 2;
+  const rows = 3;
+  const perPage = columns * rows;
+  const gapX = 3;
+  const gapY = 3;
+  const cellWidth = (CONTENT_WIDTH - gapX) / columns;
+  let finalY = BODY_TOP;
+
+  for (let pageStart = 0; pageStart < photos.length; pageStart += perPage) {
+    const pagePhotos = photos.slice(pageStart, pageStart + perPage);
+    let y = startKeyReceiptPage(pdf, report, false);
+    y = drawRoutinePageHeading(
+      pdf,
+      y,
+      pageStart === 0
+        ? 'Key / Access Device Photo Evidence'
+        : 'Key / Access Device Photo Evidence (continued)'
+    );
+    const availableHeight = BODY_BOTTOM - y;
+    const cellHeight = (availableHeight - gapY * (rows - 1)) / rows;
+    const captionHeight = 13;
+
+    onProgress?.(
+      `Rendering Key Receipt photo evidence ${Math.floor(pageStart / perPage) + 1} of ${Math.ceil(photos.length / perPage)}...`
+    );
+
+    for (let index = 0; index < pagePhotos.length; index++) {
+      const photo = pagePhotos[index];
+      const item = itemById.get(photo.itemId || '');
+      const row = Math.floor(index / columns);
+      const column = index % columns;
+      const x = MARGIN_X + column * (cellWidth + gapX);
+      const cellY = y + row * (cellHeight + gapY);
+
+      drawBox(pdf, x, cellY, cellWidth, cellHeight, undefined, LIGHT_BORDER);
+      drawBox(pdf, x, cellY, cellWidth, captionHeight, LIGHT_FILL, LIGHT_BORDER);
+      setFont(pdf, 5.8, 'bold');
+      setTextColor(pdf, NAVY);
+      pdf.text(
+        truncateTextToWidth(pdf, value(item?.name) || value(photo.itemName) || 'Key / Access Device', cellWidth - 3),
+        x + 1.5,
+        cellY + 3.6
+      );
+
+      setFont(pdf, 5.1, 'normal');
+      setTextColor(pdf, TEXT);
+      const itemMeta = [
+        item?.quantity ? `Qty ${value(item.quantity)}` : '',
+        value(item?.identifier),
+      ].filter(Boolean).join(' | ');
+      if (itemMeta) {
+        pdf.text(truncateTextToWidth(pdf, itemMeta, cellWidth - 3), x + 1.5, cellY + 7);
+      }
+      setTextColor(pdf, MUTED);
+      pdf.text(
+        truncateTextToWidth(pdf, value(photo.name) || 'Photo evidence', cellWidth - 3),
+        x + 1.5,
+        cellY + 10.4
+      );
+
+      const source = photoSource(photo);
+      if (!source) {
+        throw new Error(`Key Receipt photo "${photo.name || photo.id}" has no image source.`);
+      }
+      const image = await prepareImageForPdf(
+        source,
+        photo.name || 'Key Receipt photo evidence',
+        720,
+        45_000
+      );
+      const imageHeight = cellHeight - captionHeight;
+      const fit = containRect(image.width, image.height, cellWidth - 2, imageHeight - 2);
+      pdf.addImage(
+        image.bytes,
+        'JPEG',
+        x + 1 + fit.xOffset,
+        cellY + captionHeight + 1 + fit.yOffset,
+        fit.width,
+        fit.height,
+        undefined,
+        'FAST'
+      );
+
+      if ((pageStart + index + 1) % 4 === 0) await yieldToBrowser();
+    }
+
+    finalY = y + rows * cellHeight + gapY * (rows - 1);
+  }
+
+  return finalY;
+}
+
 function drawKeyReceiptTextBlock(
   pdf: jsPDF,
   report: ReportData,
@@ -2639,7 +2757,7 @@ function drawKeyReceiptSignatures(pdf: jsPDF, report: ReportData, startY: number
   return y + 4;
 }
 
-function drawKeyReceiptPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
+async function drawKeyReceiptPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
   let y = startKeyReceiptPage(pdf, report, true);
   y = drawKeyReceiptDetails(pdf, report, y);
   y = drawKeyReceiptTableHeader(pdf, y, false);
@@ -2663,6 +2781,11 @@ function drawKeyReceiptPages(pdf: jsPDF, report: ReportData, onProgress?: (messa
   });
 
   y += 5;
+  const evidenceY = await drawKeyReceiptPhotoEvidence(pdf, report, items, onProgress);
+  if (evidenceY !== null) {
+    y = evidenceY + 4;
+  }
+
   if (value(report.details.additionalComments)) {
     y = drawKeyReceiptTextBlock(pdf, report, y, 'Handover Notes / Comments', report.details.additionalComments);
   }
@@ -3015,7 +3138,7 @@ export async function generateReportPdf(
 
   if (isKeyReceiptTemplate(report.details.reportType)) {
     onProgress?.('Building Key Receipt...');
-    drawKeyReceiptPages(pdf, report, onProgress);
+    await drawKeyReceiptPages(pdf, report, onProgress);
   } else {
     onProgress?.('Building report cover...');
     await drawCoverPage(pdf, report, onProgress);
