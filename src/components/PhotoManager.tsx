@@ -14,6 +14,9 @@ interface PhotoManagerProps {
   onUploadCoverPhoto: (file: File) => Promise<void>;
   onUpdatePhotos: (photos: ReportPhoto[]) => void;
   linkToItems?: boolean;
+  requireItemLink?: boolean;
+  showCoverPhoto?: boolean;
+  itemSelectorPlaceholder?: string;
   onDeletePhoto: (id: string) => Promise<void>;
 }
 
@@ -28,6 +31,9 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   onUpdatePhotos,
   onDeletePhoto,
   linkToItems = false,
+  requireItemLink = false,
+  showCoverPhoto = true,
+  itemSelectorPlaceholder = 'Select reporting item',
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const areaFileInputRef = useRef<HTMLInputElement>(null);
@@ -105,11 +111,19 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     const files = Array.from(event.target.files || []);
     event.target.value = '';
     if (!files.length) return;
+    if (requireItemLink && !itemId) {
+      alert(`Select a ${itemSelectorPlaceholder.toLowerCase()} before uploading photos.`);
+      return;
+    }
     const areaId = areaByName.get(areaName)?.id;
     await onUploadPhotos(files, areaName || 'General', itemId || undefined, areaId);
   };
 
   const handleDriveImport = async () => {
+    if (requireItemLink && !selectedUploadItemId) {
+      alert(`Select a ${itemSelectorPlaceholder.toLowerCase()} before importing photos.`);
+      return;
+    }
     setIsDriveImporting(true);
     try {
       const files = await pickGoogleDriveImages();
@@ -192,7 +206,11 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     return !validAreaKeys.has(normalizeAreaName(photo.areaName || 'General'));
   }).length;
   const unlinkedItemPhotoCount = linkToItems
-    ? photos.filter((photo) => photo.itemId && !validItemIds.has(photo.itemId)).length
+    ? photos.filter((photo) =>
+        requireItemLink
+          ? !photo.itemId || !validItemIds.has(photo.itemId)
+          : Boolean(photo.itemId && !validItemIds.has(photo.itemId))
+      ).length
     : 0;
 
   const filteredPhotos = activeAreaFilter === 'ALL'
@@ -231,37 +249,40 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         className="hidden"
       />
 
-      <div className="p-4 border-b border-neutral-200 bg-white">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="w-full sm:w-40 aspect-[4/3] rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden flex items-center justify-center shrink-0">
-            {coverPhotoUrl ? (
-              <img src={coverPhotoUrl} alt="Report cover" className="w-full h-full object-cover" />
-            ) : (
-              <div className="text-center text-neutral-400 text-xs px-3">
-                <Star className="w-5 h-5 mx-auto mb-1.5" />
-                No dedicated cover photo
-              </div>
-            )}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 text-sm font-bold text-neutral-900">
-              <Star className="w-4 h-4 text-amber-500" />
-              Report Cover Photo
+      {showCoverPhoto && (
+        <div className="p-4 border-b border-neutral-200 bg-white">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="w-full sm:w-40 aspect-[4/3] rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden flex items-center justify-center shrink-0">
+              {coverPhotoUrl ? (
+                <img src={coverPhotoUrl} alt="Report cover" className="w-full h-full object-cover" />
+              ) : (
+                <div className="text-center text-neutral-400 text-xs px-3">
+                  <Star className="w-5 h-5 mx-auto mb-1.5" />
+                  No dedicated cover photo
+                </div>
+              )}
             </div>
-            <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
-              Upload a dedicated cover image for the first page of the report. This image is stored separately from inspection evidence and does not need an area or reporting-item assignment.
-            </p>
-            <button
-              type="button"
-              onClick={() => coverFileInputRef.current?.click()}
-              className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center gap-1.5"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              {coverPhotoUrl ? 'Queue Replacement Cover' : 'Queue Cover Photo'}
-            </button>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 text-sm font-bold text-neutral-900">
+                <Star className="w-4 h-4 text-amber-500" />
+                Report Cover Photo
+              </div>
+              <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
+                Upload a dedicated cover image for the first page of the report. This image is stored separately from inspection evidence and does not need an area or reporting-item assignment.
+              </p>
+              <button
+                type="button"
+                onClick={() => coverFileInputRef.current?.click()}
+                className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center gap-1.5"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                {coverPhotoUrl ? 'Queue Replacement Cover' : 'Queue Cover Photo'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+  
+      )}
 
       {(pendingUploadCount > 0 || isUploading) && (
         <div className="px-4 py-2.5 bg-cyan-50 border-b border-cyan-200 text-cyan-900 text-xs flex items-center justify-between gap-3">
@@ -274,11 +295,13 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         <div>
           <h3 className="font-bold text-neutral-900 text-sm flex items-center gap-2">
             <Image className="w-4 h-4 text-neutral-700" />
-            {linkToItems ? 'Building Manager Photo Evidence' : 'Property Inspection Photos'} ({photos.length})
+            {linkToItems ? 'Item-linked Photo Evidence' : 'Property Inspection Photos'} ({photos.length})
           </h3>
           <p className="text-xs text-neutral-500">
             {linkToItems
-              ? 'Queue photos to a whole category or a specific reporting item. Uploads continue in the background while you keep working.'
+              ? requireItemLink
+                ? `Every photo must be linked to a specific ${itemSelectorPlaceholder.toLowerCase()}. Uploads continue in the background while you keep working.`
+                : 'Queue photos to a whole category or a specific reporting item. Uploads continue in the background while you keep working.'
               : 'Upload JPG, PNG or WebP images from this device. Uploads continue in the background while you keep working.'}
           </p>
         </div>
@@ -308,7 +331,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
               disabled={!selectedAreaItems.length}
               title="Reporting item"
             >
-              <option value="">Category-level photos</option>
+              <option value="">{requireItemLink ? itemSelectorPlaceholder : 'Category-level photos'}</option>
               {selectedAreaItems.map((item) => (
                 <option key={item.id} value={item.id}>{item.name || 'Untitled reporting item'}</option>
               ))}
@@ -317,7 +340,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           <button
             type="button"
             onClick={handleDriveImport}
-            disabled={isDriveImporting}
+            disabled={isDriveImporting || (requireItemLink && !selectedUploadItemId)}
             className="px-3 py-1.5 border-l border-neutral-300 bg-white text-neutral-800 font-bold flex items-center gap-1.5 disabled:opacity-50"
             title="Import multiple images from Google Drive"
           >
@@ -326,7 +349,8 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-1.5 bg-[#0a2540] text-white font-bold flex items-center gap-1.5"
+            disabled={requireItemLink && !selectedUploadItemId}
+            className="px-3 py-1.5 bg-[#0a2540] text-white font-bold flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Upload className="w-3.5 h-3.5" />
             Queue Photos
@@ -385,7 +409,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
 
         {activeAreaFilter !== 'ALL' && (
           <div className="flex flex-wrap items-center gap-2">
-            {validAreaKeys.has(normalizeAreaName(activeAreaFilter)) && (
+            {!requireItemLink && validAreaKeys.has(normalizeAreaName(activeAreaFilter)) && (
               <button
                 onClick={() => handleUploadForSpecificArea(activeAreaFilter)}
                 
@@ -427,7 +451,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           )}
           {unlinkedItemPhotoCount > 0 && (
             <div className="mt-1">
-              {unlinkedItemPhotoCount} photo{unlinkedItemPhotoCount === 1 ? '' : 's'} reference a reporting item that no longer exists. Reassign them to the correct reporting item or leave them as category-level evidence.
+              {unlinkedItemPhotoCount} photo{unlinkedItemPhotoCount === 1 ? '' : 's'} {requireItemLink ? 'must be linked to a current reporting item before finalising.' : 'reference a reporting item that no longer exists. Reassign them to the correct reporting item or leave them as category-level evidence.'}
             </div>
           )}
           {areasWithoutPhotos.length > 0 && (
@@ -444,12 +468,14 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
             <Upload className="w-8 h-8 text-neutral-400 mb-3" />
             <h4 className="font-bold text-neutral-800 text-sm">No photos uploaded</h4>
             <p className="text-xs text-neutral-500 max-w-sm mt-1 mb-4">
-              Upload inspection photos from this device. They will be compressed in the browser and stored with this report.
+              {requireItemLink
+                ? `Select a ${itemSelectorPlaceholder.toLowerCase()} above, then upload photos. They will be compressed in the browser and linked to that item.`
+                : 'Upload inspection photos from this device. They will be compressed in the browser and stored with this report.'}
             </p>
             <button
-              onClick={() => handleUploadForSpecificArea(activeAreaFilter === 'ALL' ? selectedUploadArea : activeAreaFilter)}
-              
-              className="px-4 py-2 bg-[#0a2540] text-white rounded-lg text-xs font-semibold disabled:opacity-50"
+              onClick={() => requireItemLink ? fileInputRef.current?.click() : handleUploadForSpecificArea(activeAreaFilter === 'ALL' ? selectedUploadArea : activeAreaFilter)}
+              disabled={requireItemLink && !selectedUploadItemId}
+              className="px-4 py-2 bg-[#0a2540] text-white rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Upload Photos
             </button>
@@ -504,7 +530,9 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
                       onChange={(event) => handleReassignPhotoItem(photo.id, event.target.value)}
                       className="w-full bg-cyan-50 border border-cyan-200 rounded px-1.5 py-1 font-semibold text-cyan-900 text-[10px]"
                     >
-                      <option value="">Category-level photo</option>
+                      <option value="" disabled={requireItemLink}>
+                        {requireItemLink ? itemSelectorPlaceholder : 'Category-level photo'}
+                      </option>
                       {(areaByName.get(photo.areaName || '')?.items || []).map((item) => (
                         <option key={item.id} value={item.id}>{item.name || 'Untitled reporting item'}</option>
                       ))}
