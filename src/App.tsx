@@ -841,16 +841,14 @@ export default function App() {
               >
                 <Edit3 className="w-3.5 h-3.5" /> {isKeyReceiptTemplate(report.details.reportType) ? 'Receipt Details' : `Commentary (${report.areas.length})`}
               </button>
-              {!isKeyReceiptTemplate(report.details.reportType) && (
-                <button
-                  onClick={() => setViewMode('photos')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
-                    viewMode === 'photos' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
-                  }`}
-                >
-                  <ImageIcon className="w-3.5 h-3.5" /> Photos ({report.photos.length})
-                </button>
-              )}
+              <button
+                onClick={() => setViewMode('photos')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
+                  viewMode === 'photos' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
+                }`}
+              >
+                <ImageIcon className="w-3.5 h-3.5" /> Photos ({report.photos.length})
+              </button>
             </>
           )}
 
@@ -943,8 +941,11 @@ export default function App() {
               <KeyReceiptEditor
                 details={report.details}
                 areas={report.areas}
+                photos={report.photos}
                 onChangeDetails={(details) => setReport((current) => current ? { ...current, details } : current)}
                 onChangeAreas={(areas) => setReport((current) => current ? { ...current, areas } : current)}
+                onChangePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
+                onUploadPhotos={handleUploadPhotos}
               />
             ) : isBuildingManagementTemplate(report.details.reportType) ? (
               <BuildingManagementReportEditor
@@ -971,7 +972,7 @@ export default function App() {
           </div>
         )}
 
-        {viewMode === 'photos' && !completed && !isKeyReceiptTemplate(report.details.reportType) && (
+        {viewMode === 'photos' && !completed && (
           <div className="max-w-6xl mx-auto p-4 md:p-6 h-[calc(100vh-125px)]">
             <PhotoManager
               photos={report.photos}
@@ -984,6 +985,9 @@ export default function App() {
               onUpdatePhotos={(photos) => setReport((current) => current ? { ...current, photos } : current)}
               onDeletePhoto={handleDeletePhoto}
               linkToItems={true}
+              requireItemLink={isKeyReceiptTemplate(report.details.reportType)}
+              showCoverPhoto={!isKeyReceiptTemplate(report.details.reportType)}
+              itemSelectorPlaceholder={isKeyReceiptTemplate(report.details.reportType) ? 'Select key / access device' : 'Select reporting item'}
             />
           </div>
         )}
