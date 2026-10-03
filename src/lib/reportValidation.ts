@@ -126,6 +126,15 @@ export function validateReportStructure(report: ReportData): ReportValidationIss
       continue;
     }
 
+    if (isKeyReceiptTemplate(report.details.reportType) && !photo.itemId) {
+      issues.push({
+        code: 'key-receipt-photo-item-required',
+        message: `Key Receipt photo "${photo.name || photo.id}" must be linked to a specific key or access device.`,
+        photoId: photo.id,
+      });
+      continue;
+    }
+
     if (photo.itemId) {
       const itemArea = itemAreaById.get(photo.itemId);
       if (!itemArea) {

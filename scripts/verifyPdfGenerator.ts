@@ -422,12 +422,32 @@ keyReceipt.areas[0].items = [
   { id: 'key-remote', name: 'Garage Remote', quantity: '1', identifier: 'Black remote', agentComments: '' },
   { id: 'key-fob', name: 'Access Fob / Swipe Card', quantity: '2', identifier: 'Blue proximity fobs', agentComments: '' },
 ];
+keyReceipt.photos = [
+  {
+    id: 'key-photo-front',
+    name: 'Front door key set',
+    areaName: keyReceipt.areas[0].name,
+    itemId: 'key-front',
+    itemName: 'Front Door Key',
+    photoIndex: 1,
+    dataUrl: LANDSCAPE_JPEG,
+  },
+  {
+    id: 'key-photo-remote',
+    name: 'Garage remote',
+    areaName: keyReceipt.areas[0].name,
+    itemId: 'key-remote',
+    itemName: 'Garage Remote',
+    photoIndex: 1,
+    dataUrl: PORTRAIT_JPEG,
+  },
+];
 
 const keyReceiptIssues = validateReportForFinalization(keyReceipt);
 if (keyReceiptIssues.length !== 0) {
   throw new Error(`Valid Key Receipt failed finalization validation: ${keyReceiptIssues.map((issue) => issue.message).join(' ')}`);
 }
-await verifyPdf('KeyReceiptFilled', keyReceipt, 1, 3_000);
+await verifyPdf('KeyReceiptFilled', keyReceipt, 3, 7_000);
 
 const keyReceiptStress = structuredClone(keyReceipt);
 keyReceiptStress.id = 'key-receipt-stress';
@@ -447,6 +467,7 @@ keyReceiptStress.areas[0].items = Array.from({ length: 24 }, (_, index) => ({
     `Identifier / handover note ${index + 1}. This text is deliberately extended to verify deterministic row-height calculation and continuation-page table headings.`,
   agentComments: '',
 }));
+keyReceiptStress.photos = [];
 await verifyPdf('KeyReceiptLongList', keyReceiptStress, 2, 6_000);
 
 const invalidKeyReceipt = structuredClone(keyReceipt);
@@ -454,6 +475,14 @@ invalidKeyReceipt.areas[0].items[0].quantity = '';
 const invalidKeyReceiptIssues = validateReportForFinalization(invalidKeyReceipt);
 if (!invalidKeyReceiptIssues.some((issue) => issue.code === 'key-receipt-quantity-required')) {
   throw new Error('Key Receipt quantity validation regression detected.');
+}
+
+const unlinkedKeyReceiptPhoto = structuredClone(keyReceipt);
+unlinkedKeyReceiptPhoto.photos[0].itemId = undefined;
+unlinkedKeyReceiptPhoto.photos[0].itemName = undefined;
+const unlinkedKeyReceiptIssues = validateReportForFinalization(unlinkedKeyReceiptPhoto);
+if (!unlinkedKeyReceiptIssues.some((issue) => issue.code === 'key-receipt-photo-item-required')) {
+  throw new Error('Key Receipt photo-to-item validation regression detected.');
 }
 
 const buildingDaily = createBlankReport('BuildingManagementDaily', {
