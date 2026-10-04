@@ -4,7 +4,7 @@ const config=fs.readFileSync('wrangler.jsonc','utf8');
 const smoke=fs.readFileSync('.github/workflows/production-smoke.yml','utf8');
 const workflow=fs.readFileSync('worker/workflowPlatform.ts','utf8');
 const worker=fs.readFileSync('worker/index.ts','utf8');
-const expected='https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev';
+const expected='https://signing.proinspect.systems';
 
 function invariant(name:string,condition:boolean){
   if(!condition)throw new Error('PUBLIC SIGNING CHECK FAILED: '+name);
@@ -12,6 +12,7 @@ function invariant(name:string,condition:boolean){
 }
 
 invariant('workers.dev remains enabled',config.includes('"workers_dev": true'));
+invariant('dedicated public signing custom domain is routed',config.includes('"pattern": "signing.proinspect.systems"'));
 invariant('public signing base is repository controlled',config.includes('"SIGNING_BASE_URL": "'+expected+'"'));
 invariant('public workflow routes execute before staff authentication',
   worker.indexOf('handlePublicWorkflowApi(request, env)') < worker.indexOf('return await handleApi(request, env)'));
