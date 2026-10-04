@@ -5,7 +5,7 @@
   "keep_vars": true,
   "workers_dev": true,
   "vars": {
-    "SIGNING_BASE_URL": "https://proinspect.systems",
+    "SIGNING_BASE_URL": "https://signing.proinspect.systems",
     "PROINSPECT_INGEST_URL": "https://bookings.proinspect.systems/api/integrations/reports"
   },
   "routes": [
@@ -18,16 +18,8 @@
       "custom_domain": true
     },
     {
-      "pattern": "proinspect.systems/sign/*",
-      "zone_name": "proinspect.systems"
-    },
-    {
-      "pattern": "proinspect.systems/api/public/signing/*",
-      "zone_name": "proinspect.systems"
-    },
-    {
-      "pattern": "proinspect.systems/api/public/workflow-health",
-      "zone_name": "proinspect.systems"
+      "pattern": "signing.proinspect.systems",
+      "custom_domain": true
     }
   ],
   "compatibility_date": "2026-09-27",

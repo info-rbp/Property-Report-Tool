@@ -15,7 +15,7 @@ PDF generation remains browser-side, but the production renderer now builds the 
 - Worker: `proinspect-property-report-creation-tool`
 - Current Worker URL: `https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev/`
 - Active production hostname: `https://report.creation.proinspect.systems/`
-- Public signing origin: `https://proinspect.systems/sign/<token>`
+- Public signing origin: `https://signing.proinspect.systems/sign/<token>`
 - Legacy signing hostname `https://sign.proinspect.systems/` remains routed but is not used for new signing invitations while its Cloudflare Access policy is present.
 - D1 database: `proinspect-property-reports`
 - D1 database ID: `777186a0-e6ca-43f5-8f50-448bd4454046`
@@ -84,7 +84,7 @@ For production after any future migration is added:
 bun run db:migrate:remote
 ```
 
-The initial production migration has already been applied.
+The initial production migration has already been applied. On 4 October 2026, the canonical workflow-platform migration was also reconciled against production D1 after a release-readiness check identified the workflow/signature tables as missing; a D1 time-travel bookmark was captured before repair.
 
 ## Cloudflare Access
 
@@ -223,9 +223,9 @@ Not included:
 
 ## Access boundary
 
-The staff/editor hostname remains protected by Cloudflare Access. Public recipient signing is mounted under the already-public marketing apex at `https://proinspect.systems/sign/<token>`. Only `/sign/*`, `/api/public/signing/*`, and `/api/public/workflow-health` are routed to the Report Tool Worker; the rest of the marketing website remains owned by the website deployment. Protected report APIs still require a valid Access JWT even when reached through the public Worker origin; only `/api/public/workflow-health` and `/api/public/signing/<token>/...` are deliberately public.
+The staff/editor hostname remains protected by Cloudflare Access. Public recipient signing uses the dedicated `https://signing.proinspect.systems` custom domain on the same Report Tool Worker. Cloudflare Access has more-specific bypass applications only for `/sign/*`, `/api/public/signing/*`, and `/api/public/workflow-health`. All other routes on that hostname continue to inherit the Worker-level Access policy, and the staff/editor hostname remains protected.
 
-Do not widen the Report Tool route to `proinspect.systems/*`. Staff/editor APIs remain on the Access-protected Report Tool hostname. The public apex route is deliberately restricted to the signing SPA and token-scoped public workflow endpoints.
+Do not create a hostname-wide Access bypass for `signing.proinspect.systems`. The bypass boundary must remain path-specific. Do not remove or weaken Worker-level Access or the `report.creation.proinspect.systems` staff/editor protection.
 
 
 ## ProInspect Platform runtime readiness
