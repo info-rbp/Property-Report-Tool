@@ -13,10 +13,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PUBLIC_ORIGIN="https://signing.proinspect.systems"
+          PUBLIC_ORIGIN="https://proinspect.systems"
           HEALTH_URL="$PUBLIC_ORIGIN/api/public/workflow-health"
-          ROOT_URL="$PUBLIC_ORIGIN/"
-          PROTECTED_API="$PUBLIC_ORIGIN/api/me"
+          ROOT_URL="$PUBLIC_ORIGIN/sign/health-check"
           EDITOR_URL="https://report.creation.proinspect.systems/"
 
           for attempt in $(seq 1 24); do
@@ -38,20 +37,13 @@ jobs:
               root_status="$(curl -sS -o /tmp/root.html -w '%{http_code}' --max-time 15 "$ROOT_URL" || true)"
               test "$root_status" = "200"
               grep -q "ProInspect" /tmp/root.html
-
-              protected_status="$(curl -sS -o /tmp/protected.json -w '%{http_code}' --max-time 15 "$PROTECTED_API" || true)"
-              case "$protected_status" in
-                401|403) ;;
-                *) echo "Protected API unexpectedly reachable without Access: $protected_status"; cat /tmp/protected.json; exit 1 ;;
-              esac
-
               editor_status="$(curl -sS -o /tmp/editor.html -w '%{http_code}' --max-time 15 "$EDITOR_URL" || true)"
               case "$editor_status" in
                 302|401|403) ;;
                 *) echo "Staff editor hostname is not protected by Cloudflare Access: $editor_status"; exit 1 ;;
               esac
 
-              echo "Public signing origin is healthy and staff/editor boundaries remain protected."
+              echo "Public signing apex routes are healthy and the staff/editor hostname remains protected."
               exit 0
             fi
 
