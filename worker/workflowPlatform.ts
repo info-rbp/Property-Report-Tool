@@ -223,8 +223,14 @@ let workflowSchemaReady: Promise<void> | null = null;
 
 async function ensureWorkflowSchema(env: WorkflowEnv): Promise<void> {
   if (!workflowSchemaReady) {
-    workflowSchemaReady = env.DB.exec(WORKFLOW_SCHEMA_SQL)
-      .then(() => undefined)
+    workflowSchemaReady = env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('report_templates','report_deliveries','signature_requests','signature_parties','signature_fields')"
+    ).first<{ count: number }>()
+      .then((row) => {
+        if (Number(row?.count || 0) !== 5) {
+          throw new Error('Workflow database schema is not initialized. Apply D1 migrations before serving workflow requests.');
+        }
+      })
       .catch((error) => {
         workflowSchemaReady = null;
         throw error;

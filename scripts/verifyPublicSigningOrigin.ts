@@ -22,6 +22,9 @@ invariant('public signing base is repository controlled',config.includes('"SIGNI
 invariant('public workflow routes execute before staff authentication',
   worker.indexOf('handlePublicWorkflowApi(request, env)') < worker.indexOf('return await handleApi(request, env)'));
 invariant('public signing API remains token-scoped',workflow.includes("/api/public/signing/") && workflow.includes('loadPartyByToken'));
+invariant('workflow schema readiness is read-only at request time',
+  workflow.includes("SELECT COUNT(*) AS count FROM sqlite_master") &&
+  !workflow.includes('workflowSchemaReady = env.DB.exec(WORKFLOW_SCHEMA_SQL)'));
 invariant('production smoke targets the dedicated public signing hostname',smoke.includes('PUBLIC_ORIGIN="'+expected+'"'));
 invariant('production smoke proves ProInspect integration secrets are present',smoke.includes('"proinspectHandoffConfigured":true') && smoke.includes('"proinspectIngestConfigured":true'));
 invariant('production smoke proves non-public APIs on the signing hostname remain behind Access',
