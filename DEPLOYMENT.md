@@ -226,3 +226,8 @@ Not included:
 The staff/editor hostname remains protected by Cloudflare Access. Public recipient signing uses the Worker’s `workers.dev` origin so token-scoped signing links do not depend on staff Access policy. Protected report APIs still require a valid Access JWT even when reached through the public Worker origin; only `/api/public/workflow-health` and `/api/public/signing/<token>/...` are deliberately public.
 
 Do not point `SIGNING_BASE_URL` back to `sign.proinspect.systems` until that hostname has a reviewed public-signing Access policy and the production smoke is updated and passing.
+
+
+## ProInspect Platform runtime readiness
+
+The public workflow health response exposes only boolean readiness flags for the ProInspect integration. Production smoke requires both `proinspectHandoffConfigured=true` and `proinspectIngestConfigured=true` before the Report Tool is considered cutover-ready. The values themselves remain Worker secrets. `PROINSPECT_INGEST_URL` is a non-secret repository-managed variable; the HMAC signing key and ingest token must remain Cloudflare Worker secrets and must match the corresponding ProInspect Platform production values.
