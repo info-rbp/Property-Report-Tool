@@ -1,4 +1,4 @@
-import { PropertyRecord, ReportData, ReportSummary, ReportType } from '../types/report';
+import { PropertyRecord, ProInspectIntegrationContext, ReportData, ReportSummary, ReportType } from '../types/report';
 import type {
   PublicSigningPacket,
   ReportDeliveryRecord,
@@ -33,6 +33,11 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => apiRequest<{ email: string }>('/api/me'),
+
+  resolveProInspectHandoff: (token: string) =>
+    apiRequest<ProInspectIntegrationContext>(
+      `/api/integrations/proinspect/handoff?token=${encodeURIComponent(token)}`
+    ),
 
   listProperties: () => apiRequest<PropertyRecord[]>('/api/properties'),
 
@@ -118,11 +123,18 @@ export const api = {
       credentials: 'same-origin',
     });
     if (!response.ok) {
-      const data = await response.json().catch(() => ({})) as { error?: string };
-      throw new Error(data.error || `Unable to complete report (${response.status})`);
+      const data = await response.json().catch(() => ({})) as { error?: string; code?: string };
+      const error = new Error(data.error || `Unable to complete report (${response.status})`) as Error & { code?: string };
+      error.code = data.code;
+      throw error;
     }
     return response.json() as Promise<ReportData>;
   },
+
+  publishCompletedReport: (reportId: string) =>
+    apiRequest<{ success: true }>(`/api/reports/${encodeURIComponent(reportId)}/publish`, {
+      method: 'POST',
+    }),
 
   completedPdfUrl: (reportId: string) =>
     `/api/reports/${encodeURIComponent(reportId)}/pdf`,

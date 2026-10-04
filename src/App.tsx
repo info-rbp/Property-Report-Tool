@@ -70,6 +70,7 @@ export default function App() {
   const isUploadingPhotos = pendingPhotoUploads > 0;
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isSyncingPlatform, setIsSyncingPlatform] = useState(false);
   const [exportProgressText, setExportProgressText] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [pendingOfflineOperations, setPendingOfflineOperations] = useState(0);
@@ -185,6 +186,45 @@ export default function App() {
         if (!active) return;
         setUserEmail(me.email);
         setProperties(list);
+
+        const currentUrl=new URL(window.location.href);
+        const handoffToken=currentUrl.searchParams.get('proinspect_handoff');
+        if(handoffToken){
+          const context=await api.resolveProInspectHandoff(handoffToken);
+          let property=list.find((candidate)=>candidate.reference===`PI:${context.propertyId}`);
+          if(!property){
+            property=await api.createProperty({
+              address:context.propertyAddress,
+              reference:`PI:${context.propertyId}`,
+              notes:context.propertyReference ? `ProInspect platform property reference: ${context.propertyReference}` : 'Created from ProInspect platform handoff.',
+            });
+            setProperties((current)=>[property!,...current.filter((candidate)=>candidate.id!==property!.id)]);
+          }
+          const propertyResult=await api.getProperty(property.id);
+          const blank=createBlankReport(context.reportType,propertyResult.property);
+          const linkedDraft:ReportData={
+            ...blank,
+            integrationContext:context,
+            details:{
+              ...blank.details,
+              propertyAddress:context.propertyAddress,
+              referenceNumber:context.bookingId||context.workOrderId||blank.details.referenceNumber,
+              workOrderReference:context.workOrderId||blank.details.workOrderReference,
+            },
+          };
+          const created=normalizeReport(await api.createReport(propertyResult.property.id,context.reportType,linkedDraft));
+          if(created.id)serverVersionsRef.current[created.id]=created.updatedAt;
+          setSelectedProperty(propertyResult.property);
+          localStorage.setItem('proinspect:lastProperty',JSON.stringify(propertyResult.property));
+          setReportSummaries(propertyResult.reports);
+          setReport(created);
+          reportRef.current=created;
+          setViewMode('commentary');
+          await cacheReport(created).catch(()=>undefined);
+          currentUrl.searchParams.delete('proinspect_handoff');
+          window.history.replaceState({},'',currentUrl.pathname+(currentUrl.search||'')+currentUrl.hash);
+          setStatusMessage({text:'Report created from ProInspect platform context. Finalisation will publish the issued PDF back to the canonical property record.',type:'success'});
+        }
       } catch (error: any) {
         if (!active) return;
         if (!navigator.onLine) {
@@ -702,10 +742,39 @@ export default function App() {
         type: 'success',
       });
     } catch (error: any) {
-      setStatusMessage({ text: error.message || 'Unable to finalise report.', type: 'error' });
+      if(error?.code==='proinspect-ingest-failed' && report.id){
+        try{
+          const completedCloud=normalizeReport(await api.getReport(report.id));
+          if(completedCloud.id)serverVersionsRef.current[completedCloud.id]=completedCloud.updatedAt;
+          setReport(completedCloud);
+          reportRef.current=completedCloud;
+          setViewMode('actions');
+          await cacheReport(completedCloud).catch(()=>undefined);
+          await refreshSelectedProperty();
+          setStatusMessage({text:'Report finalised and the immutable PDF is stored, but ProInspect platform sync is pending. Use “Sync to ProInspect” to retry.',type:'info'});
+        }catch{
+          setStatusMessage({text:'Report reached the platform-sync stage but current cloud status could not be reloaded. Refresh before retrying.',type:'error'});
+        }
+      }else{
+        setStatusMessage({ text: error.message || 'Unable to finalise report.', type: 'error' });
+      }
     } finally {
       setIsCompleting(false);
       setExportProgressText(null);
+    }
+  };
+
+
+  const handleSyncPlatform = async () => {
+    if(!report?.id || report.status!=='completed' || !report.integrationContext)return;
+    setIsSyncingPlatform(true);
+    try{
+      await api.publishCompletedReport(report.id);
+      setStatusMessage({text:'Completed report is synced to the canonical ProInspect property record.',type:'success'});
+    }catch(error:any){
+      setStatusMessage({text:(error.message||'Unable to sync this report to ProInspect.')+' The immutable Report Tool PDF remains stored and can be retried.',type:'error'});
+    }finally{
+      setIsSyncingPlatform(false);
     }
   };
 
@@ -999,6 +1068,8 @@ export default function App() {
               onDownload={handleDownloadPdf}
               onComplete={handleCompleteReport}
               onDownloadCompleted={() => handleDownloadCompleted(report.id!)}
+              onSyncPlatform={handleSyncPlatform}
+              isSyncingPlatform={isSyncingPlatform}
               isExporting={isExportingPdf}
               isCompleting={isCompleting}
               onSaveTemplate={handleSaveTemplate}

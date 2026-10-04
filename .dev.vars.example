@@ -3,3 +3,9 @@ DEV_USER_EMAIL=local@proinspect.test
 
 # Production requests use Cloudflare Access instead.
 # Configure TEAM_DOMAIN and POLICY_AUD as Worker variables/secrets in Cloudflare.
+
+# ProInspect Platform integration.
+# Store real values as Worker secrets/variables in Cloudflare, never in source control.
+PROINSPECT_HANDOFF_SIGNING_KEY=""
+PROINSPECT_INGEST_URL="https://bookings.proinspect.systems/api/integrations/reports"
+PROINSPECT_INGEST_TOKEN=""

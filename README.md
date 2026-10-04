@@ -23,6 +23,8 @@ Properties
 - Cloudflare D1 for Properties, report metadata and report JSON.
 - Cloudflare R2 for compressed inspection photos and completed PDFs.
 - Cloudflare Access for staff authentication.
+- Signed ProInspect Platform handoff from canonical Property/Booking/Work Order context.
+- Idempotent publication of finalised PDFs back to ProInspect canonical property documents.
 - IndexedDB as a local draft cache only.
 - Browser-side deterministic PDF generation using `jsPDF` directly from report data; final PDFs do not depend on DOM screenshots or Tailwind rendering.
 - Versioned report JSON with an explicit migration pipeline for future report-schema changes.
@@ -41,6 +43,6 @@ The application currently includes 23 selectable deterministic PDF templates:
 
 The extended catalogue, including the Custom Report, is implemented through reusable deterministic template families rather than separate DOM/screenshot renderers. This keeps cover pages, page geometry, text wrapping, pagination, photo galleries, sign-off sections and disclaimers consistent. Building Manager Daily and Monthly reports additionally link each uploaded photo to a specific reporting item so the activity table and photo evidence remain traceable. The Key Receipt uses a dedicated compact handover form with a structured key/access-device list and tenant acknowledgement/signature section.
 
-Google Drive, Google Sheets, Firebase, AI commentary generation and direct email sending are deliberately outside V1.
+Google Sheets, Firebase and AI commentary generation remain outside the report engine itself. Google Drive import and direct report delivery are separate workflow features. Canonical ProInspect Platform handoff/publication is part of the supported integration boundary.
 
 See `DEPLOYMENT.md`, `DATA_RETENTION.md`, `docs/WA_FORM_1_COMPLIANCE.md` and `docs/REPORT_FUNCTIONALITY_FREEZE.md` for production guidance and the report-rendering acceptance baseline.
