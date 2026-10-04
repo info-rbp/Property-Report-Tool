@@ -31,10 +31,10 @@ jobs:
             if [ "$http_status" = "200" ] &&
                printf '%s' "$body" | grep -q '"status":"ok"' &&
                printf '%s' "$body" | grep -q '"workflowSchema":"ready"' &&
-               printf '%s' "$body" | grep -q '"resendConfigured":true"' &&
-               printf '%s' "$body" | grep -q '"signingBaseConfigured":true"' &&
-               printf '%s' "$body" | grep -q '"proinspectHandoffConfigured":true"' &&
-               printf '%s' "$body" | grep -q '"proinspectIngestConfigured":true"'; then
+               printf '%s' "$body" | grep -q '"resendConfigured":true' &&
+               printf '%s' "$body" | grep -q '"signingBaseConfigured":true' &&
+               printf '%s' "$body" | grep -q '"proinspectHandoffConfigured":true' &&
+               printf '%s' "$body" | grep -q '"proinspectIngestConfigured":true'; then
               root_status="$(curl -sS -o /tmp/root.html -w '%{http_code}' --max-time 15 "$ROOT_URL" || true)"
               test "$root_status" = "200"
               grep -q "ProInspect" /tmp/root.html
