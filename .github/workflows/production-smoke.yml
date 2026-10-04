@@ -13,7 +13,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PUBLIC_ORIGIN="https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev"
+          PUBLIC_ORIGIN="https://signing.proinspect.systems"
           HEALTH_URL="$PUBLIC_ORIGIN/api/public/workflow-health"
           ROOT_URL="$PUBLIC_ORIGIN/"
           PROTECTED_API="$PUBLIC_ORIGIN/api/me"
