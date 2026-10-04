@@ -5,7 +5,8 @@
   "keep_vars": true,
   "workers_dev": true,
   "vars": {
-    "SIGNING_BASE_URL": "https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev"
+    "SIGNING_BASE_URL": "https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev",
+    "PROINSPECT_INGEST_URL": "https://bookings.proinspect.systems/api/integrations/reports"
   },
   "routes": [
     {

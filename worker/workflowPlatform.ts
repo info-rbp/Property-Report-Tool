@@ -17,6 +17,9 @@ export interface WorkflowEnv extends ResendEnv {
   DB: D1Database;
   REPORT_STORAGE: R2Bucket;
   SIGNING_BASE_URL?: string;
+  PROINSPECT_HANDOFF_SIGNING_KEY?: string;
+  PROINSPECT_INGEST_URL?: string;
+  PROINSPECT_INGEST_TOKEN?: string;
 }
 
 interface ReportRow {
@@ -748,6 +751,8 @@ export async function handlePublicWorkflowApi(request: Request, env: WorkflowEnv
       status: 'ok',
       resendConfigured: Boolean(env.RESEND_API_KEY),
       signingBaseConfigured: Boolean(env.SIGNING_BASE_URL),
+      proinspectHandoffConfigured: Boolean(env.PROINSPECT_HANDOFF_SIGNING_KEY),
+      proinspectIngestConfigured: Boolean(env.PROINSPECT_INGEST_URL && env.PROINSPECT_INGEST_TOKEN),
       workflowSchema: 'ready',
     });
   }

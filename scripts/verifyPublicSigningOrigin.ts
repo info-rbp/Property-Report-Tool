@@ -17,6 +17,7 @@ invariant('public workflow routes execute before staff authentication',
   worker.indexOf('handlePublicWorkflowApi(request, env)') < worker.indexOf('return await handleApi(request, env)'));
 invariant('public signing API remains token-scoped',workflow.includes("/api/public/signing/") && workflow.includes('loadPartyByToken'));
 invariant('production smoke targets the public workers.dev origin',smoke.includes('PUBLIC_ORIGIN="'+expected+'"'));
+invariant('production smoke proves ProInspect integration secrets are present',smoke.includes('"proinspectHandoffConfigured":true') && smoke.includes('"proinspectIngestConfigured":true'));
 invariant('production smoke proves protected API stays closed',smoke.includes('PROTECTED_API="$PUBLIC_ORIGIN/api/me"') && smoke.includes('401|403'));
 invariant('production smoke proves editor hostname remains behind Access',smoke.includes('https://report.creation.proinspect.systems/') && smoke.includes('302|401|403'));
 
