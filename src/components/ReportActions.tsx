@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookmarkPlus, CheckCircle2, Download } from 'lucide-react';
+import { BookmarkPlus, CheckCircle2, Download, RefreshCw } from 'lucide-react';
 import { isKeyReceiptTemplate } from '../data/reportCatalogue';
 import { DeliveryPanel } from './DeliveryPanel';
 import { validateReportForFinalization } from '../lib/reportValidation';
@@ -10,6 +10,8 @@ interface Props {
   onDownload: () => void;
   onComplete: () => void;
   onDownloadCompleted: () => void;
+  onSyncPlatform?: () => void;
+  isSyncingPlatform?: boolean;
   isExporting: boolean;
   isCompleting: boolean;
   onSaveTemplate?: () => Promise<void>;
@@ -20,6 +22,8 @@ export const ReportActions: React.FC<Props> = ({
   onDownload,
   onComplete,
   onDownloadCompleted,
+  onSyncPlatform,
+  isSyncingPlatform = false,
   isExporting,
   isCompleting,
   onSaveTemplate,
@@ -63,12 +67,24 @@ export const ReportActions: React.FC<Props> = ({
           </button>
         )}
         {completed ? (
-          <button
-            onClick={onDownloadCompleted}
-            className="px-4 py-2 bg-[#0a2540] text-white rounded-lg text-sm font-bold flex items-center gap-2"
-          >
-            <Download className="w-4 h-4" /> Download Saved PDF
-          </button>
+          <>
+            <button
+              onClick={onDownloadCompleted}
+              className="px-4 py-2 bg-[#0a2540] text-white rounded-lg text-sm font-bold flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" /> Download Saved PDF
+            </button>
+            {report.integrationContext && onSyncPlatform && (
+              <button
+                onClick={onSyncPlatform}
+                disabled={isSyncingPlatform}
+                className="px-4 py-2 border border-neutral-300 bg-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncingPlatform ? 'animate-spin' : ''}`} />
+                {isSyncingPlatform ? 'Syncing…' : 'Sync to ProInspect'}
+              </button>
+            )}
+          </>
         ) : (
           <>
             <button
