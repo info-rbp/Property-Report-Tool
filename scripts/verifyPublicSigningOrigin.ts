@@ -27,6 +27,11 @@ invariant('workflow schema readiness is read-only at request time',
   !workflow.includes('workflowSchemaReady = env.DB.exec(WORKFLOW_SCHEMA_SQL)'));
 invariant('production smoke targets the dedicated public signing hostname',smoke.includes('PUBLIC_ORIGIN="'+expected+'"'));
 invariant('production smoke proves ProInspect integration secrets are present',smoke.includes('"proinspectHandoffConfigured":true') && smoke.includes('"proinspectIngestConfigured":true'));
+invariant('production smoke boolean checks do not expect quoted true values',
+  !smoke.includes('"resendConfigured":true"') &&
+  !smoke.includes('"signingBaseConfigured":true"') &&
+  !smoke.includes('"proinspectHandoffConfigured":true"') &&
+  !smoke.includes('"proinspectIngestConfigured":true"'));
 invariant('production smoke proves non-public APIs on the signing hostname remain behind Access',
   smoke.includes('PROTECTED_API="$PUBLIC_ORIGIN/api/me"') && smoke.includes('302|401|403'));
 invariant('production smoke proves editor hostname remains behind Access',smoke.includes('https://report.creation.proinspect.systems/') && smoke.includes('302|401|403'));
