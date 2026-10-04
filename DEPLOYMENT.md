@@ -15,7 +15,7 @@ PDF generation remains browser-side, but the production renderer now builds the 
 - Worker: `proinspect-property-report-creation-tool`
 - Current Worker URL: `https://proinspect-property-report-creation-tool.delicate-dream-e4c9.workers.dev/`
 - Active production hostname: `https://report.creation.proinspect.systems/`
-- Public signing origin: `https://signing.proinspect.systems/`
+- Public signing origin: `https://proinspect.systems/sign/<token>`
 - Legacy signing hostname `https://sign.proinspect.systems/` remains routed but is not used for new signing invitations while its Cloudflare Access policy is present.
 - D1 database: `proinspect-property-reports`
 - D1 database ID: `777186a0-e6ca-43f5-8f50-448bd4454046`
@@ -223,9 +223,9 @@ Not included:
 
 ## Access boundary
 
-The staff/editor hostname remains protected by Cloudflare Access. Public recipient signing uses the dedicated `https://signing.proinspect.systems` custom domain so token-scoped signing links do not depend on the staff/editor Access application. Protected report APIs still require a valid Access JWT even when reached through the public Worker origin; only `/api/public/workflow-health` and `/api/public/signing/<token>/...` are deliberately public.
+The staff/editor hostname remains protected by Cloudflare Access. Public recipient signing is mounted under the already-public marketing apex at `https://proinspect.systems/sign/<token>`. Only `/sign/*`, `/api/public/signing/*`, and `/api/public/workflow-health` are routed to the Report Tool Worker; the rest of the marketing website remains owned by the website deployment. Protected report APIs still require a valid Access JWT even when reached through the public Worker origin; only `/api/public/workflow-health` and `/api/public/signing/<token>/...` are deliberately public.
 
-Do not point `SIGNING_BASE_URL` back to `sign.proinspect.systems` or the staff/editor hostname. `signing.proinspect.systems` is the dedicated public signing boundary and must remain outside the staff Access application while protected APIs continue to require Access JWTs.
+Do not widen the Report Tool route to `proinspect.systems/*`. Staff/editor APIs remain on the Access-protected Report Tool hostname. The public apex route is deliberately restricted to the signing SPA and token-scoped public workflow endpoints.
 
 
 ## ProInspect Platform runtime readiness
