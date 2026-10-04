@@ -200,6 +200,23 @@ export interface ReportExecution {
   fields: ReportExecutionField[];
 }
 
+export interface ProInspectIntegrationContext {
+  v: 1;
+  iss: 'proinspect-platform';
+  exp: number;
+  propertyId: string;
+  propertyAddress: string;
+  propertyReference?: string;
+  clientId?: string;
+  tenancyId?: string;
+  bookingId?: string;
+  workOrderId?: string;
+  reportType: ReportType;
+  audiences: Array<'client' | 'tenant' | 'staff'>;
+  issuedByUid?: string;
+  issuedByEmail?: string;
+}
+
 export interface ReportData {
   schemaVersion?: number;
   id?: string;
@@ -207,6 +224,7 @@ export interface ReportData {
   status?: ReportStatus;
   completedPdfKey?: string;
   execution?: ReportExecution;
+  integrationContext?: ProInspectIntegrationContext;
   createdAt?: string;
   updatedAt?: string;
   details: TenancyDetails;
