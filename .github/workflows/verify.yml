@@ -24,6 +24,8 @@ jobs:
         run: bun run build
       - name: ProInspect platform handoff contract
         run: bun run platform:verify
+      - name: Public signing origin security contract
+        run: bun run signing-origin:verify
       - name: Validate Cloudflare static headers
         shell: bash
         run: |
