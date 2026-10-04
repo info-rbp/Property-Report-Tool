@@ -15,7 +15,8 @@
     "lint": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "db:backup": "mkdir -p backups && wrangler d1 export proinspect-property-reports --remote --output=./backups/proinspect-property-reports.sql",
     "pdf:verify": "bun run scripts/verifyPdfGenerator.ts",
-    "platform:verify": "bun run scripts/verifyPlatformHandoff.ts"
+    "platform:verify": "bun run scripts/verifyPlatformHandoff.ts",
+    "signing-origin:verify": "bun run scripts/verifyPublicSigningOrigin.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
