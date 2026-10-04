@@ -4,7 +4,7 @@ import { normalizeAreaName } from '../src/lib/reportFormatting';
 import { migrateReportData } from '../src/lib/reportMigration';
 import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
 import { CURRENT_REPORT_SCHEMA_VERSION, isReportType } from '../src/types/report';
-import type { ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
+import type { ProInspectIntegrationContext, ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
 import { handlePublicWorkflowApi, handleWorkflowApi } from './workflowPlatform';
 
 interface Env {
@@ -16,6 +16,9 @@ interface Env {
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   SIGNING_BASE_URL?: string;
+  PROINSPECT_HANDOFF_SIGNING_KEY?: string;
+  PROINSPECT_INGEST_URL?: string;
+  PROINSPECT_INGEST_TOKEN?: string;
 }
 
 interface PropertyRow {
@@ -43,7 +46,7 @@ interface ReportRow {
 }
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string) {
     super(message);
   }
 }
@@ -96,6 +99,78 @@ function json(data: unknown, status = 200): Response {
       'Cache-Control': 'no-store',
     }),
   });
+}
+
+
+function decodeBase64Url(value: string): Uint8Array {
+  const normalized=value.replace(/-/g,'+').replace(/_/g,'/');
+  const padded=normalized+'='.repeat((4-(normalized.length%4))%4);
+  const binary=atob(padded);
+  return Uint8Array.from(binary,(char)=>char.charCodeAt(0));
+}
+
+async function verifyProInspectHandoffToken(token:string,env:Env):Promise<ProInspectIntegrationContext>{
+  const signingKey=env.PROINSPECT_HANDOFF_SIGNING_KEY?.trim();
+  if(!signingKey)throw new HttpError(503,'ProInspect platform handoff is not configured.','proinspect-handoff-not-configured');
+  const [payloadPart,signaturePart,extra]=token.split('.');
+  if(!payloadPart||!signaturePart||extra)throw new HttpError(400,'Invalid ProInspect handoff token.','invalid-proinspect-handoff');
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(signingKey),{name:'HMAC',hash:'SHA-256'},false,['verify']);
+  const valid=await crypto.subtle.verify('HMAC',key,decodeBase64Url(signaturePart),new TextEncoder().encode(payloadPart));
+  if(!valid)throw new HttpError(403,'ProInspect handoff signature is invalid.','invalid-proinspect-handoff');
+  let payload:ProInspectIntegrationContext;
+  try{payload=JSON.parse(new TextDecoder().decode(decodeBase64Url(payloadPart))) as ProInspectIntegrationContext;}
+  catch{throw new HttpError(400,'ProInspect handoff payload is invalid.','invalid-proinspect-handoff');}
+  const now=Math.floor(Date.now()/1000);
+  if(payload.v!==1||payload.iss!=='proinspect-platform'||!payload.propertyId||!payload.propertyAddress||!isReportType(payload.reportType)||!Number.isFinite(payload.exp)||payload.exp<now||payload.exp>now+10*60){
+    throw new HttpError(400,'ProInspect handoff is invalid or has expired.','invalid-proinspect-handoff');
+  }
+  const allowed=new Set(['client','tenant','staff']);
+  payload.audiences=Array.isArray(payload.audiences)
+    ? payload.audiences.filter((audience):audience is 'client'|'tenant'|'staff'=>allowed.has(audience))
+    : ['client','staff'];
+  if(!payload.audiences.length)payload.audiences=['client','staff'];
+  if(payload.audiences.includes('tenant')&&!payload.tenancyId)throw new HttpError(400,'Tenant-visible handoff requires a tenancy.','invalid-proinspect-handoff');
+  return payload;
+}
+
+function reportDocumentCategory(reportType:ReportType):'property_condition_report'|'inspection_report'|'property_report'{
+  if(['Entry','Exit','PropertyOnboarding'].includes(reportType))return 'property_condition_report';
+  if(['Routine','CommercialIngoing','CommercialPeriodic','CommercialExit','CommonProperty','BuildingManagement','BuildingManagementDaily','BuildingManagementMonthly','VacantProperty'].includes(reportType))return 'inspection_report';
+  return 'property_report';
+}
+
+async function publishCompletedReportToPlatform(env:Env,report:ReportData,storageKey:string):Promise<void>{
+  const integration=report.integrationContext;
+  if(!integration)return;
+  const ingestUrl=env.PROINSPECT_INGEST_URL?.trim();
+  const ingestToken=env.PROINSPECT_INGEST_TOKEN?.trim();
+  if(!ingestUrl||!ingestToken)throw new HttpError(503,'ProInspect report publication is not configured.','proinspect-ingest-not-configured');
+  const url=new URL(ingestUrl);
+  if(url.protocol!=='https:'||url.username||url.password||url.hash)throw new HttpError(503,'ProInspect report publication endpoint is invalid.','proinspect-ingest-not-configured');
+  const object=await env.REPORT_STORAGE.get(storageKey);
+  if(!object)throw new HttpError(503,'Completed PDF could not be reopened for publication.','proinspect-ingest-pdf-missing');
+  const safeAddress=(report.details.propertyAddress||'Property').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  const safeType=reportInstanceLabel(report.details).replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'Report';
+  const safeDate=(report.details.inspectionDate||'').replace(/[^0-9-]/g,'');
+  const fileName='ProInspect_'+safeType+'_'+safeAddress+(safeDate?'_'+safeDate:'')+'.pdf';
+  const headers=new Headers({
+    'content-type':'application/pdf',
+    'x-report-ingest-token':ingestToken,
+    'x-report-source-id':report.id||'',
+    'x-property-id':integration.propertyId,
+    'x-document-title':reportInstanceLabel(report.details),
+    'x-file-name':fileName,
+    'x-document-category':reportDocumentCategory(report.details.reportType),
+    'x-document-audiences':integration.audiences.join(','),
+  });
+  if(integration.tenancyId)headers.set('x-tenancy-id',integration.tenancyId);
+  if(integration.bookingId)headers.set('x-booking-id',integration.bookingId);
+  if(integration.workOrderId)headers.set('x-work-order-id',integration.workOrderId);
+  const response=await fetch(url.toString(),{method:'POST',headers,body:object.body,redirect:'error'});
+  if(!response.ok){
+    const detail=await response.text().catch(()=>'');
+    throw new HttpError(502,'Completed report is stored but could not be published back to ProInspect.'+(detail?' '+detail.slice(0,200):''),'proinspect-ingest-failed');
+  }
 }
 
 function mapProperty(row: PropertyRow) {
@@ -295,6 +370,12 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 
   if (request.method === 'GET' && url.pathname === '/api/me') {
     return json({ email: userEmail });
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/integrations/proinspect/handoff') {
+    const token=url.searchParams.get('token')||'';
+    if(!token)throw new HttpError(400,'ProInspect handoff token is required.','invalid-proinspect-handoff');
+    return json(await verifyProInspectHandoffToken(token,env));
   }
 
   if (parts[1] === 'properties') {
@@ -616,12 +697,24 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         throw new HttpError(413, 'PDF exceeds the 90 MB storage limit.');
       }
 
+      let completed: ReportData;
       try {
-        return json(await updateReportData(env, row, report, userEmail, 'completed', key));
+        completed=await updateReportData(env,row,report,userEmail,'completed',key);
       } catch (error) {
         await env.REPORT_STORAGE.delete(key).catch(() => undefined);
         throw error;
       }
+      if(completed.integrationContext)await publishCompletedReportToPlatform(env,completed,key);
+      return json(completed);
+    }
+
+    if (parts.length === 4 && parts[3] === 'publish' && request.method === 'POST') {
+      const row=await getReportRow(env,reportId);
+      if(row.status!=='completed'||!row.completed_pdf_key)throw new HttpError(409,'Only a completed report can be published to ProInspect.','proinspect-report-not-completed');
+      const report=parseReport(row);
+      if(!report.integrationContext)throw new HttpError(409,'This report is not linked to the ProInspect platform.','proinspect-context-missing');
+      await publishCompletedReportToPlatform(env,report,row.completed_pdf_key);
+      return json({success:true});
     }
 
     if (parts.length === 4 && parts[3] === 'pdf' && request.method === 'GET') {
@@ -664,7 +757,7 @@ export default {
 
       return await handleApi(request, env);
     } catch (error) {
-      if (error instanceof HttpError) return json({ error: error.message }, error.status);
+      if (error instanceof HttpError) return json({ error: error.message, ...(error.code ? { code:error.code } : {}) }, error.status);
       return unexpectedErrorResponse(error);
     }
   },
