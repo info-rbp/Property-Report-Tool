@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Building2, ChevronDown, ChevronRight, FileText, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Building2, ChevronDown, ChevronRight, FileText, ImagePlus, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { getReportTemplate, ReportFieldDefinition, supportsItemActionTracking, supportsMaintenanceRegister } from '../data/reportCatalogue';
 import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
 import { ItemWorkflowControls } from './ItemWorkflowControls';
 import { normalizeAreaName } from '../lib/reportFormatting';
+import { imageFilesFromList } from '../lib/photoDrop';
 
 interface Props {
   details: TenancyDetails;
@@ -67,6 +68,8 @@ export const ExtendedReportEditor: React.FC<Props> = ({
   const actionTracking = !isCustomReport && supportsItemActionTracking(details.reportType);
   const [tab, setTab] = useState<'findings' | 'details' | 'summary'>('findings');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
+  const [photoDropTarget, setPhotoDropTarget] = useState<string | null>(null);
+  const [photoDropMessage, setPhotoDropMessage] = useState<string | null>(null);
 
   const findingLabel = useMemo(() => {
     if (isCustomReport) return 'Commentary';
@@ -76,6 +79,26 @@ export const ExtendedReportEditor: React.FC<Props> = ({
     if (template.family === 'condition') return 'Condition Commentary';
     return 'Inspection Finding';
   }, [isCustomReport, template.family]);
+
+  const queueDroppedPhotos = (
+    event: React.DragEvent<HTMLDivElement>,
+    area: InspectionArea,
+    itemId?: string
+  ) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setPhotoDropTarget(null);
+
+    const images = imageFilesFromList(event.dataTransfer.files);
+    if (!images.length) {
+      setPhotoDropMessage('No supported image files found. Drop JPG, PNG, WebP or other image files.');
+      return;
+    }
+
+    setPhotoDropMessage(null);
+    void onUploadPhotos(images, area.name, itemId, area.id);
+  };
 
   const updateDetail = (key: keyof TenancyDetails, value: string) => {
     onChangeDetails({ ...details, [key]: value });
@@ -255,11 +278,37 @@ export const ExtendedReportEditor: React.FC<Props> = ({
               </button>
             </div>
 
+            {isCustomReport && photoDropMessage && (
+              <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                {photoDropMessage}
+              </p>
+            )}
+
             <div className="space-y-3">
               {areas.map((area) => {
                 const expanded = expandedAreaId === area.id;
                 return (
-                  <div key={area.id} className="border border-neutral-300 rounded-xl bg-white overflow-hidden">
+                  <div
+                    key={area.id}
+                    data-photo-drop-area={isCustomReport ? area.id : undefined}
+                    className={`border rounded-xl bg-white overflow-hidden transition-colors ${
+                      isCustomReport && photoDropTarget === `area:${area.id}`
+                        ? 'border-cyan-500 ring-2 ring-cyan-200'
+                        : 'border-neutral-300'
+                    }`}
+                    onDragOver={isCustomReport ? (event) => {
+                      if (!event.dataTransfer.types.includes('Files')) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'copy';
+                      setPhotoDropTarget(`area:${area.id}`);
+                    } : undefined}
+                    onDragLeave={isCustomReport ? (event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setPhotoDropTarget((current) => current === `area:${area.id}` ? null : current);
+                      }
+                    } : undefined}
+                    onDrop={isCustomReport ? (event) => queueDroppedPhotos(event, area) : undefined}
+                  >
                     <div
                       className="p-3 bg-neutral-100 flex justify-between items-center cursor-pointer"
                       onClick={() => setExpandedAreaId(expanded ? null : area.id)}
@@ -274,6 +323,11 @@ export const ExtendedReportEditor: React.FC<Props> = ({
                           aria-label="Report section name"
                         />
                         <span className="text-[11px] bg-neutral-200 px-2 py-0.5 rounded-full">{area.items.length} items</span>
+                        {isCustomReport && (
+                          <span className="hidden md:inline-flex items-center gap-1 text-[10px] text-cyan-800">
+                            <ImagePlus className="w-3 h-3" /> Drop section photos here
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
                         <button type="button" onClick={() => moveArea(area.id, 'up')} disabled={areas.findIndex((candidate) => candidate.id === area.id) === 0} className="p-1.5 text-neutral-500 disabled:opacity-25" title="Move section up">
@@ -294,7 +348,31 @@ export const ExtendedReportEditor: React.FC<Props> = ({
                     {expanded && (
                       <div className="divide-y divide-neutral-200">
                         {area.items.map((item, itemIndex) => (
-                          <div key={item.id} className={isCustomReport ? "p-4 flex flex-col gap-3 text-xs" : "p-3 flex flex-col md:flex-row gap-3 text-xs"}>
+                          <div
+                            key={item.id}
+                            data-photo-drop-item={isCustomReport ? item.id : undefined}
+                            className={isCustomReport
+                              ? `p-4 flex flex-col gap-3 text-xs transition-colors ${
+                                  photoDropTarget === `item:${item.id}`
+                                    ? 'bg-cyan-50/80 ring-2 ring-inset ring-cyan-400'
+                                    : 'bg-white'
+                                }`
+                              : 'p-3 flex flex-col md:flex-row gap-3 text-xs'}
+                            onDragOver={isCustomReport ? (event) => {
+                              if (!event.dataTransfer.types.includes('Files')) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              event.dataTransfer.dropEffect = 'copy';
+                              setPhotoDropTarget(`item:${item.id}`);
+                            } : undefined}
+                            onDragLeave={isCustomReport ? (event) => {
+                              event.stopPropagation();
+                              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                                setPhotoDropTarget((current) => current === `item:${item.id}` ? null : current);
+                              }
+                            } : undefined}
+                            onDrop={isCustomReport ? (event) => queueDroppedPhotos(event, area, item.id) : undefined}
+                          >
                             <div className={isCustomReport ? "w-full space-y-2" : "w-full md:w-56 shrink-0 space-y-2"}>
                               {isCustomReport && <label className="block text-[10px] font-bold uppercase text-neutral-600">Item Title</label>}
                               <input
@@ -351,12 +429,21 @@ export const ExtendedReportEditor: React.FC<Props> = ({
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
+                            {isCustomReport && (
+                              <div className="flex items-center gap-2 rounded-lg border border-dashed border-cyan-300 bg-cyan-50/40 px-3 py-2 text-[11px] text-cyan-900">
+                                <ImagePlus className="h-4 w-4 shrink-0" />
+                                {photoDropTarget === `item:${item.id}`
+                                  ? 'Release to attach photographs to this reporting item'
+                                  : 'Drag and drop photographs anywhere on this item to link them automatically'}
+                              </div>
+                            )}
                             <ItemWorkflowControls
                               area={area}
                               item={item}
                               photos={photos}
                               maintenanceEnabled={maintenanceEnabled}
                               showActionTracking={actionTracking}
+                              enableDropZone={!isCustomReport}
                               onChangeItem={(patch) => {
                                 onChangeAreas(
                                   areas.map((candidate) =>
