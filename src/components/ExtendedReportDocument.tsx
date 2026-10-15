@@ -5,6 +5,7 @@ import { formatAustralianDate, normalizeAreaName } from '../lib/reportFormatting
 import { ReportData, TenancyDetails } from '../types/report';
 import { ProInspectLogo } from './ProInspectLogo';
 import { MaintenanceRegisterPreview } from './MaintenanceRegisterPreview';
+import { CustomReportContentPages } from './CustomReportContentPages';
 
 interface Props {
   report: ReportData;
@@ -115,6 +116,7 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
   const coverSource = report.details.coverPhotoUrl || cover?.dataUrl || cover?.url;
   const coverName = report.details.coverPhotoUrl ? 'Report cover' : cover?.name || 'Report cover';
   const conditionFamily = template.family === 'condition';
+  const isCustomReport = report.details.reportType === 'Custom';
   const displayTitle =
     report.details.reportType === 'Custom' && report.details.formName?.trim()
       ? report.details.formName.trim()
@@ -174,6 +176,8 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
           ))}
         </div>
 
+        {!isCustomReport && (
+          <>
         <div className="mt-5 bg-slate-100 border border-neutral-300 px-3 py-2 text-sm font-extrabold text-[#0a2540]">
           {template.findingsTitle}
         </div>
@@ -220,8 +224,12 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
             );
           })}
         </div>
+          </>
+        )}
         <Footer />
       </div>
+
+      {isCustomReport && <CustomReportContentPages report={report} />}
 
       <div className="pdf-page w-[210mm] min-h-[297mm] bg-white p-[12mm] flex flex-col shadow-2xl box-border">
         <Header report={report} title={template.shortLabel} />
@@ -255,7 +263,7 @@ export const ExtendedReportDocument: React.FC<Props> = ({ report }) => {
         <Footer />
       </div>
 
-      <PhotoPreviewPages report={report} />
+      {!isCustomReport && <PhotoPreviewPages report={report} />}
       <MaintenanceRegisterPreview report={report} />
     </div>
   );

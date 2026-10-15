@@ -64,17 +64,18 @@ export const ExtendedReportEditor: React.FC<Props> = ({
   const showRatings = template.family === 'condition';
   const isCustomReport = details.reportType === 'Custom';
   const maintenanceEnabled = supportsMaintenanceRegister(details.reportType);
-  const actionTracking = supportsItemActionTracking(details.reportType);
+  const actionTracking = !isCustomReport && supportsItemActionTracking(details.reportType);
   const [tab, setTab] = useState<'findings' | 'details' | 'summary'>('findings');
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(areas[0]?.id || null);
 
   const findingLabel = useMemo(() => {
+    if (isCustomReport) return 'Commentary';
     if (template.family === 'maintenance') return 'Observation / Verification';
     if (template.family === 'event') return 'Observation / Evidence';
     if (template.family === 'operations') return 'Operational Observation';
     if (template.family === 'condition') return 'Condition Commentary';
     return 'Inspection Finding';
-  }, [template.family]);
+  }, [isCustomReport, template.family]);
 
   const updateDetail = (key: keyof TenancyDetails, value: string) => {
     onChangeDetails({ ...details, [key]: value });
@@ -97,6 +98,9 @@ export const ExtendedReportEditor: React.FC<Props> = ({
   };
 
   const updateItem = (areaId: string, itemId: string, field: keyof InspectionItem, value: any) => {
+    if (isCustomReport && field === 'name' && typeof value === 'string') {
+      onChangePhotos(photos.map((photo) => photo.itemId === itemId ? { ...photo, itemName: value } : photo));
+    }
     onChangeAreas(
       areas.map((area) =>
         area.id !== areaId
@@ -290,8 +294,9 @@ export const ExtendedReportEditor: React.FC<Props> = ({
                     {expanded && (
                       <div className="divide-y divide-neutral-200">
                         {area.items.map((item, itemIndex) => (
-                          <div key={item.id} className="p-3 flex flex-col md:flex-row gap-3 text-xs">
-                            <div className="w-full md:w-56 shrink-0 space-y-2">
+                          <div key={item.id} className={isCustomReport ? "p-4 flex flex-col gap-3 text-xs" : "p-3 flex flex-col md:flex-row gap-3 text-xs"}>
+                            <div className={isCustomReport ? "w-full space-y-2" : "w-full md:w-56 shrink-0 space-y-2"}>
+                              {isCustomReport && <label className="block text-[10px] font-bold uppercase text-neutral-600">Item Title</label>}
                               <input
                                 value={item.name}
                                 onChange={(event) => updateItem(area.id, item.id, 'name', event.target.value)}
@@ -325,13 +330,13 @@ export const ExtendedReportEditor: React.FC<Props> = ({
                               <textarea
                                 value={item.agentComments}
                                 onChange={(event) => updateItem(area.id, item.id, 'agentComments', event.target.value)}
-                                rows={3}
+                                rows={isCustomReport ? 7 : 3}
                                 className="w-full border border-neutral-300 rounded-lg p-2 text-[11px]"
-                                placeholder="Record the observed condition, finding, evidence or outcome..."
+                                placeholder={isCustomReport ? "Describe the matter in detail. Use paragraphs or lists as needed..." : "Record the observed condition, finding, evidence or outcome..."}
                               />
                             </div>
 
-                            <div className="self-start mt-5 flex items-center gap-1">
+                            <div className={isCustomReport ? "flex items-center justify-end gap-1" : "self-start mt-5 flex items-center gap-1"}>
                               <button type="button" onClick={() => moveItem(area.id, item.id, 'up')} disabled={itemIndex === 0} className="p-1 text-neutral-500 disabled:opacity-25" title="Move item up">
                                 <ArrowUp className="w-4 h-4" />
                               </button>

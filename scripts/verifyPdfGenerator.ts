@@ -1,3 +1,7 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ExtendedReportDocument } from '../src/components/ExtendedReportDocument';
+import { buildCustomReportPreviewPages } from '../src/lib/customReportPreview';
 import { REPORT_TEMPLATES } from '../src/data/reportCatalogue';
 import { createBlankReport } from '../src/data/reportTemplates';
 import { formatAustralianDate, renumberPhotosByArea, splitTenantNames } from '../src/lib/reportFormatting';
@@ -290,6 +294,81 @@ if (validateReportStructure(photoGalleryReport).length !== 0) {
   throw new Error('Image-bearing photo gallery fixture failed structural validation.');
 }
 await verifyPdf('PhotoGalleryImages', photoGalleryReport, 5, 12_000);
+
+const customWasteReport = createBlankReport('Custom', {
+  id: 'waste-regression-property',
+  address: 'Waste Management Test Building, Perth WA 6000',
+});
+customWasteReport.details.formName = 'Waste Management Report';
+customWasteReport.details.inspectingAgent = 'ProInspect Test Inspector';
+customWasteReport.details.agentSignName = 'ProInspect Test Inspector';
+customWasteReport.areas = Array.from({ length: 10 }, (_, areaIndex) => ({
+  id: `waste-area-${areaIndex + 1}`,
+  name: areaIndex === 0 ? 'Garbage Rooms' : `Waste Section ${areaIndex + 1}`,
+  items: Array.from({ length: areaIndex === 0 ? 11 : 1 }, (_, itemIndex) => ({
+    id: `waste-item-${areaIndex + 1}-${itemIndex + 1}`,
+    name: areaIndex === 0
+      ? `Garbage room matter ${itemIndex + 1}`
+      : `Waste section ${areaIndex + 1} matter`,
+    agentComments: itemIndex === 4 && areaIndex === 0
+      ? extremelyLongComment
+      : `Waste Management commentary for section ${areaIndex + 1}, item ${itemIndex + 1}.`,
+    activityDate: '2026-10-14',
+    activityParty: 'Legacy responsible party - must not display',
+    status: 'Legacy status - must not display',
+    dueDate: '2026-11-01',
+  })),
+}));
+customWasteReport.photos = [
+  ...Array.from({ length: 28 }, (_, index) => ({
+    id: `waste-linked-photo-${index + 1}`,
+    name: `Garbage room photo ${index + 1}`,
+    areaName: 'Garbage Rooms',
+    itemId: 'waste-item-1-8',
+    itemName: 'Garbage room matter 8',
+    photoIndex: index + 1,
+    dataUrl: index % 2 ? PORTRAIT_JPEG : LANDSCAPE_JPEG,
+  })),
+  {
+    id: 'waste-category-photo',
+    name: 'Garbage room overview',
+    areaName: 'Garbage Rooms',
+    photoIndex: 1,
+    dataUrl: LANDSCAPE_JPEG,
+  },
+];
+if (validateReportStructure(customWasteReport).length > 0) {
+  throw new Error('Custom Waste Management report failed structure validation.');
+}
+const customPreviewBlocks = buildCustomReportPreviewPages(customWasteReport).flat();
+const firstSectionTitles = customPreviewBlocks
+  .filter((block) => block.areaName === 'Garbage Rooms' && !block.continuation)
+  .map((block) => block.itemName);
+if (!Array.from({ length: 11 }, (_, i) => `Garbage room matter ${i + 1}`)
+  .every((name) => firstSectionTitles.includes(name))) {
+  throw new Error('Custom preview truncated one or more items after the fourth entry.');
+}
+if (!customPreviewBlocks.some((block) => block.areaName === 'Waste Section 10')) {
+  throw new Error('Custom preview truncated sections after the eighth entry.');
+}
+const previewPhotoIds = customPreviewBlocks.flatMap((block) => block.photos.map((photo) => photo.id));
+if (
+  previewPhotoIds.length !== customWasteReport.photos.length ||
+  new Set(previewPhotoIds).size !== customWasteReport.photos.length
+) {
+  throw new Error('Custom preview lost or duplicated item-linked/category-level photos.');
+}
+const customHtml = renderToStaticMarkup(createElement(ExtendedReportDocument, { report: customWasteReport }));
+for (const expected of ['Garbage room matter 1', 'Garbage room matter 11', 'Waste Section 10']) {
+  if (!customHtml.includes(expected)) {
+    throw new Error(`Custom preview HTML omits "${expected}".`);
+  }
+}
+if (customHtml.includes('Legacy responsible party - must not display') ||
+    customHtml.includes('Legacy status - must not display')) {
+  throw new Error('Custom Report preview exposed obsolete responsibility/status columns.');
+}
+await verifyPdf('CustomWasteManagement', customWasteReport, 7, 10_000);
 
 for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', 'Exit', 'KeyReceipt'].includes(item.type))) {
   const extended = createBlankReport(template.type, {
