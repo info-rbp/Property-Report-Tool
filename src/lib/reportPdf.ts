@@ -1320,6 +1320,96 @@ function drawGenericClosingPages(pdf: jsPDF, report: ReportData) {
   drawDisclaimerSection(pdf, report, y);
 }
 
+async function drawCustomReportPages(
+  pdf: jsPDF,
+  report: ReportData,
+  onProgress?: (message: string) => void
+): Promise<void> {
+  const runningTitle = resolvedRunningTitle(report);
+  let y = drawGenericOverview(pdf, report);
+
+  if (y + 24 > BODY_BOTTOM) y = addContentPage(pdf, report, runningTitle);
+  y += 3;
+  y = drawRoutinePageHeading(pdf, y, 'Report Content');
+
+  for (let areaIndex = 0; areaIndex < report.areas.length; areaIndex++) {
+    const area = report.areas[areaIndex];
+    onProgress?.(`Laying out Custom Report section ${areaIndex + 1} of ${report.areas.length}...`);
+    if (y + 27 > BODY_BOTTOM) {
+      y = addContentPage(pdf, report, runningTitle);
+      y = drawRoutinePageHeading(pdf, y, 'Report Content (continued)');
+    }
+    y = drawBuildingManagementCategoryHeader(pdf, y, area.name);
+
+    if (!area.items.length) {
+      if (y + 10 > BODY_BOTTOM) {
+        y = addContentPage(pdf, report, runningTitle);
+        y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+      }
+      drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, 8, undefined, LIGHT_BORDER);
+      setFont(pdf, 6, 'italic');
+      setTextColor(pdf, MUTED);
+      pdf.text('No items recorded in this section.', MARGIN_X + 2, y + 5.1);
+      y += 10;
+    }
+
+    for (let itemIndex = 0; itemIndex < area.items.length; itemIndex++) {
+      const item = area.items[itemIndex];
+      onProgress?.(`Rendering Custom Report item ${itemIndex + 1} of ${area.items.length} in "${area.name}"...`);
+      setFont(pdf, 7.4, 'bold');
+      const title = value(item.name) || 'Untitled item';
+      const titleLines = wrapText(pdf, title, CONTENT_WIDTH - 3.6);
+      const titleHeight = Math.max(9, titleLines.length * 3.3 + 4);
+      setFont(pdf, 7, 'normal');
+      const commentaryLines = wrapText(
+        pdf,
+        value(item.agentComments) || 'No commentary recorded.',
+        CONTENT_WIDTH - 4
+      );
+      const lineHeight = 3;
+      let offset = 0;
+      let continuation = false;
+
+      while (offset < commentaryLines.length) {
+        if (y + titleHeight + 15 > BODY_BOTTOM) {
+          y = addContentPage(pdf, report, runningTitle);
+          y = drawBuildingManagementCategoryHeader(pdf, y, area.name, true);
+        }
+
+        drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, titleHeight, LIGHT_FILL, LIGHT_BORDER);
+        setFont(pdf, 7.4, 'bold');
+        setTextColor(pdf, NAVY);
+        drawWrappedLines(pdf, continuation ? [...titleLines.slice(0, 1), '(continued)'] : titleLines, MARGIN_X + 1.8, y + 4.5, 3.3);
+        y += titleHeight;
+
+        const maxLines = Math.max(1, Math.floor((BODY_BOTTOM - y - 9) / lineHeight));
+        const chunk = commentaryLines.slice(offset, offset + maxLines);
+        const narrativeHeight = 7 + chunk.length * lineHeight;
+        drawBox(pdf, MARGIN_X, y, CONTENT_WIDTH, narrativeHeight, undefined, LIGHT_BORDER);
+        setFont(pdf, 5.3, 'bold');
+        setTextColor(pdf, MUTED);
+        pdf.text(continuation ? 'COMMENTARY (CONTINUED)' : 'COMMENTARY', MARGIN_X + 1.8, y + 3.5);
+        setFont(pdf, 7, 'normal');
+        setTextColor(pdf, TEXT);
+        drawWrappedLines(pdf, chunk, MARGIN_X + 1.8, y + 7.2, lineHeight);
+        y += narrativeHeight + 2;
+        offset += chunk.length;
+        continuation = true;
+      }
+
+      if (buildingManagementItemPhotos(report, item.id) > 0) {
+        y = await drawBuildingManagementItemPhotoEvidence(pdf, report, area, item, y, onProgress);
+      }
+      y += 3;
+    }
+
+    if (buildingManagementCategoryPhotoList(report, area).length > 0) {
+      y = await drawBuildingManagementCategoryPhotoEvidence(pdf, report, area, y, onProgress);
+    }
+    y += 3;
+  }
+}
+
 function drawExtendedReportPages(pdf: jsPDF, report: ReportData, onProgress?: (message: string) => void) {
   const template = getReportTemplate(report.details.reportType);
   const overviewEnd = drawGenericOverview(pdf, report);
@@ -3165,6 +3255,11 @@ export async function generateReportPdf(
     await drawPhotoPages(pdf, report, onProgress);
     onProgress?.('Building exit special reporting and sign-off...');
     drawFinalPage(pdf, report);
+  } else if (report.details.reportType === 'Custom') {
+    onProgress?.('Building Custom Report commentary and linked photo evidence...');
+    await drawCustomReportPages(pdf, report, onProgress);
+    onProgress?.('Building Custom Report summary and sign-off...');
+    drawGenericClosingPages(pdf, report);
   } else if (isBuildingManagementTemplate(report.details.reportType)) {
     const template = getReportTemplate(report.details.reportType);
     onProgress?.(`Building ${template.label}...`);
