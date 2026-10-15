@@ -1,6 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ExtendedReportDocument } from '../src/components/ExtendedReportDocument';
+import { ExtendedReportEditor } from '../src/components/ExtendedReportEditor';
+import { imageFilesFromList } from '../src/lib/photoDrop';
 import { buildCustomReportPreviewPages } from '../src/lib/customReportPreview';
 import { REPORT_TEMPLATES } from '../src/data/reportCatalogue';
 import { createBlankReport } from '../src/data/reportTemplates';
@@ -368,6 +370,42 @@ if (customHtml.includes('Legacy responsible party - must not display') ||
     customHtml.includes('Legacy status - must not display')) {
   throw new Error('Custom Report preview exposed obsolete responsibility/status columns.');
 }
+const dropCandidateFiles = [
+  new File(['jpeg'], 'garbage-room.JPG', { type: 'image/jpeg' }),
+  new File(['webp'], 'bins.WEBP', { type: '' }),
+  new File(['pdf'], 'not-a-photo.pdf', { type: 'application/pdf' }),
+  new File(['text'], 'fake-photo.jpg', { type: 'text/plain' }),
+  new File(['png'], 'recycling.png', { type: 'image/png' }),
+];
+const selectedDropImages = imageFilesFromList(dropCandidateFiles);
+if (
+  selectedDropImages.length !== 3 ||
+  selectedDropImages[0] !== dropCandidateFiles[0] ||
+  selectedDropImages[1] !== dropCandidateFiles[1] ||
+  selectedDropImages[2] !== dropCandidateFiles[4] ||
+  imageFilesFromList(null).length !== 0
+) {
+  throw new Error('Custom Report drag-and-drop photo file selection regression detected.');
+}
+
+const customEditorHtml = renderToStaticMarkup(createElement(ExtendedReportEditor, {
+  details: customWasteReport.details,
+  areas: customWasteReport.areas,
+  photos: customWasteReport.photos,
+  onChangeDetails: () => {},
+  onChangeAreas: () => {},
+  onChangePhotos: () => {},
+  onUploadPhotos: async () => {},
+}));
+if (
+  !customEditorHtml.includes('data-photo-drop-area="waste-area-1"') ||
+  !customEditorHtml.includes('data-photo-drop-item="waste-item-1-1"') ||
+  !customEditorHtml.includes('Drag and drop photographs anywhere on this item')
+) {
+  throw new Error('Custom Report whole-item/section photo drop target regression detected.');
+}
+console.log('Custom Report photo drop targets and image filtering regression check passed.');
+
 await verifyPdf('CustomWasteManagement', customWasteReport, 7, 10_000);
 
 for (const template of REPORT_TEMPLATES.filter((item) => !['Entry', 'Routine', 'Exit', 'KeyReceipt'].includes(item.type))) {
