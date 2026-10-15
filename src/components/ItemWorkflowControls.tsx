@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Camera, ImagePlus, Wrench } from 'lucide-react';
 import type { InspectionArea, InspectionItem, ReportPhoto } from '../types/report';
+import { imageFilesFromList } from '../lib/photoDrop';
 
 interface Props {
   area: InspectionArea;
@@ -9,6 +10,7 @@ interface Props {
   maintenanceEnabled: boolean;
   showActionTracking?: boolean;
   showGeneralPhotoControls?: boolean;
+  enableDropZone?: boolean;
   onChangeItem: (patch: Partial<InspectionItem>) => void;
   onUploadPhotos: (files: File[], areaName: string, itemId?: string, areaId?: string) => Promise<void>;
 }
@@ -32,6 +34,7 @@ export const ItemWorkflowControls: React.FC<Props> = ({
   maintenanceEnabled,
   showActionTracking = false,
   showGeneralPhotoControls = true,
+  enableDropZone = true,
   onChangeItem,
   onUploadPhotos,
 }) => {
@@ -40,7 +43,7 @@ export const ItemWorkflowControls: React.FC<Props> = ({
   const itemPhotos = photos.filter((photo) => photo.itemId === item.id);
 
   const uploadFiles = (files: FileList | null) => {
-    const selected = Array.from(files || []).filter((file) => file.type.startsWith('image/'));
+    const selected = imageFilesFromList(files);
     if (!selected.length) return;
     void onUploadPhotos(selected, area.name, item.id, area.id);
   };
@@ -48,17 +51,18 @@ export const ItemWorkflowControls: React.FC<Props> = ({
   return (
     <div
       className="mt-3 space-y-3"
-      onDragOver={(event) => {
+      onDragOver={enableDropZone ? (event) => {
         if (!event.dataTransfer.types.includes('Files')) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
-      }}
-      onDrop={(event) => {
+      } : undefined}
+      onDrop={enableDropZone ? (event) => {
+        if (!event.dataTransfer.types.includes('Files')) return;
         event.preventDefault();
         event.stopPropagation();
-        const files = Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('image/'));
+        const files = imageFilesFromList(event.dataTransfer.files);
         if (files.length) void onUploadPhotos(files, area.name, item.id, area.id);
-      }}
+      } : undefined}
     >
       <input
         ref={uploadRef}
