@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ExtendedReportDocument } from '../src/components/ExtendedReportDocument';
 import { ExtendedReportEditor } from '../src/components/ExtendedReportEditor';
-import { imageFilesFromList } from '../src/lib/photoDrop';
+import { imageFilesFromList, isHeicImageFile, isReportImageFile, REPORT_IMAGE_ACCEPT } from '../src/lib/photoDrop';
 import { buildCustomReportPreviewPages } from '../src/lib/customReportPreview';
 import { REPORT_TEMPLATES } from '../src/data/reportCatalogue';
 import { createBlankReport } from '../src/data/reportTemplates';
@@ -405,6 +405,30 @@ if (
   throw new Error('Custom Report whole-item/section photo drop target regression detected.');
 }
 console.log('Custom Report photo drop targets and image filtering regression check passed.');
+const desktopHeicFiles = [
+  new File(['test'], 'IMG_4092.HEIC', { type: '' }),
+  new File(['test'], 'IMG_4093.heif', { type: 'application/octet-stream' }),
+  new File(['test'], 'photo.heics', { type: 'image/heic-sequence' }),
+  new File(['test'], 'photo.heifs', { type: 'image/heif-sequence' }),
+  new File(['test'], 'camera-image', { type: 'image/x-heic' }),
+];
+if (desktopHeicFiles.some((file) => !isHeicImageFile(file) || !isReportImageFile(file))) {
+  throw new Error('HEIC/HEIF file selection regression: native or missing MIME type not accepted.');
+}
+if (!imageFilesFromList(desktopHeicFiles).every((file, index) => file === desktopHeicFiles[index])) {
+  throw new Error('HEIC/HEIF drag-and-drop ordering regression detected.');
+}
+if (
+  !isReportImageFile(new File(['jpeg'], 'photo.jpg', { type: '' })) ||
+  isHeicImageFile(new File(['jpeg'], 'photo.jpg', { type: 'image/jpeg' })) ||
+  isReportImageFile(new File(['pdf'], 'document.pdf', { type: 'application/pdf' })) ||
+  !['.heic', '.heif', 'image/heic', 'image/heif'].every((part) => REPORT_IMAGE_ACCEPT.includes(part))
+) {
+  throw new Error('Report photo picker acceptance regression detected.');
+}
+console.log('HEIC/HEIF picker, drag-and-drop and MIME detection regression checks passed.');
+
+
 
 await verifyPdf('CustomWasteManagement', customWasteReport, 7, 10_000);
 
