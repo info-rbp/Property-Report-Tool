@@ -1,3 +1,5 @@
+import { isReportImageFile } from './photoDrop';
+
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 
 declare global {
@@ -122,7 +124,7 @@ export async function pickGoogleDriveImages(): Promise<File[]> {
   const files: File[] = [];
   for (const item of selected) {
     const file = await downloadDriveFile(token, item);
-    if (file.type.startsWith('image/')) files.push(file);
+    if (isReportImageFile(file)) files.push(file);
   }
   return files;
 }
