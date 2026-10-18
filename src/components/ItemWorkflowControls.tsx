@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Camera, ImagePlus, Wrench } from 'lucide-react';
 import type { InspectionArea, InspectionItem, ReportPhoto } from '../types/report';
-import { imageFilesFromList } from '../lib/photoDrop';
+import { imageFilesFromList, REPORT_IMAGE_ACCEPT } from '../lib/photoDrop';
 
 interface Props {
   area: InspectionArea;
@@ -67,7 +67,7 @@ export const ItemWorkflowControls: React.FC<Props> = ({
       <input
         ref={uploadRef}
         type="file"
-        accept="image/*"
+        accept={REPORT_IMAGE_ACCEPT}
         multiple
         className="hidden"
         onChange={(event) => {
