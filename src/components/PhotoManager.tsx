@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CloudDownload, Image, Upload, Trash2, Tag, Filter, Plus, Star } from 'lucide-react';
 import { normalizeAreaName, renumberPhotosByArea } from '../lib/reportFormatting';
+import { REPORT_IMAGE_ACCEPT, imageFilesFromList } from '../lib/photoDrop';
 import { pickGoogleDriveImages } from '../lib/googleDrive';
 import { InspectionArea, ReportPhoto } from '../types/report';
 
@@ -108,7 +109,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
     areaName: string,
     itemId?: string
   ) => {
-    const files = Array.from(event.target.files || []);
+    const files = imageFilesFromList(event.target.files);
     event.target.value = '';
     if (!files.length) return;
     if (requireItemLink && !itemId) {
@@ -229,7 +230,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/jpeg,image/png,image/webp"
+        accept={REPORT_IMAGE_ACCEPT}
         onChange={(event) => handleFileUpload(event, selectedUploadArea, selectedUploadItemId)}
         className="hidden"
       />
@@ -237,14 +238,14 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         ref={areaFileInputRef}
         type="file"
         multiple
-        accept="image/jpeg,image/png,image/webp"
+        accept={REPORT_IMAGE_ACCEPT}
         onChange={(event) => handleFileUpload(event, targetUploadArea, targetUploadItemId)}
         className="hidden"
       />
       <input
         ref={coverFileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept={REPORT_IMAGE_ACCEPT}
         onChange={handleCoverFileUpload}
         className="hidden"
       />
@@ -302,7 +303,8 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
               ? requireItemLink
                 ? `Every photo must be linked to a specific ${itemSelectorPlaceholder.toLowerCase()}. Uploads continue in the background while you keep working.`
                 : 'Queue photos to a whole category or a specific reporting item. Uploads continue in the background while you keep working.'
-              : 'Upload JPG, PNG or WebP images from this device. Uploads continue in the background while you keep working.'}
+              : 'Upload JPG, PNG, WebP, HEIC or HEIF photos. HEIC/HEIF images are converted to JPEG before upload. Uploads continue in the background.'}
+            {linkToItems && <span className="block mt-1">Supported: JPG, PNG, WebP, HEIC and HEIF. Apple photos are converted on this device.</span>}
           </p>
         </div>
 

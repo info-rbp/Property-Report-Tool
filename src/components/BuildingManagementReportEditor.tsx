@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Building2, Camera, ChevronDown, ChevronRight, ClipboardList, Plus, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { getReportTemplate, supportsMaintenanceRegister } from '../data/reportCatalogue';
 import { normalizeAreaName } from '../lib/reportFormatting';
+import { imageFilesFromList } from '../lib/photoDrop';
 import { ItemWorkflowControls } from './ItemWorkflowControls';
 import { InspectionArea, InspectionItem, ReportPhoto, TenancyDetails } from '../types/report';
 
@@ -72,7 +73,7 @@ export const BuildingManagementReportEditor: React.FC<Props> = ({
   };
 
   const droppedImageFiles = (event: React.DragEvent): File[] =>
-    Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('image/'));
+    imageFilesFromList(event.dataTransfer.files);
 
   const queueDroppedPhotos = (
     event: React.DragEvent,
