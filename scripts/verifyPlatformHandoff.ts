@@ -11,6 +11,11 @@ const env=read('.dev.vars.example');
 
 invariant('Worker verifies signed handoff server-side', worker.includes('verifyProInspectHandoffToken') && worker.includes('crypto.subtle.verify') && worker.includes('/api/integrations/proinspect/handoff'));
 invariant('Handoff is expiry and report-type constrained', worker.includes("payload.iss!=='proinspect-platform'") && worker.includes('payload.exp<now') && worker.includes('payload.exp>now+10*60') && worker.includes('isReportType(payload.reportType)'));
+invariant('Linked report creation requires a verified signed token, never browser-only context',
+ worker.includes('handoff-required') && worker.includes('verifiedContext=await verifyProInspectHandoffToken') &&
+ app.includes('linkedDraft,handoffToken'));
+invariant('Linked handoff identity is immutable and idempotent',
+ worker.includes('handoff-immutable') && worker.includes("json_extract(report_data,'$.integrationContext.handoffId')"));
 invariant('Canonical integration context persists with report data', types.includes('ProInspectIntegrationContext') && types.includes('integrationContext?: ProInspectIntegrationContext'));
 invariant('Browser resolves handoff through authenticated Worker', api.includes('resolveProInspectHandoff') && app.includes('await api.resolveProInspectHandoff(handoffToken)'));
 invariant('Canonical property mapping is stable', app.includes('PI:${context.propertyId}') && app.includes('integrationContext:context'));

@@ -212,7 +212,7 @@ export default function App() {
               workOrderReference:context.workOrderId||blank.details.workOrderReference,
             },
           };
-          const created=normalizeReport(await api.createReport(propertyResult.property.id,context.reportType,linkedDraft));
+          const created=normalizeReport(await api.createReport(propertyResult.property.id,context.reportType,linkedDraft,handoffToken));
           if(created.id)serverVersionsRef.current[created.id]=created.updatedAt;
           setSelectedProperty(propertyResult.property);
           localStorage.setItem('proinspect:lastProperty',JSON.stringify(propertyResult.property));
