@@ -158,6 +158,7 @@ async function publishCompletedReportToPlatform(env:Env,report:ReportData,storag
     'content-type':'application/pdf',
     'x-report-ingest-token':ingestToken,
     'x-report-source-id':report.id||'',
+    'x-report-template-type':report.details.reportType,
     'x-report-handoff-id':integration.handoffId||'',
     'x-property-id':integration.propertyId,
     'x-document-title':reportInstanceLabel(report.details),
