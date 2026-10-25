@@ -634,6 +634,7 @@ export async function handleWorkflowApi(request: Request, env: WorkflowEnv, user
   if (parts[1] === 'reports' && parts[2] && parts[3] === 'send' && request.method === 'POST') {
     const reportRow = await getReport(env, parts[2]);
     if (reportRow.status !== 'completed' || !reportRow.completed_pdf_key) return json({ error: 'Finalise the report before sending it.' }, 409);
+    if (parseReport(reportRow).integrationContext) return json({ error: 'ProInspect-linked reports must be reviewed and distributed by authorised ProInspect staff.' }, 409);
     const body = await request.json() as SendReportInput;
     if (!body.to?.length) return json({ error: 'At least one recipient is required.' }, 400);
     const to = body.to.map((recipient) => assertEmail(recipient.email));
@@ -668,6 +669,7 @@ export async function handleWorkflowApi(request: Request, env: WorkflowEnv, user
   if (parts[1] === 'reports' && parts[2] && parts[3] === 'signature-request' && request.method === 'POST') {
     const reportRow = await getReport(env, parts[2]);
     if (reportRow.status !== 'completed' || !reportRow.completed_pdf_key) return json({ error: 'Finalise the report before requesting signatures.' }, 409);
+    if (parseReport(reportRow).integrationContext) return json({ error: 'Complete ProInspect review and issue before requesting recipient signatures.' }, 409);
     const body = await request.json() as SendForSignatureInput;
     if (!body.parties?.length) return json({ error: 'At least one signing party is required.' }, 400);
     const now = new Date();

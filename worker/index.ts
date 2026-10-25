@@ -109,7 +109,7 @@ function decodeBase64Url(value: string): Uint8Array {
   return Uint8Array.from(binary,(char)=>char.charCodeAt(0));
 }
 
-async function verifyProInspectHandoffToken(token:string,env:Env):Promise<ProInspectIntegrationContext>{
+async function verifyProInspectHandoffToken(token:string,env:Env,actorEmail:string):Promise<ProInspectIntegrationContext>{
   const signingKey=env.PROINSPECT_HANDOFF_SIGNING_KEY?.trim();
   if(!signingKey)throw new HttpError(503,'ProInspect platform handoff is not configured.','proinspect-handoff-not-configured');
   const [payloadPart,signaturePart,extra]=token.split('.');
@@ -121,9 +121,10 @@ async function verifyProInspectHandoffToken(token:string,env:Env):Promise<ProIns
   try{payload=JSON.parse(new TextDecoder().decode(decodeBase64Url(payloadPart))) as ProInspectIntegrationContext;}
   catch{throw new HttpError(400,'ProInspect handoff payload is invalid.','invalid-proinspect-handoff');}
   const now=Math.floor(Date.now()/1000);
-  if(payload.v!==1||payload.iss!=='proinspect-platform'||!payload.propertyId||!payload.propertyAddress||!isReportType(payload.reportType)||!Number.isFinite(payload.exp)||payload.exp<now||payload.exp>now+10*60){
+  if(payload.v!==1||payload.iss!=='proinspect-platform'||!payload.propertyId||!payload.propertyAddress||!payload.handoffId||!isReportType(payload.reportType)||!Number.isFinite(payload.exp)||payload.exp<now||payload.exp>now+10*60){
     throw new HttpError(400,'ProInspect handoff is invalid or has expired.','invalid-proinspect-handoff');
   }
+  if(!payload.issuedByEmail || payload.issuedByEmail.trim().toLowerCase()!==actorEmail.trim().toLowerCase())throw new HttpError(403,'The signed handoff belongs to another staff identity.','handoff-staff-mismatch');
   const allowed=new Set(['client','tenant','staff']);
   payload.audiences=Array.isArray(payload.audiences)
     ? payload.audiences.filter((audience):audience is 'client'|'tenant'|'staff'=>allowed.has(audience))
@@ -157,6 +158,7 @@ async function publishCompletedReportToPlatform(env:Env,report:ReportData,storag
     'content-type':'application/pdf',
     'x-report-ingest-token':ingestToken,
     'x-report-source-id':report.id||'',
+    'x-report-handoff-id':integration.handoffId||'',
     'x-property-id':integration.propertyId,
     'x-document-title':reportInstanceLabel(report.details),
     'x-file-name':fileName,
@@ -375,7 +377,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   if (request.method === 'GET' && url.pathname === '/api/integrations/proinspect/handoff') {
     const token=url.searchParams.get('token')||'';
     if(!token)throw new HttpError(400,'ProInspect handoff token is required.','invalid-proinspect-handoff');
-    return json(await verifyProInspectHandoffToken(token,env));
+    return json(await verifyProInspectHandoffToken(token,env,userEmail));
   }
 
   if (parts[1] === 'properties') {

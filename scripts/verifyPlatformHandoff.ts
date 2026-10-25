@@ -14,6 +14,9 @@ invariant('Handoff is expiry and report-type constrained', worker.includes("payl
 invariant('Canonical integration context persists with report data', types.includes('ProInspectIntegrationContext') && types.includes('integrationContext?: ProInspectIntegrationContext'));
 invariant('Browser resolves handoff through authenticated Worker', api.includes('resolveProInspectHandoff') && app.includes('await api.resolveProInspectHandoff(handoffToken)'));
 invariant('Canonical property mapping is stable', app.includes('PI:${context.propertyId}') && app.includes('integrationContext:context'));
+invariant('External handoff is bound to the signed ProInspect staff identity',worker.includes('handoff-staff-mismatch') && worker.includes('payload.handoffId'));
+invariant('External platform publication includes the recorded handoff identity',worker.includes("'x-report-handoff-id':integration.handoffId"));
+invariant('Platform-linked reports cannot bypass staff review using Tool email or signing',read('worker/workflowPlatform.ts').includes('ProInspect-linked reports must be reviewed') && read('worker/workflowPlatform.ts').includes('Complete ProInspect review and issue'));
 invariant('Completed PDF publishes idempotently using Report Tool report ID', worker.includes("'x-report-source-id':report.id||''") && worker.includes('publishCompletedReportToPlatform'));
 invariant('Platform outage does not undo immutable completion', worker.indexOf('completed=await updateReportData') < worker.indexOf('await publishCompletedReportToPlatform(env,completed,key)') && app.includes("error?.code==='proinspect-ingest-failed'"));
 invariant('Explicit retry path exists', worker.includes("parts[3] === 'publish'") && api.includes('publishCompletedReport') && app.includes('handleSyncPlatform') && read('src/components/ReportActions.tsx').includes('Sync to ProInspect'));
