@@ -225,7 +225,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   const visiblePhotos = filteredPhotos.slice(0, visiblePhotoCount);
 
   return (
-    <div className="bg-white rounded-xl shadow-xs border border-neutral-200 overflow-hidden flex flex-col h-full">
+    <div className="bg-white rounded-xl shadow-xs border border-neutral-200 overflow-hidden flex flex-col">
       <input
         ref={fileInputRef}
         type="file"
@@ -464,7 +464,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
         </div>
       )}
 
-      <div className="p-4 overflow-y-auto flex-1 bg-neutral-50/50">
+      <div className="p-4 flex-1 bg-neutral-50/50">
         {filteredPhotos.length === 0 ? (
           <div className="h-64 border-2 border-dashed border-neutral-300 rounded-xl flex flex-col items-center justify-center text-center p-6 bg-white">
             <Upload className="w-8 h-8 text-neutral-400 mb-3" />
