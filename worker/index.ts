@@ -2,6 +2,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { isBuildingManagementTemplate, reportInstanceLabel } from '../src/data/reportCatalogue';
 import { normalizeAreaName } from '../src/lib/reportFormatting';
 import { migrateReportData } from '../src/lib/reportMigration';
+import { nextReportRevision } from '../src/lib/reportRevision';
 import { reportValidationMessage, validateReportForFinalization } from '../src/lib/reportValidation';
 import { CURRENT_REPORT_SCHEMA_VERSION, isReportType } from '../src/types/report';
 import type { ProInspectIntegrationContext, ReportData, ReportPhoto, ReportStatus, ReportType } from '../src/types/report';
@@ -290,7 +291,9 @@ async function updateReportData(
   status: ReportStatus = row.status,
   completedPdfKey: string | null = row.completed_pdf_key
 ): Promise<ReportData> {
-  const now = new Date().toISOString();
+  // Prevent rapid mutations sharing the same millisecond timestamp, which
+  // would undermine the D1 updated_at compare-and-set revision contract.
+  const now = nextReportRevision(row.updated_at);
   const stored: ReportData = {
     ...migrateReportData(report),
     schemaVersion: CURRENT_REPORT_SCHEMA_VERSION,
