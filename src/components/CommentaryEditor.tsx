@@ -30,6 +30,39 @@ interface CommentaryEditorProps {
   onUploadPhotos: (files: File[], areaName: string, itemId?: string, areaId?: string) => Promise<void>;
 }
 
+/**
+ * Keep the full inspection note visible while editing, without an inner
+ * textarea scrollbar that hides existing commentary.
+ */
+const AutoGrowingTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement>> = ({
+  className = '',
+  value,
+  ...props
+}) => {
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const resize = () => {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.max(textarea.scrollHeight, 128)}px`;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [value]);
+
+  return (
+    <textarea
+      {...props}
+      ref={textareaRef}
+      value={value ?? ''}
+      className={`${className} min-h-32 resize-none overflow-hidden`}
+    />
+  );
+};
+
 export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   details,
   areas,
@@ -221,9 +254,9 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-xs border border-neutral-200 overflow-hidden flex flex-col h-full">
+    <div className="bg-white rounded-xl shadow-xs border border-neutral-200 overflow-hidden flex flex-col">
       {/* Sub tabs */}
-      <div className="flex border-b border-neutral-200 bg-neutral-50 px-4">
+      <div className="flex flex-wrap gap-x-1 border-b border-neutral-200 bg-neutral-50 px-2 md:px-4">
         <button
           onClick={() => setActiveTab('areas')}
           className={`px-4 py-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
@@ -274,7 +307,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
       </div>
 
       {/* Tab Contents */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-neutral-50/50">
+      <div className="p-4 md:p-6 bg-neutral-50/50">
         {/* ================= CONDITION COMMENTARY TAB ================= */}
         {activeTab === 'areas' && (
           <div className="space-y-4">
@@ -310,9 +343,9 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                     {/* Area Accordion Header */}
                     <div
                       onClick={() => setExpandedAreaId(isExpanded ? null : area.id)}
-                      className="p-3 bg-neutral-100 hover:bg-neutral-200/70 cursor-pointer flex items-center justify-between border-b border-neutral-200 transition-colors"
+                      className="p-3 bg-neutral-100 hover:bg-neutral-200/70 cursor-pointer flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 transition-colors"
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         {isExpanded ? (
                           <ChevronDown className="w-4 h-4 text-neutral-500" />
                         ) : (
@@ -362,13 +395,14 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                     {isExpanded && (
                       <div className="divide-y divide-neutral-200">
                         {area.items.map((item, itemIndex) => (
-                          <div key={item.id} className="p-3 flex flex-col md:flex-row gap-3 items-start text-xs">
-                            {/* Left: Item name and Y/N toggles */}
-                            <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
-                              <span className="font-bold text-neutral-800 text-[11px]">{item.name}</span>
+                          <div key={item.id} className="min-w-0 space-y-4 p-4 md:p-5 text-sm">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                            {/* Item name and condition ratings */}
+                            <div className="flex min-w-0 flex-1 flex-col gap-3">
+                              <span className="font-bold text-neutral-900 text-sm md:text-base">{item.name}</span>
 
                               {details.reportType !== 'Routine' && (
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                   <div className="flex items-center gap-0.5 border border-neutral-300 rounded p-0.5 bg-neutral-50">
                                     <span className="text-[10px] font-bold text-neutral-600 px-1">Cln</span>
                                     <button
@@ -443,23 +477,8 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                                 </div>
                               )}
                             </div>
-
-                            {/* Middle: Agent Detailed Commentary */}
-                            <div className="flex-1 w-full">
-                              <label className="block text-[10px] font-bold text-neutral-600 uppercase mb-0.5">
-                                {details.reportType === 'Routine' ? 'Inspection Finding:' : 'Agent Comments:'}
-                              </label>
-                              <textarea
-                                value={item.agentComments}
-                                onChange={(e) => handleUpdateItem(area.id, item.id, 'agentComments', e.target.value)}
-                                rows={2}
-                                className="w-full border border-neutral-300 rounded-lg p-2 font-mono text-[11px] focus:outline-hidden focus:border-neutral-900 bg-white"
-                                placeholder="Describe condition, chips, marks, tested status..."
-                              />
-                            </div>
-
-                            {/* Right: Actions */}
-                            <div className="pt-4 shrink-0 flex items-center gap-1">
+                            {/* Item actions */}
+                            <div className="flex shrink-0 items-center gap-1">
                               <button type="button" onClick={() => moveItem(area.id, item.id, 'up')} disabled={itemIndex === 0} className="p-1 text-neutral-500 disabled:opacity-25" title="Move condition row up">
                                 <ArrowUp className="w-4 h-4" />
                               </button>
@@ -474,7 +493,24 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
-                            <div className="w-full md:pl-56 md:-mt-2">
+                            </div>
+
+                            {/* Full-width agent detailed commentary */}
+                            <div className="w-full min-w-0">
+                              <label htmlFor={`agent-comments-${area.id}-${item.id}`} className="block text-xs font-bold text-neutral-700 uppercase mb-2">
+                                {details.reportType === 'Routine' ? 'Inspection Finding:' : 'Agent Comments:'}
+                              </label>
+                              <AutoGrowingTextarea
+                                id={`agent-comments-${area.id}-${item.id}`}
+                                value={item.agentComments}
+                                onChange={(event) => handleUpdateItem(area.id, item.id, 'agentComments', event.target.value)}
+                                rows={4}
+                                className="block w-full rounded-lg border border-neutral-300 bg-white px-3 py-3 font-sans text-sm leading-6 text-neutral-900 focus:border-blue-600 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+                                placeholder="Describe condition, chips, marks, tested status..."
+                              />
+                            </div>
+
+                            <div className="w-full min-w-0 border-t border-neutral-200 pt-2">
                               <ItemWorkflowControls
                                 area={area}
                                 item={item}
@@ -747,7 +783,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
               <label className="block font-semibold text-neutral-700 mb-1">
                 {details.reportType === 'Routine' ? 'Agent Comments' : 'Exit Report Additional Comments'}
               </label>
-              <textarea
+              <AutoGrowingTextarea
                 value={details.additionalComments}
                 onChange={(e) => handleUpdateDetail('additionalComments', e.target.value)}
                 rows={4}
@@ -761,7 +797,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
             {details.reportType === 'Routine' && (
               <div>
                 <label className="block font-semibold text-neutral-700 mb-1">Maintenance Comments</label>
-                <textarea
+                <AutoGrowingTextarea
                   value={details.maintenanceComments || ''}
                   onChange={(e) => handleUpdateDetail('maintenanceComments', e.target.value)}
                   rows={5}
@@ -797,7 +833,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
 
             <div>
               <label className="block font-semibold text-neutral-700 mb-1">Inspection Disclaimer</label>
-              <textarea
+              <AutoGrowingTextarea
                 value={details.disclaimerText}
                 onChange={(e) => handleUpdateDetail('disclaimerText', e.target.value)}
                 rows={5}
@@ -876,7 +912,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                 <label className="block font-semibold text-neutral-700 mb-1">
                   Entry Report Additional Comments
                 </label>
-                <textarea
+                <AutoGrowingTextarea
                   value={details.additionalComments}
                   onChange={(e) => handleUpdateDetail('additionalComments', e.target.value)}
                   rows={3}
@@ -901,7 +937,7 @@ export const CommentaryEditor: React.FC<CommentaryEditorProps> = ({
                 <label className="block font-semibold text-neutral-700 mb-1">
                   Western Australia Tenancy Inspection Legal Disclaimer
                 </label>
-                <textarea
+                <AutoGrowingTextarea
                   value={details.disclaimerText}
                   onChange={(e) => handleUpdateDetail('disclaimerText', e.target.value)}
                   rows={4}
