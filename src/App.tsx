@@ -38,6 +38,7 @@ import {
 } from './lib/offlineQueue';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
 import { reportValidationMessage, validateReportForFinalization } from './lib/reportValidation';
+import { ReportWriteCoordinator, mergeCloudPhotoMutation, reportForCloudSave } from './lib/reportWriteCoordinator';
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
 import type { ReportTemplateRecord } from './types/workflow';
 
@@ -78,7 +79,7 @@ export default function App() {
   const csvInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<number | null>(null);
   const serverVersionsRef = useRef<Record<string, string | undefined>>({});
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const reportWriteQueueRef = useRef(new ReportWriteCoordinator());
   const queuedSaveCountRef = useRef(0);
   const photoUploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const queuedPhotoCountRef = useRef(0);
@@ -88,21 +89,35 @@ export default function App() {
     reportRef.current = report;
   }, [report]);
 
+  // Every D1 report mutation shares this queue; photo uploads must not race
+  // autosaves and cause this same tab to report a cross-device conflict.
+  const queueReportWrite = <T,>(work: () => Promise<T>): Promise<T> =>
+    reportWriteQueueRef.current.enqueue(work);
 
   useEffect(() => {
     const refreshCount = () => countOfflineOperations().then(setPendingOfflineOperations).catch(() => undefined);
     const sync = async () => {
       setIsOffline(false);
       try {
-        const result = await syncOfflineOperations((remaining) => setPendingOfflineOperations(remaining));
+        const result = await queueReportWrite(() =>
+          syncOfflineOperations((remaining) => setPendingOfflineOperations(remaining))
+        );
         const currentId = reportRef.current?.id;
         const updated = currentId ? result.reports.filter((candidate) => candidate.id === currentId).at(-1) : undefined;
         if (updated) {
           const normalized = await hydrateOfflinePhotoPreviews(normalizeReport(updated));
           if (normalized.id) serverVersionsRef.current[normalized.id] = normalized.updatedAt;
-          reportRef.current = normalized;
-          setReport(normalized);
-          await cacheReport(normalized).catch(() => undefined);
+          const current = reportRef.current;
+          if (current?.id === normalized.id) {
+            const merged = mergeCloudPhotoMutation(current, normalized);
+            reportRef.current = merged;
+            setReport((previous) =>
+              previous?.id === normalized.id ? mergeCloudPhotoMutation(previous, normalized) : previous
+            );
+            await cacheReport(merged).catch(() => undefined);
+          } else {
+            await cacheReport(normalized).catch(() => undefined);
+          }
         }
         setPendingOfflineOperations(result.remaining);
         if (result.remaining === 0) {
@@ -146,37 +161,40 @@ export default function App() {
     queuedSaveCountRef.current += 1;
     setIsSaving(true);
 
-    return new Promise<ReportData>((resolve, reject) => {
-      saveQueueRef.current = saveQueueRef.current
-        .catch(() => undefined)
-        .then(async () => {
-          try {
-            const expectedUpdatedAt = serverVersionsRef.current[reportId] || draft.updatedAt;
-            if (!navigator.onLine) {
-              await cacheReport(draft).catch(() => undefined);
-              await queueOfflineSave(draft, expectedUpdatedAt);
-              setPendingOfflineOperations(await countOfflineOperations().catch(() => 1));
-              setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-              resolve(draft);
-              return;
-            }
-            const saved = normalizeReport(await api.saveReport(draft, expectedUpdatedAt));
-            serverVersionsRef.current[reportId] = saved.updatedAt;
-            await cacheReport(saved).catch(() => undefined);
-            setLastSavedTime(
-              new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            );
-            resolve(saved);
-          } catch (error) {
-            reject(error);
-          } finally {
-            queuedSaveCountRef.current = Math.max(0, queuedSaveCountRef.current - 1);
-            setIsSaving(queuedSaveCountRef.current > 0);
-          }
-        });
+    return queueReportWrite(async () => {
+      try {
+        // The autosave may have been queued before one or more uploads, edits or
+        // category changes. Never send that old snapshot with a fresh revision.
+        const latest = reportRef.current?.id === reportId ? reportRef.current : draft;
+        const expectedUpdatedAt = serverVersionsRef.current[reportId] || latest.updatedAt;
+        if (!navigator.onLine) {
+          await cacheReport(latest).catch(() => undefined);
+          await queueOfflineSave(latest, expectedUpdatedAt);
+          setPendingOfflineOperations(await countOfflineOperations().catch(() => 1));
+          setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+          return latest;
+        }
+
+        const saved = normalizeReport(await api.saveReport(reportForCloudSave(latest), expectedUpdatedAt));
+        serverVersionsRef.current[reportId] = saved.updatedAt;
+
+        // Do not replace the active form with the server response: the user may
+        // have continued typing while this save was in flight. Only advance its
+        // revision reference and cache the latest local content.
+        const current = reportRef.current;
+        const cacheDraft = current?.id === reportId
+          ? { ...current, updatedAt: saved.updatedAt }
+          : saved;
+        if (current?.id === reportId) reportRef.current = cacheDraft;
+        await cacheReport(cacheDraft).catch(() => undefined);
+        setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        return saved;
+      } finally {
+        queuedSaveCountRef.current = Math.max(0, queuedSaveCountRef.current - 1);
+        setIsSaving(queuedSaveCountRef.current > 0);
+      }
     });
   };
-
 
   useEffect(() => {
     let active = true;
@@ -334,11 +352,12 @@ export default function App() {
   const saveDraftImmediately = async (draft: ReportData): Promise<ReportData> => {
     if (!draft.id || draft.status === 'completed') return draft;
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    const latest = reportRef.current?.id === draft.id ? reportRef.current : draft;
     await cacheReport({
-      ...draft,
-      updatedAt: serverVersionsRef.current[draft.id] || draft.updatedAt,
+      ...latest,
+      updatedAt: serverVersionsRef.current[draft.id] || latest.updatedAt,
     }).catch(() => undefined);
-    return persistDraft(draft);
+    return persistDraft(latest);
   };
 
   const handleCreateReport = async (type: ReportType) => {
@@ -518,18 +537,14 @@ export default function App() {
 
   const mergePhotoMutationResult = (updated: ReportData) => {
     if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
+    // Update the imperative snapshot immediately; React may batch the state
+    // update until after the next queued write begins.
+    if (reportRef.current?.id === updated.id) {
+      reportRef.current = mergeCloudPhotoMutation(reportRef.current, updated);
+    }
     setReport((current) => {
       if (!current || current.id !== updated.id) return current;
-      const merged: ReportData = {
-        ...current,
-        photos: updated.photos,
-        updatedAt: updated.updatedAt,
-        details: {
-          ...current.details,
-          coverPhotoUrl: updated.details.coverPhotoUrl,
-          coverPhotoStorageKey: updated.details.coverPhotoStorageKey,
-        },
-      };
+      const merged = mergeCloudPhotoMutation(current, updated);
       reportRef.current = merged;
       return merged;
     });
@@ -549,7 +564,9 @@ export default function App() {
         if (!latest?.id || latest.status === 'completed') return;
         await saveDraftImmediately(latest);
         const processed = await processInspectionImage(file);
-        const updated = normalizeReport(await api.uploadCoverPhoto(latest.id, processed.blob));
+        const updated = normalizeReport(await queueReportWrite(() =>
+          api.uploadCoverPhoto(latest.id!, processed.blob)
+        ));
         mergePhotoMutationResult(updated);
         setStatusMessage({ text: 'Cover photo uploaded.', type: 'success' });
       } catch (error: any) {
@@ -643,15 +660,17 @@ export default function App() {
             ? `${targetArea.name}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
             : `${targetArea.name}: Category photo ${photoIndex}`;
 
-          currentServerReport = normalizeReport(await api.uploadPhoto(currentServerReport.id!, processed.blob, {
-            id: photoId,
-            name,
-            areaName: targetArea.name,
-            itemId: item?.id,
-            itemName: item?.name,
-            photoIndex,
-            isCover: false,
-          }));
+          currentServerReport = normalizeReport(await queueReportWrite(() =>
+            api.uploadPhoto(currentServerReport.id!, processed.blob, {
+              id: photoId,
+              name,
+              areaName: targetArea.name,
+              itemId: item?.id,
+              itemName: item?.name,
+              photoIndex,
+              isCover: false,
+            })
+          ));
           mergePhotoMutationResult(currentServerReport);
 
           // Give the browser a rendering opportunity between large image operations.
@@ -672,9 +691,10 @@ export default function App() {
     if (!report?.id || report.status === 'completed') return;
     try {
       const savedDraft = await saveDraftImmediately(report);
-      const updated = normalizeReport(await api.deletePhoto(savedDraft.id!, photoId));
-      if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
-      setReport(updated);
+      const updated = normalizeReport(await queueReportWrite(() =>
+        api.deletePhoto(savedDraft.id!, photoId)
+      ));
+      mergePhotoMutationResult(updated);
       setStatusMessage({ text: 'Photo deleted.', type: 'info' });
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to delete photo.', type: 'error' });
