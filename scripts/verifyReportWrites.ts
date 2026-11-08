@@ -94,7 +94,14 @@ assert.equal(nextReportRevision(current, Date.parse(current) - 10), '2026-11-08T
 assert.equal(nextReportRevision(current, Date.parse(current) + 10), '2026-11-08T07:00:00.133Z');
 
 const app = readFileSync('src/App.tsx', 'utf8');
+const photoManager = readFileSync('src/components/PhotoManager.tsx', 'utf8');
 const worker = readFileSync('worker/index.ts', 'utf8');
+assert.ok(!app.includes('requestAnimationFrame('),
+  'photo uploads must not depend on animation frames, which pause in background Chrome tabs');
+assert.ok(app.includes('min-h-[calc(100vh-125px)]'),
+  'photo view must grow with the page instead of forcing a fixed-height gallery');
+assert.ok(!photoManager.includes('p-4 overflow-y-auto flex-1 bg-neutral-50/50'),
+  'photo evidence must not trap scrolling inside an inner gallery');
 for (const method of ['uploadPhoto', 'uploadCoverPhoto', 'deletePhoto', 'completeReport']) {
   assert.match(app, new RegExp(`queueReportWrite\\(\\(\\) =>\\s*api\\.${method}\\(`), `${method} must use the shared write queue`);
 }
