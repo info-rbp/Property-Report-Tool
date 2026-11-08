@@ -687,8 +687,6 @@ export default function App() {
           ));
           mergePhotoMutationResult(currentServerReport);
 
-          // Give the browser a rendering opportunity between large image operations.
-          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         }
 
         setStatusMessage({
@@ -1090,7 +1088,7 @@ export default function App() {
         )}
 
         {viewMode === 'photos' && !completed && (
-          <div className="max-w-6xl mx-auto p-4 md:p-6 h-[calc(100vh-125px)]">
+          <div className="max-w-6xl mx-auto p-4 md:p-6 min-h-[calc(100vh-125px)]">
             <PhotoManager
               photos={report.photos}
               areas={report.areas}
