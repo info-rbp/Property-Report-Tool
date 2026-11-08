@@ -1,3 +1,6 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { CommentaryEditor } from '../src/components/CommentaryEditor';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ReportWriteCoordinator, mergeCloudPhotoMutation, reportForCloudSave } from '../src/lib/reportWriteCoordinator';
@@ -92,6 +95,38 @@ const current = '2026-11-08T07:00:00.123Z';
 assert.equal(nextReportRevision(current, Date.parse(current)), '2026-11-08T07:00:00.124Z');
 assert.equal(nextReportRevision(current, Date.parse(current) - 10), '2026-11-08T07:00:00.124Z');
 assert.equal(nextReportRevision(current, Date.parse(current) + 10), '2026-11-08T07:00:00.133Z');
+
+const commentarySource = readFileSync('src/components/CommentaryEditor.tsx', 'utf8');
+const htmlShell = readFileSync('index.html', 'utf8');
+assert.ok(!htmlShell.includes('\\n'),
+  'literal HTML newline escapes must not appear as text above the application');
+assert.ok(!commentarySource.includes('flex-1 overflow-y-auto p-4 md:p-6'),
+  'condition commentary must scroll with the main page rather than inside a nested panel');
+assert.ok(!commentarySource.includes('md:pl-56 md:-mt-2'),
+  'photo controls must no longer squeeze the commentary into a narrow flex column');
+assert.ok(commentarySource.includes('textarea.scrollHeight'),
+  'long commentary should expand to show existing text while editing');
+
+const existingComment = 'Original inspection commentary: several paint marks, light scuffs, and minor wear are present on the doorway.';
+const commentaryMarkup = renderToStaticMarkup(createElement(CommentaryEditor, {
+  details: { ...base.details, reportType: 'Entry' } as ReportData['details'],
+  areas: [{
+    id: 'lounge-area',
+    name: 'Front Lounge',
+    items: [{ id: 'doorway', name: 'Doorway', clean: true, undamaged: false, working: true, agentComments: existingComment }],
+  }],
+  photos: [],
+  onChangeDetails: () => undefined,
+  onChangeAreas: () => undefined,
+  onChangePhotos: () => undefined,
+  onUploadPhotos: async () => undefined,
+}));
+assert.ok(commentaryMarkup.includes('id="agent-comments-lounge-area-doorway"'),
+  'full-width commentary should have an associated accessible label');
+assert.ok(commentaryMarkup.includes(existingComment),
+  'the editor must render existing inspection commentary without losing or truncating its value');
+assert.ok(commentaryMarkup.includes('resize-none') && commentaryMarkup.includes('w-full'),
+  'the commentary textarea should expand vertically and use available width');
 
 const app = readFileSync('src/App.tsx', 'utf8');
 const photoManager = readFileSync('src/components/PhotoManager.tsx', 'utf8');
