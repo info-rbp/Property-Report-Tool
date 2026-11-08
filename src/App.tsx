@@ -109,11 +109,11 @@ export default function App() {
           const normalized = await hydrateOfflinePhotoPreviews(normalizeReport(updated));
           if (normalized.id) serverVersionsRef.current[normalized.id] = normalized.updatedAt;
           const current = reportRef.current;
-          if (current?.id === normalized.id) {
+          if (current && current.id === normalized.id) {
             const merged = mergeCloudPhotoMutation(current, normalized);
             reportRef.current = merged;
             setReport((previous) =>
-              previous?.id === normalized.id ? mergeCloudPhotoMutation(previous, normalized) : previous
+              previous && previous.id === normalized.id ? mergeCloudPhotoMutation(previous, normalized) : previous
             );
             await cacheReport(merged).catch(() => undefined);
           } else {
@@ -548,8 +548,9 @@ export default function App() {
     if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
     // Update the imperative snapshot immediately; React may batch the state
     // update until after the next queued write begins.
-    if (reportRef.current?.id === updated.id) {
-      reportRef.current = mergeCloudPhotoMutation(reportRef.current, updated);
+    const active = reportRef.current;
+    if (active && active.id === updated.id) {
+      reportRef.current = mergeCloudPhotoMutation(active, updated);
     }
     setReport((current) => {
       if (!current || current.id !== updated.id) return current;
@@ -580,8 +581,9 @@ export default function App() {
         mergePhotoMutationResult(updated);
         setStatusMessage({ text: 'Cover photo uploaded.', type: 'success' });
       } catch (error: any) {
-        lastPhotoUploadFailureRef.current = error.message || 'Unable to upload cover photo.';
-        setStatusMessage({ text: lastPhotoUploadFailureRef.current, type: 'error' });
+        const failure = error.message || 'Unable to upload cover photo.';
+        lastPhotoUploadFailureRef.current = failure;
+        setStatusMessage({ text: failure, type: 'error' });
       }
     });
   };
@@ -694,8 +696,9 @@ export default function App() {
           type: 'success',
         });
       } catch (error: any) {
-        lastPhotoUploadFailureRef.current = error.message || 'Unable to upload photos.';
-        setStatusMessage({ text: lastPhotoUploadFailureRef.current, type: 'error' });
+        const failure = error.message || 'Unable to upload photos.';
+        lastPhotoUploadFailureRef.current = failure;
+        setStatusMessage({ text: failure, type: 'error' });
       }
     });
   };
@@ -720,7 +723,8 @@ export default function App() {
     if (lastPhotoUploadFailureRef.current) {
       throw new Error('Some photos have not uploaded. Retry the failed photos before exporting the report.');
     }
-    const latest = reportRef.current?.id === report.id ? reportRef.current : report;
+    const current = reportRef.current;
+    const latest = current && current.id === report.id ? current : report;
     return generateReportPdf(latest, (message) => setExportProgressText(message));
   };
 
