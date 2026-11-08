@@ -42,6 +42,8 @@ jobs:
             END { exit bad ? 1 : 0 }
           ' public/_headers
 
+      - name: Report save and photo upload concurrency regression
+        run: bun run writes:verify
       - name: PDF renderer regression
         run: |
           mkdir -p render-artifacts
