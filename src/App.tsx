@@ -1041,7 +1041,11 @@ export default function App() {
         )}
 
         {viewMode === 'commentary' && !completed && (
-          <div className="max-w-6xl mx-auto p-4 md:p-6 h-[calc(100vh-125px)]">
+          <div className={`max-w-6xl mx-auto p-4 md:p-6 ${
+            ['Entry', 'Routine', 'Exit'].includes(report.details.reportType)
+              ? 'min-h-[calc(100vh-125px)]'
+              : 'h-[calc(100vh-125px)]'
+          }`}>
             {['Entry', 'Routine', 'Exit'].includes(report.details.reportType) ? (
               <CommentaryEditor
                 details={report.details}
