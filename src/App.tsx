@@ -83,6 +83,7 @@ export default function App() {
   const queuedSaveCountRef = useRef(0);
   const photoUploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const queuedPhotoCountRef = useRef(0);
+  const lastPhotoUploadFailureRef = useRef<string | null>(null);
   const reportRef = useRef<ReportData | null>(null);
 
   useEffect(() => {
@@ -467,7 +468,15 @@ export default function App() {
   const handleBackToReports = async () => {
     if (report?.id && report.status !== 'completed') {
       try {
-        await saveDraftImmediately(report);
+        if (queuedPhotoCountRef.current > 0) {
+          setStatusMessage({ text: 'Finishing queued photo uploads before leaving this draft...', type: 'info' });
+        }
+        await photoUploadQueueRef.current;
+        if (lastPhotoUploadFailureRef.current) {
+          throw new Error(`Some photos did not upload: ${lastPhotoUploadFailureRef.current} Retry those photos before leaving this draft.`);
+        }
+        const latest = reportRef.current?.id === report.id ? reportRef.current : report;
+        await saveDraftImmediately(latest);
       } catch (error: any) {
         setStatusMessage({
           text: `${error.message || 'Cloud save failed.'} Stay on this report until the draft has saved successfully.`,
@@ -552,6 +561,7 @@ export default function App() {
 
   const handleUploadCoverPhoto = async (file: File) => {
     if (!reportRef.current?.id || reportRef.current.status === 'completed') return;
+    lastPhotoUploadFailureRef.current = null;
 
     setStatusMessage({
       text: 'Cover photo queued for upload. You can continue working while it uploads.',
@@ -570,7 +580,8 @@ export default function App() {
         mergePhotoMutationResult(updated);
         setStatusMessage({ text: 'Cover photo uploaded.', type: 'success' });
       } catch (error: any) {
-        setStatusMessage({ text: error.message || 'Unable to upload cover photo.', type: 'error' });
+        lastPhotoUploadFailureRef.current = error.message || 'Unable to upload cover photo.';
+        setStatusMessage({ text: lastPhotoUploadFailureRef.current, type: 'error' });
       }
     });
   };
@@ -583,6 +594,7 @@ export default function App() {
   ) => {
     const activeReport = reportRef.current;
     if (!activeReport?.id || activeReport.status === 'completed' || files.length === 0) return;
+    lastPhotoUploadFailureRef.current = null;
 
     setStatusMessage({
       text: `Queued ${files.length} photo${files.length === 1 ? '' : 's'} for upload. You can continue editing or queue photos to other categories/items.`,
@@ -682,7 +694,8 @@ export default function App() {
           type: 'success',
         });
       } catch (error: any) {
-        setStatusMessage({ text: error.message || 'Unable to upload photos.', type: 'error' });
+        lastPhotoUploadFailureRef.current = error.message || 'Unable to upload photos.';
+        setStatusMessage({ text: lastPhotoUploadFailureRef.current, type: 'error' });
       }
     });
   };
@@ -703,7 +716,12 @@ export default function App() {
 
   const renderPdf = async (): Promise<Blob> => {
     if (!report) throw new Error('No report is open.');
-    return generateReportPdf(report, (message) => setExportProgressText(message));
+    await photoUploadQueueRef.current;
+    if (lastPhotoUploadFailureRef.current) {
+      throw new Error('Some photos have not uploaded. Retry the failed photos before exporting the report.');
+    }
+    const latest = reportRef.current?.id === report.id ? reportRef.current : report;
+    return generateReportPdf(latest, (message) => setExportProgressText(message));
   };
 
   const handleDownloadPdf = async () => {
@@ -729,9 +747,15 @@ export default function App() {
       return;
     }
     setIsCompleting(true);
-    setExportProgressText('Saving final report data...');
+    setExportProgressText('Finishing photo uploads...');
     try {
-      const validationIssues = validateReportForFinalization(report);
+      await photoUploadQueueRef.current;
+      if (lastPhotoUploadFailureRef.current) {
+        throw new Error('Some photos have not uploaded. Retry failed photos before finalising the report.');
+      }
+      const latest = reportRef.current?.id === report.id ? reportRef.current : report;
+      setExportProgressText('Saving final report data...');
+      const validationIssues = validateReportForFinalization(latest);
       if (validationIssues.length > 0) {
         if (validationIssues.some((issue) => issue.code.startsWith('photo-') || issue.code.includes('photo'))) {
           setViewMode('photos');
@@ -741,7 +765,7 @@ export default function App() {
         throw new Error(reportValidationMessage(validationIssues, 'Report cannot be finalised'));
       }
 
-      const savedDraft = await saveDraftImmediately(report);
+      const savedDraft = await saveDraftImmediately(latest);
       const blob = await generateReportPdf(savedDraft, (message) => setExportProgressText(message));
       const maxCompletedPdfBytes = 90 * 1024 * 1024;
       if (blob.size > maxCompletedPdfBytes) {
@@ -750,7 +774,7 @@ export default function App() {
         );
       }
       setExportProgressText('Storing completed PDF...');
-      const completed = normalizeReport(await api.completeReport(savedDraft.id!, blob));
+      const completed = normalizeReport(await queueReportWrite(() => api.completeReport(savedDraft.id!, blob)));
       if (completed.id) serverVersionsRef.current[completed.id] = completed.updatedAt;
       setReport(completed);
       await cacheReport(completed);
