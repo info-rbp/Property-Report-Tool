@@ -206,6 +206,7 @@ export interface ProInspectIntegrationContext {
   exp: number;
   propertyId: string;
   propertyAddress: string;
+  handoffId?: string;
   propertyReference?: string;
   clientId?: string;
   tenancyId?: string;

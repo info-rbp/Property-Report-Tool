@@ -58,10 +58,10 @@ export const api = {
       `/api/properties/${encodeURIComponent(id)}`
     ),
 
-  createReport: (propertyId: string, reportType: ReportType, report: ReportData) =>
+  createReport: (propertyId: string, reportType: ReportType, report: ReportData, proinspectHandoffToken?: string) =>
     apiRequest<ReportData>(`/api/properties/${encodeURIComponent(propertyId)}/reports`, {
       method: 'POST',
-      body: JSON.stringify({ reportType, report }),
+      body: JSON.stringify({ reportType, report, proinspectHandoffToken }),
     }),
 
   getReport: (id: string) =>

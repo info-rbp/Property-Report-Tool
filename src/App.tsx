@@ -231,7 +231,7 @@ export default function App() {
               workOrderReference:context.workOrderId||blank.details.workOrderReference,
             },
           };
-          const created=normalizeReport(await api.createReport(propertyResult.property.id,context.reportType,linkedDraft));
+          const created=normalizeReport(await api.createReport(propertyResult.property.id,context.reportType,linkedDraft,handoffToken));
           if(created.id)serverVersionsRef.current[created.id]=created.updatedAt;
           setSelectedProperty(propertyResult.property);
           localStorage.setItem('proinspect:lastProperty',JSON.stringify(propertyResult.property));
@@ -242,7 +242,7 @@ export default function App() {
           await cacheReport(created).catch(()=>undefined);
           currentUrl.searchParams.delete('proinspect_handoff');
           window.history.replaceState({},'',currentUrl.pathname+(currentUrl.search||'')+currentUrl.hash);
-          setStatusMessage({text:'Report created from ProInspect platform context. Finalisation will publish the issued PDF back to the canonical property record.',type:'success'});
+          setStatusMessage({text:'Report created from ProInspect platform context. Finalisation will submit the PDF to ProInspect for authorised staff review; it will not be automatically issued to customers.',type:'success'});
         }
       } catch (error: any) {
         if (!active) return;
@@ -816,7 +816,7 @@ export default function App() {
     setIsSyncingPlatform(true);
     try{
       await api.publishCompletedReport(report.id);
-      setStatusMessage({text:'Completed report is synced to the canonical ProInspect property record.',type:'success'});
+      setStatusMessage({text:'Completed report has been submitted to ProInspect for staff review before customer issue.',type:'success'});
     }catch(error:any){
       setStatusMessage({text:(error.message||'Unable to sync this report to ProInspect.')+' The immutable Report Tool PDF remains stored and can be retried.',type:'error'});
     }finally{
