@@ -17,6 +17,7 @@
     "pdf:verify": "bun run scripts/verifyPdfGenerator.ts",
     "writes:verify": "bun run scripts/verifyReportWrites.ts",
     "platform:verify": "bun run scripts/verifyPlatformHandoff.ts",
+    "auth:verify": "bun run scripts/verifyPasswordAuth.ts",
     "signing-origin:verify": "bun run scripts/verifyPublicSigningOrigin.ts"
   },
   "dependencies": {
