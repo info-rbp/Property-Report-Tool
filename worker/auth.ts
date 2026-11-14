@@ -9,6 +9,7 @@ export interface AuthEnv extends ResendEnv {
   DEV_USER_EMAIL?: string;
   AUTH_ALLOW_ACCESS_FALLBACK?: string;
   AUTH_BOOTSTRAP_EMAIL?: string;
+  AUTH_BOOTSTRAP_ACCESS_EMAIL?: string;
 }
 
 export type AuthRole = 'admin' | 'staff';
@@ -240,6 +241,12 @@ export async function requestIdentity(request: Request, env: AuthEnv): Promise<A
   throw new AuthError(401, 'Sign in is required.');
 }
 
+function authorisedBootstrapIdentity(email: string, env: AuthEnv): boolean {
+  const targetEmail = env.AUTH_BOOTSTRAP_EMAIL?.trim().toLowerCase();
+  const ownerEmail = env.AUTH_BOOTSTRAP_ACCESS_EMAIL?.trim().toLowerCase();
+  return Boolean(targetEmail && (email === targetEmail || (ownerEmail && email === ownerEmail)));
+}
+
 export async function bootstrapAvailable(env: AuthEnv): Promise<boolean> {
   const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM auth_users').first<{ count: number }>();
   return !row || row.count === 0;
@@ -309,7 +316,7 @@ async function bootstrap(request: Request, env: AuthEnv): Promise<Response> {
     throw new AuthError(403, 'Cloudflare Access is required for initial account setup.');
   }
   const bootstrapEmail = env.AUTH_BOOTSTRAP_EMAIL?.trim().toLowerCase();
-  if (!bootstrapEmail || accessUser.email !== bootstrapEmail) {
+  if (!bootstrapEmail || !authorisedBootstrapIdentity(accessUser.email, env)) {
     throw new AuthError(403, 'This Cloudflare Access user is not authorised to create the first administrator.');
   }
   const body = await jsonBody(request);
@@ -319,10 +326,10 @@ async function bootstrap(request: Request, env: AuthEnv): Promise<Response> {
   const result = await env.DB.prepare(
     'INSERT INTO auth_users (id, email, password_hash, role, is_active, created_at, updated_at) ' +
     "SELECT ?, ?, ?, 'admin', 1, ?, ? WHERE NOT EXISTS (SELECT 1 FROM auth_users)",
-  ).bind(id, accessUser.email, await hashPassword(body.password, 10), now, now).run();
+  ).bind(id, bootstrapEmail, await hashPassword(body.password, 10), now, now).run();
   if (!result.meta.changes) throw new AuthError(409, 'An administrator is already configured.');
   const cookie = await newSession(request, env, id);
-  return response({ email: accessUser.email, role: 'admin', authMethod: 'password' }, 201, cookie);
+  return response({ email: bootstrapEmail, role: 'admin', authMethod: 'password' }, 201, cookie);
 }
 
 async function logout(request: Request, env: AuthEnv): Promise<Response> {
@@ -401,9 +408,13 @@ export async function handleAuthApi(request: Request, env: AuthEnv): Promise<Res
   assertSameOrigin(request);
   if (pathname === '/api/auth/status' && request.method === 'GET') {
     const identity = await requestIdentity(request, env);
-    return response({ authMethod: identity.authMethod, bootstrapAvailable: (identity.authMethod === 'access' || identity.authMethod === 'development') &&
-      Boolean(env.AUTH_BOOTSTRAP_EMAIL && identity.email === env.AUTH_BOOTSTRAP_EMAIL.trim().toLowerCase())
-      ? await bootstrapAvailable(env) : false });
+    const available = (identity.authMethod === 'access' || identity.authMethod === 'development') &&
+      authorisedBootstrapIdentity(identity.email, env) && await bootstrapAvailable(env);
+    return response({
+      authMethod: identity.authMethod,
+      bootstrapAvailable: available,
+      bootstrapEmail: available ? env.AUTH_BOOTSTRAP_EMAIL?.trim().toLowerCase() : undefined,
+    });
   }
   if (request.method !== 'POST') throw new AuthError(405, 'Method not allowed.');
   if (pathname === '/api/auth/login') return login(request, env);
