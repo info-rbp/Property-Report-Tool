@@ -35,7 +35,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => apiRequest<{ email: string; role: 'admin' | 'staff'; authMethod: 'access' | 'password' | 'development' }>('/api/me'),
-  authStatus: () => apiRequest<{ authMethod: string; bootstrapAvailable: boolean }>('/api/auth/status'),
+  authStatus: () => apiRequest<{ authMethod: string; bootstrapAvailable: boolean; bootstrapEmail?: string }>('/api/auth/status'),
   login: (email: string, password: string) =>
     apiRequest<{ email: string; role: string }>('/api/auth/login', {
       method: 'POST', body: JSON.stringify({ email, password }),
