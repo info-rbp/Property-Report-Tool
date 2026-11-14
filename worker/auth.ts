@@ -7,6 +7,7 @@ export interface AuthEnv extends ResendEnv {
   POLICY_AUD?: string;
   DEV_USER_EMAIL?: string;
   AUTH_ALLOW_ACCESS_FALLBACK?: string;
+  AUTH_BOOTSTRAP_EMAIL?: string;
 }
 
 export type AuthRole = 'admin' | 'staff';
@@ -301,6 +302,10 @@ async function bootstrap(request: Request, env: AuthEnv): Promise<Response> {
   if (!isDevelopment(request) && accessUser.authMethod !== 'access') {
     throw new AuthError(403, 'Cloudflare Access is required for initial account setup.');
   }
+  const bootstrapEmail = env.AUTH_BOOTSTRAP_EMAIL?.trim().toLowerCase();
+  if (!bootstrapEmail || accessUser.email !== bootstrapEmail) {
+    throw new AuthError(403, 'This Cloudflare Access user is not authorised to create the first administrator.');
+  }
   const body = await jsonBody(request);
   validatePassword(body.password);
   const now = new Date().toISOString();
@@ -390,7 +395,9 @@ export async function handleAuthApi(request: Request, env: AuthEnv): Promise<Res
   assertSameOrigin(request);
   if (pathname === '/api/auth/status' && request.method === 'GET') {
     const identity = await requestIdentity(request, env);
-    return response({ authMethod: identity.authMethod, bootstrapAvailable: identity.authMethod === 'access' || identity.authMethod === 'development' ? await bootstrapAvailable(env) : false });
+    return response({ authMethod: identity.authMethod, bootstrapAvailable: (identity.authMethod === 'access' || identity.authMethod === 'development') &&
+      Boolean(env.AUTH_BOOTSTRAP_EMAIL && identity.email === env.AUTH_BOOTSTRAP_EMAIL.trim().toLowerCase())
+      ? await bootstrapAvailable(env) : false });
   }
   if (request.method !== 'POST') throw new AuthError(405, 'Method not allowed.');
   if (pathname === '/api/auth/login') return login(request, env);
