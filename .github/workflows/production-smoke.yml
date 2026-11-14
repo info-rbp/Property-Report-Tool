@@ -47,11 +47,18 @@ jobs:
 
               editor_status="$(curl -sS -o /tmp/editor.html -w '%{http_code}' --max-time 15 "$EDITOR_URL" || true)"
               case "$editor_status" in
-                302|401|403) ;;
-                *) echo "Staff editor hostname is not protected by Cloudflare Access: $editor_status"; exit 1 ;;
+                302|401|403) echo "Editor still protected by Cloudflare Access." ;;
+                200)
+                  editor_api_status="$(curl -sS -o /tmp/editor-api.json -w '%{http_code}' --max-time 15 "${EDITOR_URL}api/me" || true)"
+                  case "$editor_api_status" in
+                    401|403) echo "Editor login page is public and report APIs require authentication." ;;
+                    *) echo "Unauthorized editor API unexpectedly accessible: $editor_api_status"; cat /tmp/editor-api.json; exit 1 ;;
+                  esac
+                  ;;
+                *) echo "Staff editor hostname has unexpected response: $editor_status"; exit 1 ;;
               esac
 
-              echo "Dedicated public signing routes are healthy and all non-public Report Tool APIs remain Access-protected."
+              echo "Public signing works and non-public Report Tool APIs remain protected."
               exit 0
             fi
 

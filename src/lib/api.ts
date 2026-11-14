@@ -25,14 +25,34 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // keep default message
     }
-    throw new Error(message);
+    const error = new Error(message) as Error & { status: number };
+    error.status = response.status;
+    throw error;
   }
 
   return response.json() as Promise<T>;
 }
 
 export const api = {
-  me: () => apiRequest<{ email: string }>('/api/me'),
+  me: () => apiRequest<{ email: string; role: 'admin' | 'staff'; authMethod: 'access' | 'password' | 'development' }>('/api/me'),
+  authStatus: () => apiRequest<{ authMethod: string; bootstrapAvailable: boolean }>('/api/auth/status'),
+  login: (email: string, password: string) =>
+    apiRequest<{ email: string; role: string }>('/api/auth/login', {
+      method: 'POST', body: JSON.stringify({ email, password }),
+    }),
+  bootstrap: (password: string) =>
+    apiRequest<{ email: string; role: string }>('/api/auth/bootstrap', {
+      method: 'POST', body: JSON.stringify({ password }),
+    }),
+  logout: () => apiRequest<{ success: boolean }>('/api/auth/logout', { method: 'POST', body: '{}' }),
+  requestPasswordReset: (email: string) =>
+    apiRequest<{ message: string }>('/api/auth/password-reset/request', {
+      method: 'POST', body: JSON.stringify({ email }),
+    }),
+  confirmPasswordReset: (token: string, password: string) =>
+    apiRequest<{ message: string }>('/api/auth/password-reset/confirm', {
+      method: 'POST', body: JSON.stringify({ token, password }),
+    }),
 
   resolveProInspectHandoff: (token: string) =>
     apiRequest<ProInspectIntegrationContext>(

@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { assertSameOrigin, AuthError, handleAuthApi, requestIdentity } from './auth';
 import { isBuildingManagementTemplate, reportInstanceLabel } from '../src/data/reportCatalogue';
 import { normalizeAreaName } from '../src/lib/reportFormatting';
 import { migrateReportData } from '../src/lib/reportMigration';
@@ -14,6 +14,8 @@ interface Env {
   TEAM_DOMAIN?: string;
   POLICY_AUD?: string;
   DEV_USER_EMAIL?: string;
+  AUTH_ALLOW_ACCESS_FALLBACK?: string;
+  AUTH_BOOTSTRAP_EMAIL?: string;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   SIGNING_BASE_URL?: string;
@@ -89,9 +91,6 @@ function unexpectedErrorResponse(error: unknown): Response {
 
   return json({ error: 'Unexpected server error.' }, 500);
 }
-
-let cachedJwksDomain = '';
-let cachedJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
 function json(data: unknown, status = 200): Response {
   return Response.json(data, {
@@ -237,40 +236,6 @@ function reportSummary(row: ReportRow) {
   };
 }
 
-async function authenticate(request: Request, env: Env): Promise<string> {
-  const hostname = new URL(request.url).hostname;
-  if ((hostname === 'localhost' || hostname === '127.0.0.1') && env.DEV_USER_EMAIL) {
-    return env.DEV_USER_EMAIL;
-  }
-
-  if (!env.TEAM_DOMAIN || !env.POLICY_AUD) {
-    throw new HttpError(503, 'Cloudflare Access is not configured for this deployment.');
-  }
-
-  const token = request.headers.get('cf-access-jwt-assertion');
-  if (!token) {
-    throw new HttpError(401, 'Cloudflare Access authentication is required.');
-  }
-
-  const issuer = env.TEAM_DOMAIN.replace(/\/$/, '');
-  if (!cachedJwks || cachedJwksDomain !== issuer) {
-    cachedJwksDomain = issuer;
-    cachedJwks = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
-  }
-
-  try {
-    const { payload } = await jwtVerify(token, cachedJwks, {
-      issuer,
-      audience: env.POLICY_AUD,
-    });
-    const email = typeof payload.email === 'string' ? payload.email : undefined;
-    if (!email) throw new Error('Access token does not include an email address.');
-    return email;
-  } catch {
-    throw new HttpError(403, 'Cloudflare Access token validation failed.');
-  }
-}
-
 async function getPropertyRow(env: Env, id: string): Promise<PropertyRow> {
   const row = await env.DB.prepare('SELECT * FROM properties WHERE id = ?').bind(id).first<PropertyRow>();
   if (!row) throw new HttpError(404, 'Property not found.');
@@ -364,7 +329,9 @@ async function deleteReportObjects(env: Env, reportId: string): Promise<void> {
 }
 
 async function handleApi(request: Request, env: Env): Promise<Response> {
-  const userEmail = await authenticate(request, env);
+  const identity = await requestIdentity(request, env);
+  const userEmail = identity.email;
+  assertSameOrigin(request);
   const workflowResponse = await handleWorkflowApi(request, env, userEmail);
   if (workflowResponse) return workflowResponse;
 
@@ -372,7 +339,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
 
   if (request.method === 'GET' && url.pathname === '/api/me') {
-    return json({ email: userEmail });
+    return json({ email: userEmail, role: identity.role, authMethod: identity.authMethod });
   }
 
   if (request.method === 'GET' && url.pathname === '/api/integrations/proinspect/handoff') {
@@ -758,8 +725,11 @@ export default {
       const publicWorkflowResponse = await handlePublicWorkflowApi(request, env);
       if (publicWorkflowResponse) return publicWorkflowResponse;
 
+      const authResponse = await handleAuthApi(request, env);
+      if (authResponse) return authResponse;
       return await handleApi(request, env);
     } catch (error) {
+      if (error instanceof AuthError) return json({ error: error.message }, error.status);
       if (error instanceof HttpError) return json({ error: error.message, ...(error.code ? { code:error.code } : {}) }, error.status);
       return unexpectedErrorResponse(error);
     }
