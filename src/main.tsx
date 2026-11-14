@@ -1,6 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import { AuthGate } from './components/AuthGate.tsx';
 import { PublicSigningApp } from './components/PublicSigningApp.tsx';
 import './index.css';
 
@@ -9,6 +10,6 @@ const root = createRoot(document.getElementById('root')!);
 
 root.render(
   <StrictMode>
-    {signingMatch ? <PublicSigningApp token={decodeURIComponent(signingMatch[1])} /> : <App />}
+    {signingMatch ? <PublicSigningApp token={decodeURIComponent(signingMatch[1])} /> : <AuthGate><App /></AuthGate>}
   </StrictMode>,
 );
