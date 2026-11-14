@@ -4,11 +4,15 @@ import { assertSameOrigin, hashPassword, verifyPassword, validatePassword } from
 
 async function run() {
   validatePassword('a-safe-password-with-length');
+  validatePassword('10characters', 10);
   assert.throws(() => validatePassword('short'));
+  assert.throws(() => validatePassword('short', 10));
   const hash = await hashPassword('a-safe-password-with-length');
   assert.equal(hash.startsWith('pbkdf2-sha256$600000$'), true);
   assert.equal(await verifyPassword('a-safe-password-with-length', hash), true);
   assert.equal(await verifyPassword('incorrect-password', hash), false);
+  const bootstrapHash = await hashPassword('10characters', 10);
+  assert.equal(await verifyPassword('10characters', bootstrapHash), true);
   assert.equal(await verifyPassword('a-safe-password-with-length', 'not-a-password-hash'), false);
   assert.doesNotThrow(() => assertSameOrigin(new Request('https://report.creation.proinspect.systems/api/me')));
   assert.doesNotThrow(() => assertSameOrigin(new Request('https://report.creation.proinspect.systems/api/auth/login', {
