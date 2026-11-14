@@ -33,6 +33,9 @@ async function run() {
   assert.ok(auth.includes('isReportEditorHost(request)'));
   assert.ok(auth.includes('cloudflareAccessIdentity(request, env)'));
   assert.ok(auth.includes('INSERT INTO auth_users'));
+  assert.ok(auth.includes('authorisedBootstrapIdentity(accessUser.email, env)'));
+  assert.ok(auth.includes('.bind(id, bootstrapEmail, await hashPassword(body.password, 10)'));
+  assert.ok(fs.readFileSync('wrangler.jsonc', 'utf8').includes('AUTH_BOOTSTRAP_ACCESS_EMAIL'));
   assert.ok(auth.includes('DELETE FROM auth_sessions WHERE user_id = ?'));
   assert.ok(app.includes('PublicSigningApp') && app.includes('<AuthGate><App /></AuthGate>'));
   assert.ok(schema.includes('CREATE TABLE IF NOT EXISTS auth_sessions'));

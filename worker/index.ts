@@ -16,6 +16,7 @@ interface Env {
   DEV_USER_EMAIL?: string;
   AUTH_ALLOW_ACCESS_FALLBACK?: string;
   AUTH_BOOTSTRAP_EMAIL?: string;
+  AUTH_BOOTSTRAP_ACCESS_EMAIL?: string;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   SIGNING_BASE_URL?: string;

@@ -17,6 +17,7 @@ function clearLocalReportingData(): void {
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<Mode>('checking');
   const [identity, setIdentity] = useState<Me | null>(null);
+  const [bootstrapEmail, setBootstrapEmail] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -35,6 +36,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         if (me.authMethod !== 'password') {
           const status = await api.authStatus();
           if (!active) return;
+          setBootstrapEmail(status.bootstrapEmail || me.email);
           setMode(status.bootstrapAvailable ? 'bootstrap' : 'login');
         } else {
           setMode('ready');
@@ -151,7 +153,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-600" placeholder="name@company.com.au" />
             </label>
           )}
-          {setupMode && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">{identity?.email}</p>}
+          {setupMode && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">{bootstrapEmail || identity?.email}</p>}
           {(mode === 'login' || setupMode || resetMode) && (
             <label className="block text-sm font-medium text-slate-800">Password
               <input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={mode === 'login' ? undefined : setupMode ? 10 : 12}

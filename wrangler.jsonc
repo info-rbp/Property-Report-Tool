@@ -8,7 +8,8 @@
     "SIGNING_BASE_URL": "https://signing.proinspect.systems",
     "PROINSPECT_INGEST_URL": "https://bookings.proinspect.systems/api/integrations/reports",
     "AUTH_ALLOW_ACCESS_FALLBACK": "true",
-    "AUTH_BOOTSTRAP_EMAIL": "info@proinspect.systems"
+    "AUTH_BOOTSTRAP_EMAIL": "info@proinspect.systems",
+    "AUTH_BOOTSTRAP_ACCESS_EMAIL": "info@remotebusinesspartner.com.au"
   },
   "routes": [
     {
