@@ -388,6 +388,10 @@ export async function handleAuthApi(request: Request, env: AuthEnv): Promise<Res
   if (!pathname.startsWith('/api/auth/')) return null;
   if (!isReportEditorHost(request)) throw new AuthError(404, 'API route not found.');
   assertSameOrigin(request);
+  if (pathname === '/api/auth/status' && request.method === 'GET') {
+    const identity = await requestIdentity(request, env);
+    return response({ authMethod: identity.authMethod, bootstrapAvailable: identity.authMethod === 'access' || identity.authMethod === 'development' ? await bootstrapAvailable(env) : false });
+  }
   if (request.method !== 'POST') throw new AuthError(405, 'Method not allowed.');
   if (pathname === '/api/auth/login') return login(request, env);
   if (pathname === '/api/auth/bootstrap') return bootstrap(request, env);
