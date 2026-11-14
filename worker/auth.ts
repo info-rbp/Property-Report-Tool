@@ -111,14 +111,14 @@ async function derivePassword(password: string, salt: Uint8Array, iterations: nu
   return new Uint8Array(bits);
 }
 
-export function validatePassword(password: unknown): asserts password is string {
-  if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
-    throw new AuthError(400, 'Password must contain 12 to 128 characters.');
+export function validatePassword(password: unknown, minLength = 12): asserts password is string {
+  if (typeof password !== 'string' || password.length < minLength || password.length > 128) {
+    throw new AuthError(400, `Password must contain ${minLength} to 128 characters.`);
   }
 }
 
-export async function hashPassword(password: string): Promise<string> {
-  validatePassword(password);
+export async function hashPassword(password: string, minLength = 12): Promise<string> {
+  validatePassword(password, minLength);
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const digest = await derivePassword(password, salt, ITERATIONS);
   return 'pbkdf2-sha256$' + ITERATIONS + '$' + base64Url(salt) + '$' + base64Url(digest);
@@ -307,13 +307,13 @@ async function bootstrap(request: Request, env: AuthEnv): Promise<Response> {
     throw new AuthError(403, 'This Cloudflare Access user is not authorised to create the first administrator.');
   }
   const body = await jsonBody(request);
-  validatePassword(body.password);
+  validatePassword(body.password, 10);
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   const result = await env.DB.prepare(
     'INSERT INTO auth_users (id, email, password_hash, role, is_active, created_at, updated_at) ' +
     "SELECT ?, ?, ?, 'admin', 1, ?, ? WHERE NOT EXISTS (SELECT 1 FROM auth_users)",
-  ).bind(id, accessUser.email, await hashPassword(body.password), now, now).run();
+  ).bind(id, accessUser.email, await hashPassword(body.password, 10), now, now).run();
   if (!result.meta.changes) throw new AuthError(409, 'An administrator is already configured.');
   const cookie = await newSession(request, env, id);
   return response({ email: accessUser.email, role: 'admin', authMethod: 'password' }, 201, cookie);
