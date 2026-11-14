@@ -56,8 +56,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     event.preventDefault();
     setMessage('');
     if (mode === 'bootstrap' || mode === 'reset') {
-      if (password.length < 12 || password !== confirm) {
-        setMessage('Use at least 12 characters and ensure both passwords match.');
+      if (password.length < (mode === 'bootstrap' ? 10 : 12) || password !== confirm) {
+        setMessage(`Use at least ${mode === 'bootstrap' ? 10 : 12} characters and ensure both passwords match.`);
         return;
       }
     }
@@ -154,14 +154,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           {setupMode && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">{identity?.email}</p>}
           {(mode === 'login' || setupMode || resetMode) && (
             <label className="block text-sm font-medium text-slate-800">Password
-              <input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={mode === 'login' ? undefined : 12}
+              <input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={mode === 'login' ? undefined : setupMode ? 10 : 12}
                 value={password} onChange={event => setPassword(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-600" />
             </label>
           )}
           {(setupMode || resetMode) && (
             <label className="block text-sm font-medium text-slate-800">Confirm password
-              <input type="password" autoComplete="new-password" required minLength={12} value={confirm}
+              <input type="password" autoComplete="new-password" required minLength={setupMode ? 10 : 12} value={confirm}
                 onChange={event => setConfirm(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-600" />
             </label>
