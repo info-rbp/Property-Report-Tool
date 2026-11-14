@@ -1,3 +1,4 @@
+import { scrypt as nodeScrypt } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { emailBody, sendResendEmail, type ResendEnv } from './email';
 
@@ -49,7 +50,9 @@ export class AuthError extends Error {
 const COOKIE_PROD = '__Host-proinspect_session';
 const COOKIE_DEV = 'proinspect_session_dev';
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
-const ITERATIONS = 600_000;
+const SCRYPT_N = 1 << 15;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
 const encoder = new TextEncoder();
 let jwksDomain = '';
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
@@ -101,14 +104,15 @@ function randomToken(): string {
   return base64Url(crypto.getRandomValues(new Uint8Array(32)));
 }
 
-async function derivePassword(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations, hash: 'SHA-256' },
-    key,
-    256,
-  );
-  return new Uint8Array(bits);
+async function derivePassword(password: string, salt: Uint8Array): Promise<Uint8Array> {
+  // The Workers Web Crypto implementation rejects PBKDF2 iteration counts above 100,000.
+  // Use the supported Node.js scrypt implementation instead, with a memory-hard KDF.
+  return new Promise((resolve, reject) => {
+    nodeScrypt(password, salt, 32, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, maxmem: 64 * 1024 * 1024 }, (error, derived) => {
+      if (error) reject(error);
+      else resolve(new Uint8Array(derived));
+    });
+  });
 }
 
 export function validatePassword(password: unknown, minLength = 12): asserts password is string {
@@ -120,23 +124,25 @@ export function validatePassword(password: unknown, minLength = 12): asserts pas
 export async function hashPassword(password: string, minLength = 12): Promise<string> {
   validatePassword(password, minLength);
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const digest = await derivePassword(password, salt, ITERATIONS);
-  return 'pbkdf2-sha256$' + ITERATIONS + '$' + base64Url(salt) + '$' + base64Url(digest);
+  const digest = await derivePassword(password, salt);
+  return ['scrypt', String(SCRYPT_N), String(SCRYPT_R), String(SCRYPT_P), base64Url(salt), base64Url(digest)].join('$');
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = stored.split('$');
-  if (parts.length !== 4 || parts[0] !== 'pbkdf2-sha256' || parts[1] !== String(ITERATIONS)) return false;
+  if (parts.length !== 6 || parts[0] !== 'scrypt' ||
+    parts[1] !== String(SCRYPT_N) || parts[2] !== String(SCRYPT_R) ||
+    parts[3] !== String(SCRYPT_P)) return false;
   let salt: Uint8Array;
   let expected: Uint8Array;
   try {
-    salt = parseBase64Url(parts[2]);
-    expected = parseBase64Url(parts[3]);
+    salt = parseBase64Url(parts[4]);
+    expected = parseBase64Url(parts[5]);
   } catch {
     return false;
   }
   if (salt.byteLength !== 16 || expected.byteLength !== 32) return false;
-  const actual = await derivePassword(password, salt, ITERATIONS);
+  const actual = await derivePassword(password, salt);
   let difference = 0;
   for (let i = 0; i < actual.length; i++) difference |= actual[i] ^ expected[i];
   return difference === 0;
@@ -283,7 +289,7 @@ async function login(request: Request, env: AuthEnv): Promise<Response> {
   // Always perform a costly hash for a non-existent account to reduce enumeration timing differences.
   const valid = user && user.is_active
     ? await verifyPassword(password, user.password_hash)
-    : (await derivePassword(password, new Uint8Array(16), ITERATIONS), false);
+    : (await derivePassword(password, new Uint8Array(16)), false);
   if (!valid || !user || !user.is_active) {
     await Promise.all([countAttempt(env, ipKey, 15), countAttempt(env, emailKey, 15)]);
     throw new AuthError(401, 'Invalid email or password.');

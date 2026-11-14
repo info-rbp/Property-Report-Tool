@@ -8,12 +8,14 @@ async function run() {
   assert.throws(() => validatePassword('short'));
   assert.throws(() => validatePassword('short', 10));
   const hash = await hashPassword('a-safe-password-with-length');
-  assert.equal(hash.startsWith('pbkdf2-sha256$600000$'), true);
+
+  assert.equal(hash.startsWith('scrypt$32768$8$1$'), true);
   assert.equal(await verifyPassword('a-safe-password-with-length', hash), true);
   assert.equal(await verifyPassword('incorrect-password', hash), false);
   const bootstrapHash = await hashPassword('10characters', 10);
   assert.equal(await verifyPassword('10characters', bootstrapHash), true);
   assert.equal(await verifyPassword('a-safe-password-with-length', 'not-a-password-hash'), false);
+  assert.equal(await verifyPassword('a-safe-password-with-length', 'pbkdf2-sha256$600000$invalid$invalid'), false);
   assert.doesNotThrow(() => assertSameOrigin(new Request('https://report.creation.proinspect.systems/api/me')));
   assert.doesNotThrow(() => assertSameOrigin(new Request('https://report.creation.proinspect.systems/api/auth/login', {
     method: 'POST', headers: { Origin: 'https://report.creation.proinspect.systems' },
@@ -34,6 +36,6 @@ async function run() {
   assert.ok(auth.includes('DELETE FROM auth_sessions WHERE user_id = ?'));
   assert.ok(app.includes('PublicSigningApp') && app.includes('<AuthGate><App /></AuthGate>'));
   assert.ok(schema.includes('CREATE TABLE IF NOT EXISTS auth_sessions'));
-  console.log('PASS: password hashing, cookie auth boundaries and public signing route invariants');
+  console.log('PASS: scrypt password hashing, cookie auth boundaries and public signing route invariants');
 }
 run().catch((error) => { console.error(error); process.exitCode = 1; });
