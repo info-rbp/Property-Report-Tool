@@ -27,6 +27,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     const load = async () => {
+      if (resetToken) { setMode('reset'); return; }
       try {
         const me = await api.me();
         if (!active) return;
@@ -34,7 +35,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         if (me.authMethod !== 'password') {
           const status = await api.authStatus();
           if (!active) return;
-          setMode(status.bootstrapAvailable ? 'bootstrap' : 'ready');
+          setMode(status.bootstrapAvailable ? 'bootstrap' : 'login');
         } else {
           setMode('ready');
         }
@@ -98,7 +99,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       }
       await api.logout();
       clearLocalReportingData();
-      // Clear Access session fallback by returning to the login gate, not retaining editor state.
+      // Require ProInspect sign-in again, even if the Access migration fallback remains enabled.
       window.location.reload();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to sign out.');
