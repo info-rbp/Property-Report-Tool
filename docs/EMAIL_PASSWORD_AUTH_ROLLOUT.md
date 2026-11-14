@@ -5,7 +5,7 @@ This release adds application-managed email/password login to the Report Creatio
 ## Components
 
 - \`migrations/0003_email_password_auth.sql\` adds users, sessions, password-reset tokens and rate-limit counters.
-- \`worker/auth.ts\` authenticates passwords using PBKDF2-HMAC-SHA256 (600,000 iterations, per-user random salt), checks hashed session tokens in D1, uses secure HttpOnly SameSite cookies, and provides first-admin setup and email-based recovery.
+- \`worker/auth.ts\` authenticates passwords using scrypt (N=32768, r=8, p=1, per-user random salt), checks hashed session tokens in D1, uses secure HttpOnly SameSite cookies, and provides first-admin setup and email-based recovery.
 - \`src/components/AuthGate.tsx\` provides login, first-admin setup, forgot-password, reset-password and logout.
 - The existing Cloudflare Access JWT verification remains available only while \`AUTH_ALLOW_ACCESS_FALLBACK=true\` and is needed for secure first-admin setup.
 - Existing \`/api/public/*\` signing remains outside staff authentication. Authentication endpoints only accept requests on the report-creation hostname (or local development).
