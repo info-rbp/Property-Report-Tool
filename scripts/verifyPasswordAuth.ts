@@ -8,7 +8,8 @@ async function run() {
   assert.throws(() => validatePassword('short'));
   assert.throws(() => validatePassword('short', 10));
   const hash = await hashPassword('a-safe-password-with-length');
-  assert.equal(hash.startsWith('scrypt$32768$8$1, true);
+
+  assert.equal(hash.startsWith('scrypt$32768$8$1$'), true);
   assert.equal(await verifyPassword('a-safe-password-with-length', hash), true);
   assert.equal(await verifyPassword('incorrect-password', hash), false);
   const bootstrapHash = await hashPassword('10characters', 10);
