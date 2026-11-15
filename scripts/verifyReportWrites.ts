@@ -188,7 +188,7 @@ assert.throws(() => mergeCsvCommentary(acknowledged.areas, [
 let replaySaveAttempts = 0;
 let latestExpected = '';
 const recoveredOffline = await replayOfflineSave({
-  id: 'offline-save', kind: 'save-report', reportId: acknowledged.id!, createdAt: current,
+  id: 'offline-save', kind: 'save-report', reportId: acknowledged.id!, createdAt: acknowledged.updatedAt!,
   report: localEdits, baseReport: acknowledged, expectedUpdatedAt: acknowledged.updatedAt,
 }, {
   getReport: async () => remoteEdits,
@@ -208,7 +208,7 @@ assert.equal(recoveredOffline.saved?.areas[0].items[0].agentComments, 'Edited lo
 assert.equal(recoveredOffline.saved?.areas[0].items[1].agentComments, 'Changed on second tab');
 assert.equal(recoveredOffline.saved?.photos.length, 2);
 const competingOffline = await replayOfflineSave({
-  id: 'offline-conflict', kind: 'save-report', reportId: acknowledged.id!, createdAt: current,
+  id: 'offline-conflict', kind: 'save-report', reportId: acknowledged.id!, createdAt: acknowledged.updatedAt!,
   report: localEdits, baseReport: acknowledged, expectedUpdatedAt: acknowledged.updatedAt,
 }, {
   getReport: async () => ({
@@ -223,7 +223,7 @@ const competingOffline = await replayOfflineSave({
 assert.ok(competingOffline.conflict?.fields.some((field) => field.endsWith('agentComments')));
 assert.equal(competingOffline.saved, undefined);
 const legacyOffline = await replayOfflineSave({
-  id: 'legacy-offline', kind: 'save-report', reportId: acknowledged.id!, createdAt: current,
+  id: 'legacy-offline', kind: 'save-report', reportId: acknowledged.id!, createdAt: acknowledged.updatedAt!,
   report: localEdits,
 }, {
   getReport: async () => remoteEdits,
