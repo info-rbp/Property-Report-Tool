@@ -498,13 +498,23 @@ export default function App() {
     try {
       const cloud = normalizeReport(await api.getReport(conflict.reportId));
       if (!keepLocal) {
-        await cacheReport(reportRef.current).catch(() => undefined);
+        // A deliberate cloud reload must never irreversibly discard edits.
+        // Export the current local draft before the cloud snapshot replaces it.
+        const backup = new Blob([JSON.stringify(reportRef.current, null, 2)], { type: 'application/json' });
+        const backupUrl = URL.createObjectURL(backup);
+        const link = document.createElement('a');
+        link.href = backupUrl;
+        link.download = `ProInspect_unsaved_${conflict.reportId}_${Date.now()}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(backupUrl), 60_000);
         acknowledgeReport(cloud);
         reportRef.current = cloud;
         setReport(cloud);
         unresolvedConflictRef.current = null;
         setUnresolvedConflict(null);
-        setStatusMessage({ text: 'Latest cloud report loaded. The earlier local draft is retained in device cache.', type: 'info' });
+        setStatusMessage({ text: 'Latest cloud report loaded. The unsaved local draft was exported as a JSON backup before reloading.', type: 'info' });
         return;
       }
       const baseline = acknowledgedReportsRef.current[conflict.reportId];
