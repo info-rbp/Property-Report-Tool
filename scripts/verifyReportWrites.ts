@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ReportWriteCoordinator, mergeCloudPhotoMutation, reportForCloudSave } from '../src/lib/reportWriteCoordinator';
 import { nextReportRevision } from '../src/lib/reportRevision';
+import { isRevisionConflict, reconcileReport } from '../src/lib/reportConflictResolution';
 import type { ReportData, ReportPhoto } from '../src/types/report';
 
 const queue = new ReportWriteCoordinator();
@@ -91,6 +92,66 @@ const afterDeletion = mergeCloudPhotoMutation(merged, { ...cloud, photos: [cloud
 assert.deepEqual(afterDeletion.photos.map((p) => p.id), ['uploaded', 'pending']);
 assert.equal(afterDeletion.details.additionalComments, 'Commentary edited during upload');
 
+// Reconcile a cloud photo and unrelated commentary edit without discarding either.
+const acknowledged: ReportData = {
+  ...base,
+  updatedAt: '2026-11-08T07:00:00.000Z',
+  areas: [{
+    id: 'kitchen',
+    name: 'Kitchen',
+    items: [
+      { id: 'tap', name: 'Tap', agentComments: 'Original note', clean: true },
+      { id: 'sink', name: 'Sink', agentComments: 'Original sink', clean: true },
+    ],
+  }],
+  photos: [photo('existing', 'Original caption')],
+};
+const localEdits: ReportData = {
+  ...acknowledged,
+  areas: [{
+    ...acknowledged.areas[0],
+    items: [{ ...acknowledged.areas[0].items[0], agentComments: 'Edited locally' },
+      acknowledged.areas[0].items[1]],
+  }],
+};
+const remoteEdits: ReportData = {
+  ...acknowledged,
+  updatedAt: '2026-11-08T07:00:02.000Z',
+  areas: [{
+    ...acknowledged.areas[0],
+    items: [acknowledged.areas[0].items[0],
+      { ...acknowledged.areas[0].items[1], agentComments: 'Changed on second tab' }],
+  }],
+  photos: [...acknowledged.photos, photo('new-photo', 'New cloud photo')],
+};
+const independent = reconcileReport(acknowledged, localEdits, remoteEdits);
+assert.deepEqual(independent.conflicts, []);
+assert.equal(independent.report.areas[0].items[0].agentComments, 'Edited locally');
+assert.equal(independent.report.areas[0].items[1].agentComments, 'Changed on second tab');
+assert.equal(independent.report.photos.length, 2);
+assert.equal(independent.report.updatedAt, remoteEdits.updatedAt);
+
+const overlapping = reconcileReport(acknowledged, localEdits, {
+  ...remoteEdits,
+  areas: [{
+    ...remoteEdits.areas[0],
+    items: [{ ...remoteEdits.areas[0].items[0], agentComments: 'Other device wrote this' },
+      remoteEdits.areas[0].items[1]],
+  }],
+});
+assert.ok(overlapping.conflicts.includes('areas[kitchen].items[tap].agentComments'));
+assert.equal(overlapping.report.areas[0].items[0].agentComments, 'Edited locally',
+  'overlapping draft must keep unsaved local text, not silently discard it');
+assert.equal(overlapping.report.areas[0].items[1].agentComments, 'Changed on second tab');
+
+const deletion = reconcileReport(acknowledged,
+  { ...localEdits, photos: [] }, remoteEdits);
+assert.deepEqual(deletion.report.photos.map((p) => p.id), ['new-photo'],
+  'local photo deletion must not erase a new cloud photo');
+assert.ok(isRevisionConflict({ status: 409, message: 'This draft changed in another browser or device' }));
+assert.ok(!isRevisionConflict({ status: 409, message: 'Completed reports cannot be edited.' }));
+assert.ok(!isRevisionConflict({ status: 500, message: 'This draft changed in another browser or device' }));
+
 const current = '2026-11-08T07:00:00.123Z';
 assert.equal(nextReportRevision(current, Date.parse(current)), '2026-11-08T07:00:00.124Z');
 assert.equal(nextReportRevision(current, Date.parse(current) - 10), '2026-11-08T07:00:00.124Z');
@@ -148,6 +209,9 @@ assert.ok(app.includes('queueReportWrite(() =>\n          syncOfflineOperations'
 assert.ok(app.includes('await photoUploadQueueRef.current'),
   'navigation and finalisation should await pending photo uploads');
 assert.ok(worker.includes('nextReportRevision(row.updated_at)'));
+assert.ok(app.includes('reconcileReport(baseline, localNow, cloud)'), 'conflict recovery must merge against acknowledged baseline');
+assert.ok(app.includes('setUnresolvedConflict({ reportId, fields: merged.conflicts })'), 'same-field conflicts must pause for user choice');
+assert.ok(app.includes('unresolvedConflictRef.current === report.id'), 'autosave must stop while conflicting edits remain');
 assert.ok(worker.includes('WHERE id = ? AND updated_at = ?'), 'D1 atomic compare-and-set must remain in place');
 
 console.log('Report save/upload race regression passed: serial writes, latest-draft snapshot,');
