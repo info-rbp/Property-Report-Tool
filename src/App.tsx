@@ -26,6 +26,7 @@ import { createReportFromTemplate, createTemplateSnapshot } from './lib/template
 import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
 import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
+import { mergeCsvCommentary } from './lib/csvCommentaryMerge';
 import { processInspectionImage } from './lib/imageProcessor';
 import { normalizeAreaName } from './lib/reportFormatting';
 import {
@@ -34,6 +35,8 @@ import {
   optimisticOfflinePhoto,
   queueOfflinePhoto,
   queueOfflineSave,
+  removeOfflineOperation,
+  removeOfflineSaveForReport,
   syncOfflineOperations,
 } from './lib/offlineQueue';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
@@ -76,6 +79,8 @@ export default function App() {
   const [exportProgressText, setExportProgressText] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [pendingOfflineOperations, setPendingOfflineOperations] = useState(0);
+  const [isSyncingOffline, setIsSyncingOffline] = useState(false);
+  const [photoFailures, setPhotoFailures] = useState<Array<{ name: string; message: string; queued: boolean }>>([]);
   const [unresolvedConflict, setUnresolvedConflict] = useState<{ reportId: string; fields: string[] } | null>(null);
 
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -88,6 +93,8 @@ export default function App() {
   const photoUploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const queuedPhotoCountRef = useRef(0);
   const lastPhotoUploadFailureRef = useRef<string | null>(null);
+  const isOfflineSyncingRef = useRef(false);
+  const retryOfflineSyncRef = useRef<() => Promise<void>>(async () => undefined);
   const reportRef = useRef<ReportData | null>(null);
 
   useEffect(() => {
@@ -102,52 +109,91 @@ export default function App() {
   useEffect(() => {
     const refreshCount = () => countOfflineOperations().then(setPendingOfflineOperations).catch(() => undefined);
     const sync = async () => {
+      if (isOfflineSyncingRef.current || !navigator.onLine) return;
+      isOfflineSyncingRef.current = true;
+      setIsSyncingOffline(true);
       setIsOffline(false);
       try {
+        const initiallyPending = await countOfflineOperations();
+        if (initiallyPending === 0) {
+          setPendingOfflineOperations(0);
+          return;
+        }
         const result = await queueReportWrite(() =>
           syncOfflineOperations((remaining) => setPendingOfflineOperations(remaining))
         );
         const currentId = reportRef.current?.id;
-        const updated = currentId ? result.reports.filter((candidate) => candidate.id === currentId).at(-1) : undefined;
+        const updated = currentId ? result.reports.find((candidate) => candidate.id === currentId) : undefined;
         if (updated) {
-          const normalized = await hydrateOfflinePhotoPreviews(normalizeReport(updated));
-          acknowledgeReport(normalized);
+          const cloud = normalizeReport(updated);
+          acknowledgeReport(cloud);
+          const hydrated = await hydrateOfflinePhotoPreviews(cloud);
           const current = reportRef.current;
-          if (current && current.id === normalized.id) {
-            const merged = mergeCloudPhotoMutation(current, normalized);
-            reportRef.current = merged;
-            setReport((previous) =>
-              previous && previous.id === normalized.id ? mergeCloudPhotoMutation(previous, normalized) : previous
-            );
-            await cacheReport(merged).catch(() => undefined);
+          if (current?.id === cloud.id) {
+            const source = result.sourceReports[cloud.id];
+            const merged = source
+              ? reconcileReport(source, current, hydrated)
+              : { report: mergeCloudPhotoMutation(current, hydrated), conflicts: [] };
+            reportRef.current = merged.report;
+            setReport((previous) => previous?.id === cloud.id ? merged.report : previous);
+            await cacheReport(merged.report).catch(() => undefined);
+            if (merged.conflicts.length && !result.conflict) {
+              unresolvedConflictRef.current = cloud.id;
+              setUnresolvedConflict({ reportId: cloud.id, fields: merged.conflicts });
+            }
           } else {
-            await cacheReport(normalized).catch(() => undefined);
+            await cacheReport(hydrated).catch(() => undefined);
           }
         }
-        setPendingOfflineOperations(result.remaining);
-        if (result.remaining === 0) {
-          setStatusMessage({ text: 'Offline changes synced to the cloud.', type: 'success' });
-        } else {
+        if (result.conflict) {
+          const conflict = result.conflict;
+          const current = reportRef.current;
+          const hydrated = await hydrateOfflinePhotoPreviews(normalizeReport(conflict.local));
+          const merged = current?.id === conflict.reportId
+            ? reconcileReport(conflict.queuedReport, current, hydrated)
+            : { report: hydrated, conflicts: [] };
+          acknowledgeReport(normalizeReport(conflict.cloud));
+          if (current?.id === conflict.reportId) {
+            reportRef.current = merged.report;
+            setReport(merged.report);
+            await cacheReport(merged.report).catch(() => undefined);
+            unresolvedConflictRef.current = conflict.reportId;
+            setUnresolvedConflict({
+              reportId: conflict.reportId,
+              fields: [...new Set([...conflict.fields, ...merged.conflicts])],
+            });
+          }
           setStatusMessage({
-            text: `${result.remaining} offline change${result.remaining === 1 ? '' : 's'} still need attention. A cloud conflict or connection error stopped automatic sync.`,
+            text: `Offline edits need review for report ${conflict.reportId}. The queued work remains safely on this device.`,
             type: 'error',
           });
+        } else if (result.failure) {
+          setStatusMessage({ text: `Offline sync stopped: ${result.failure}. Retained ${result.remaining} queued operation(s).`, type: 'error' });
+        } else if (result.remaining === 0) {
+          lastPhotoUploadFailureRef.current = null;
+          setPhotoFailures((previous) => previous.filter((item) => !item.queued));
+          setStatusMessage({ text: 'All queued offline edits and photos synced to the cloud.', type: 'success' });
+        } else {
+          setStatusMessage({ text: `${result.remaining} offline operation(s) still need attention.`, type: 'error' });
         }
+        setPendingOfflineOperations(result.remaining);
       } catch (error: any) {
         setStatusMessage({ text: error.message || 'Unable to sync offline changes.', type: 'error' });
+      } finally {
+        isOfflineSyncingRef.current = false;
+        setIsSyncingOffline(false);
       }
     };
+    retryOfflineSyncRef.current = sync;
     const offline = () => {
       setIsOffline(true);
       void refreshCount();
-      setStatusMessage({ text: 'Offline field mode. Changes and photos will be stored on this device until reception returns.', type: 'info' });
+      setStatusMessage({ text: 'Offline field mode. Changes and photos are stored on this device until reception returns.', type: 'info' });
     };
-
     window.addEventListener('online', sync);
     window.addEventListener('offline', offline);
     void refreshCount();
     if (navigator.onLine) void sync();
-
     return () => {
       window.removeEventListener('online', sync);
       window.removeEventListener('offline', offline);
@@ -180,7 +226,7 @@ export default function App() {
         const expectedUpdatedAt = serverVersionsRef.current[reportId] || latest.updatedAt;
         if (!navigator.onLine) {
           await cacheReport(latest).catch(() => undefined);
-          await queueOfflineSave(latest, expectedUpdatedAt);
+          await queueOfflineSave(latest, expectedUpdatedAt, acknowledgedReportsRef.current[reportId]);
           setPendingOfflineOperations(await countOfflineOperations().catch(() => 1));
           setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
           return latest;
@@ -276,7 +322,7 @@ export default function App() {
             },
           };
           const created=normalizeReport(await api.createReport(propertyResult.property.id,context.reportType,linkedDraft));
-          if(created.id)serverVersionsRef.current[created.id]=created.updatedAt;
+          acknowledgeReport(created);
           setSelectedProperty(propertyResult.property);
           localStorage.setItem('proinspect:lastProperty',JSON.stringify(propertyResult.property));
           setReportSummaries(propertyResult.reports);
@@ -414,7 +460,6 @@ export default function App() {
       const created = normalizeReport(await api.createReport(selectedProperty.id, type, blank));
       acknowledgeReport(created);
       reportRef.current = created;
-      reportRef.current = created;
       setReport(created);
       setViewMode('commentary');
       await cacheReport(created);
@@ -431,6 +476,7 @@ export default function App() {
       const prepared = createReportFromTemplate(template.templateData, selectedProperty);
       const created = normalizeReport(await api.createReport(selectedProperty.id, template.reportType, prepared));
       acknowledgeReport(created);
+      reportRef.current = created;
       setReport(created);
       setViewMode('commentary');
       await cacheReport(created);
@@ -509,6 +555,7 @@ export default function App() {
         link.click();
         link.remove();
         window.setTimeout(() => URL.revokeObjectURL(backupUrl), 60_000);
+        await removeOfflineSaveForReport(conflict.reportId);
         acknowledgeReport(cloud);
         reportRef.current = cloud;
         setReport(cloud);
@@ -528,6 +575,8 @@ export default function App() {
       setUnresolvedConflict(null);
       await cacheReport(candidate).catch(() => undefined);
       await persistDraft(candidate);
+      await removeOfflineSaveForReport(conflict.reportId);
+      setPendingOfflineOperations(await countOfflineOperations());
       setStatusMessage({ text: 'Selected local edits saved against the latest cloud version.', type: 'success' });
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to resolve conflict; changes remain cached.', type: 'error' });
@@ -599,12 +648,16 @@ export default function App() {
 
     try {
       const parsed = await parseCsvFile(file);
-      setReport((current) => current ? { ...current, areas: parsed.areas } : current);
+      const current = reportRef.current?.id === report.id ? reportRef.current : report;
+      const merged = mergeCsvCommentary(current.areas, parsed.areas);
+      const summary = `${merged.updatedItems} existing items updated, ${merged.addedItems} items and ${merged.addedAreas} areas added`;
+      if (!window.confirm(`Apply CSV commentary? ${summary}. Existing area/item IDs, photographs and unrelated fields will be preserved. Blank CSV values do not erase existing fields.`)) return;
+      const next = { ...current, areas: merged.areas };
+      reportRef.current = next;
+      setReport(next);
+      await cacheReport(next).catch(() => undefined);
       setViewMode('commentary');
-      setStatusMessage({
-        text: `Imported commentary for ${parsed.areas.length} areas from ${file.name}.`,
-        type: 'success',
-      });
+      setStatusMessage({ text: `CSV applied safely: ${summary}.`, type: 'success' });
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to import CSV.', type: 'error' });
     }
