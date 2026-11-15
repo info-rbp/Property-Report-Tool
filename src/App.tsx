@@ -32,6 +32,7 @@ import { normalizeAreaName } from './lib/reportFormatting';
 import {
   countOfflineOperations,
   hydrateOfflinePhotoPreviews,
+  listOfflineOperations,
   optimisticOfflinePhoto,
   queueOfflinePhoto,
   queueOfflineCover,
@@ -123,6 +124,7 @@ export default function App() {
         const result = await queueReportWrite(() =>
           syncOfflineOperations((remaining) => setPendingOfflineOperations(remaining))
         );
+        let combinedNeedsReview = false;
         const currentId = reportRef.current?.id;
         const updated = currentId ? result.reports.find((candidate) => candidate.id === currentId) : undefined;
         if (updated) {
@@ -139,6 +141,7 @@ export default function App() {
             setReport((previous) => previous?.id === cloud.id ? merged.report : previous);
             await cacheReport(merged.report).catch(() => undefined);
             if (merged.conflicts.length && !result.conflict) {
+              combinedNeedsReview = true;
               unresolvedConflictRef.current = cloud.id;
               setUnresolvedConflict({ reportId: cloud.id, fields: merged.conflicts });
             }
@@ -170,6 +173,8 @@ export default function App() {
           });
         } else if (result.failure) {
           setStatusMessage({ text: `Offline sync stopped: ${result.failure}. Retained ${result.remaining} queued operation(s).`, type: 'error' });
+        } else if (combinedNeedsReview) {
+          setStatusMessage({ text: 'Local edits and cloud changes need review before further saving.', type: 'error' });
         } else if (result.remaining === 0) {
           lastPhotoUploadFailureRef.current = null;
           setPhotoFailures((previous) => previous.filter((item) => !item.queued));
@@ -515,10 +520,30 @@ export default function App() {
       acknowledgeReport(cloudReport);
       unresolvedConflictRef.current = null;
       setUnresolvedConflict(null);
-      reportRef.current = cloudReport;
-      setReport(cloudReport);
+      const queued = (await listOfflineOperations()).find(
+        (operation) => operation.kind === 'save-report' && operation.reportId === id
+      );
+      const pending = queued?.kind === 'save-report' ? queued : undefined;
+      let active = await hydrateOfflinePhotoPreviews(cloudReport);
+      if (pending) {
+        if (pending.baseReport) {
+          const merged = reconcileReport(pending.baseReport, pending.report, active);
+          active = merged.report;
+          if (merged.conflicts.length || cloudReport.status === 'completed') {
+            unresolvedConflictRef.current = id;
+            setUnresolvedConflict({ reportId: id, fields: merged.conflicts.length ? merged.conflicts : ['Report completed since offline editing'] });
+          }
+        } else {
+          active = await hydrateOfflinePhotoPreviews(pending.report);
+          unresolvedConflictRef.current = id;
+          setUnresolvedConflict({ reportId: id, fields: ['Legacy offline draft requires review'] });
+        }
+        setStatusMessage({ text: 'Locally queued edits were restored for this report. Review or retry synchronisation before finalising.', type: 'info' });
+      }
+      reportRef.current = active;
+      setReport(active);
       localStorage.setItem('proinspect:lastReportId', id);
-      await cacheReport(cloudReport);
+      await cacheReport(active);
       setViewMode('preview');
     } catch (error: any) {
       const cached = await getCachedReport(id).catch(() => null);
@@ -544,6 +569,9 @@ export default function App() {
     if (!conflict || reportRef.current?.id !== conflict.reportId) return;
     try {
       const cloud = normalizeReport(await api.getReport(conflict.reportId));
+      if (keepLocal && cloud.status === 'completed') {
+        throw new Error('This report is already completed and cannot be modified. Preserve the local backup for review.');
+      }
       if (!keepLocal) {
         // A deliberate cloud reload must never irreversibly discard edits.
         // Export the current local draft before the cloud snapshot replaces it.
@@ -1193,6 +1221,30 @@ export default function App() {
             <button type="button" onClick={() => void resolveConflict(true)} className="rounded bg-amber-900 text-white px-3 py-1.5 font-semibold">Keep my edits</button>
             <button type="button" onClick={() => void resolveConflict(false)} className="rounded border border-amber-800 px-3 py-1.5 font-semibold">Load cloud version</button>
           </div>
+        </div>
+      )}
+
+      {pendingOfflineOperations > 0 && (
+        <div className="px-4 lg:px-8 py-3 border-b border-blue-200 bg-blue-50 text-blue-950 text-sm flex flex-wrap items-center gap-3">
+          <span className="font-semibold">{pendingOfflineOperations} unsynchronised edit/photo operation(s) saved on this device.</span>
+          <button type="button"
+            disabled={isSyncingOffline || isUploadingPhotos || isOffline || Boolean(unresolvedConflict)}
+            onClick={() => void retryOfflineSyncRef.current()}
+            className="rounded bg-blue-800 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
+            {isSyncingOffline ? 'Synchronising…' : 'Retry cloud synchronisation'}
+          </button>
+        </div>
+      )}
+      {photoFailures.length > 0 && (
+        <div role="alert" className="px-4 lg:px-8 py-3 border-b border-red-200 bg-red-50 text-red-900 text-xs">
+          <p className="font-bold">Photographs needing attention ({photoFailures.length})</p>
+          <ul className="mt-1 list-disc pl-5">
+            {photoFailures.slice(0, 12).map((item, index) => (
+              <li key={item.name + index}>
+                {item.name}: {item.message}. {item.queued ? 'Stored for retry using the button above.' : 'Re-select this source image after correcting the issue.'}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
