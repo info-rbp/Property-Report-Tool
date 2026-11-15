@@ -1058,6 +1058,16 @@ export default function App() {
             {statusMessage.text}
           </div>
         )}
+        {pendingOfflineOperations > 0 && (
+          <div className="px-4 py-3 bg-blue-50 text-blue-950 border-b border-blue-200 text-xs flex items-center gap-3 flex-wrap">
+            <span>{pendingOfflineOperations} unsynchronised report/photo operation(s) safely queued on this device.</span>
+            <button type="button" disabled={isSyncingOffline || isOffline}
+              onClick={() => void retryOfflineSyncRef.current()}
+              className="rounded bg-blue-800 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
+              {isSyncingOffline ? 'Synchronising…' : 'Retry cloud synchronisation'}
+            </button>
+          </div>
+        )}
         <PropertiesDashboard
           properties={properties}
           userEmail={userEmail}
@@ -1085,6 +1095,16 @@ export default function App() {
               : 'bg-blue-50 text-blue-800 border-blue-200'
           }`}>
             {statusMessage.text}
+          </div>
+        )}
+        {pendingOfflineOperations > 0 && (
+          <div className="px-4 py-3 bg-blue-50 text-blue-950 border-b border-blue-200 text-xs flex items-center gap-3 flex-wrap">
+            <span>{pendingOfflineOperations} unsynchronised report/photo operation(s) safely queued on this device.</span>
+            <button type="button" disabled={isSyncingOffline || isOffline}
+              onClick={() => void retryOfflineSyncRef.current()}
+              className="rounded bg-blue-800 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
+              {isSyncingOffline ? 'Synchronising…' : 'Retry cloud synchronisation'}
+            </button>
           </div>
         )}
         <ReportDashboard
