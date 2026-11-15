@@ -34,6 +34,7 @@ import {
   hydrateOfflinePhotoPreviews,
   optimisticOfflinePhoto,
   queueOfflinePhoto,
+  queueOfflineCover,
   queueOfflineSave,
   removeOfflineOperation,
   removeOfflineSaveForReport,
@@ -708,29 +709,33 @@ export default function App() {
   };
 
   const handleUploadCoverPhoto = async (file: File) => {
-    if (!reportRef.current?.id || reportRef.current.status === 'completed') return;
-    lastPhotoUploadFailureRef.current = null;
-
-    setStatusMessage({
-      text: 'Cover photo queued for upload. You can continue working while it uploads.',
-      type: 'info',
-    });
-
+    const activeReport = reportRef.current;
+    if (!activeReport?.id || activeReport.status === 'completed') return;
     return enqueuePhotoWork(1, async () => {
       try {
-        const latest = reportRef.current;
-        if (!latest?.id || latest.status === 'completed') return;
-        await saveDraftImmediately(latest);
+        await saveDraftImmediately(activeReport);
         const processed = await processInspectionImage(file);
+        await queueOfflineCover(activeReport.id!, processed.blob);
+        setPendingOfflineOperations(await countOfflineOperations());
+        if (!navigator.onLine) {
+          setStatusMessage({ text: 'Cover photo safely queued on this device until connectivity returns.', type: 'info' });
+          return;
+        }
         const updated = normalizeReport(await queueReportWrite(() =>
-          api.uploadCoverPhoto(latest.id!, processed.blob)
+          api.uploadCoverPhoto(activeReport.id!, processed.blob)
         ));
         mergePhotoMutationResult(updated);
-        setStatusMessage({ text: 'Cover photo uploaded.', type: 'success' });
+        await removeOfflineOperation(`cover-${activeReport.id}`);
+        setPendingOfflineOperations(await countOfflineOperations());
+        setPhotoFailures((previous) => previous.filter((item) => item.name !== file.name));
+        setStatusMessage({ text: 'Cover photo uploaded and verified.', type: 'success' });
       } catch (error: any) {
         const failure = error.message || 'Unable to upload cover photo.';
         lastPhotoUploadFailureRef.current = failure;
-        setStatusMessage({ text: failure, type: 'error' });
+        setPhotoFailures((previous) => [...previous.filter((item) => item.name !== file.name),
+          { name: file.name, message: failure, queued: true }]);
+        setStatusMessage({ text: `Cover photo: ${failure}. Retry queued uploads when online.`, type: 'error' });
+        setPendingOfflineOperations(await countOfflineOperations().catch(() => 0));
       }
     });
   };
@@ -743,10 +748,8 @@ export default function App() {
   ) => {
     const activeReport = reportRef.current;
     if (!activeReport?.id || activeReport.status === 'completed' || files.length === 0) return;
-    lastPhotoUploadFailureRef.current = null;
-
     setStatusMessage({
-      text: `Queued ${files.length} photo${files.length === 1 ? '' : 's'} for upload. You can continue editing or queue photos to other categories/items.`,
+      text: `Processing ${files.length} photograph(s). Each processed file is queued safely before upload.`,
       type: 'info',
     });
 
@@ -755,93 +758,120 @@ export default function App() {
         const latestBeforeSave = reportRef.current;
         if (!latestBeforeSave?.id || latestBeforeSave.status === 'completed') return;
         const savedDraft = await saveDraftImmediately(latestBeforeSave);
-
         const latestTargetReport = reportRef.current || savedDraft;
         const targetArea = areaId
           ? latestTargetReport.areas.find((area) => area.id === areaId)
           : latestTargetReport.areas.find((area) => normalizeAreaName(area.name) === normalizeAreaName(areaName));
-        if (!targetArea) {
-          throw new Error('The selected photo category no longer exists. Drop the photos onto the category again.');
-        }
+        if (!targetArea) throw new Error('The selected photo category no longer exists. Reassign the files and retry.');
+        const item = itemId ? targetArea.items.find((candidate) => candidate.id === itemId) : undefined;
+        if (itemId && !item) throw new Error('The selected reporting item no longer exists. Reassign the files and retry.');
 
-        const item = itemId
-          ? targetArea.items.find((candidate) => candidate.id === itemId)
-          : undefined;
-        if (itemId && !item) {
-          throw new Error('The selected reporting item no longer exists. Drop the photos onto the item again.');
-        }
+        let nextAreaPhotoIndex = latestTargetReport.photos
+          .filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
+          .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
+        let uploaded = 0;
+        let queued = 0;
+        const failures: Array<{ name: string; message: string; queued: boolean }> = [];
 
-        if (!navigator.onLine) {
-          let nextAreaPhotoIndex = latestTargetReport.photos
-            .filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
-            .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
+        for (const file of files) {
+          let processed: Awaited<ReturnType<typeof processInspectionImage>>;
+          try {
+            processed = await processInspectionImage(file);
+          } catch (error) {
+            failures.push({
+              name: file.name,
+              message: error instanceof Error ? error.message : 'Unable to process image.',
+              queued: false,
+            });
+            continue;
+          }
+          const photoIndex = ++nextAreaPhotoIndex;
+          const photoId = crypto.randomUUID();
+          const metadata = {
+            id: photoId,
+            name: item
+              ? `${targetArea.name}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
+              : `${targetArea.name}: Category photo ${photoIndex}`,
+            areaName: targetArea.name,
+            itemId: item?.id,
+            itemName: item?.name,
+            photoIndex,
+            isCover: false,
+          };
 
-          for (const file of files) {
-            const processed = await processInspectionImage(file);
-            const photoIndex = ++nextAreaPhotoIndex;
-            const photoId = crypto.randomUUID();
-            const metadata = {
-              id: photoId,
-              name: item
-                ? `${targetArea.name}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
-                : `${targetArea.name}: Category photo ${photoIndex}`,
-              areaName: targetArea.name,
-              itemId: item?.id,
-              itemName: item?.name,
-              photoIndex,
-              isCover: false,
-            };
+          try {
+            // Durable write-ahead outbox: if the upload succeeds but the
+            // response is lost, offline replay uses the same idempotent ID.
             await queueOfflinePhoto(latestTargetReport.id!, processed.blob, metadata);
+          } catch (error) {
+            failures.push({
+              name: file.name,
+              message: error instanceof Error ? error.message : 'Unable to store the upload for recovery.',
+              queued: false,
+            });
+            continue;
+          }
+
+          if (!navigator.onLine) {
+            queued += 1;
             const pendingPhoto = optimisticOfflinePhoto(metadata, processed.blob);
             setReport((current) => {
               if (!current || current.id !== latestTargetReport.id) return current;
-              const updated = { ...current, photos: [...current.photos, pendingPhoto] };
-              reportRef.current = updated;
-              return updated;
+              if (current.photos.some((photo) => photo.id === pendingPhoto.id)) return current;
+              const next = { ...current, photos: [...current.photos, pendingPhoto] };
+              reportRef.current = next;
+              return next;
+            });
+            continue;
+          }
+
+          try {
+            const updated = normalizeReport(await queueReportWrite(() =>
+              api.uploadPhoto(latestTargetReport.id!, processed.blob, metadata)
+            ));
+            mergePhotoMutationResult(updated);
+            await removeOfflineOperation(`photo-${photoId}`);
+            uploaded += 1;
+            setPhotoFailures((previous) => previous.filter((failed) => failed.name !== file.name));
+          } catch (error) {
+            queued += 1;
+            failures.push({
+              name: file.name,
+              message: error instanceof Error ? error.message : 'Upload failed.',
+              queued: true,
+            });
+            const pendingPhoto = optimisticOfflinePhoto(metadata, processed.blob);
+            setReport((current) => {
+              if (!current || current.id !== latestTargetReport.id) return current;
+              if (current.photos.some((photo) => photo.id === pendingPhoto.id)) return current;
+              const next = { ...current, photos: [...current.photos, pendingPhoto] };
+              reportRef.current = next;
+              return next;
             });
           }
-          setPendingOfflineOperations(await countOfflineOperations());
-          setStatusMessage({
-            text: `Saved ${files.length} photo${files.length === 1 ? '' : 's'} on this device for upload when reception returns.`,
-            type: 'info',
+        }
+
+        setPendingOfflineOperations(await countOfflineOperations());
+        if (failures.length) {
+          lastPhotoUploadFailureRef.current = failures[0].message;
+          setPhotoFailures((previous) => {
+            const retryNames = new Set(files.map((file) => file.name));
+            return [...previous.filter((item) => !retryNames.has(item.name)), ...failures];
           });
-          return;
+          setStatusMessage({
+            text: `${uploaded} photo(s) uploaded, ${queued} queued for retry, ${failures.length} file(s) need attention. See the failed file list.`,
+            type: 'error',
+          });
+        } else {
+          setStatusMessage({
+            text: navigator.onLine
+              ? `${uploaded} photograph(s) uploaded to ${item?.name || targetArea.name}.`
+              : `${queued} photograph(s) safely queued on this device for upload when online.`,
+            type: navigator.onLine ? 'success' : 'info',
+          });
         }
-
-        let currentServerReport = savedDraft;
-        let nextAreaPhotoIndex = currentServerReport.photos
-          .filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
-          .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
-
-        for (const file of files) {
-          const processed = await processInspectionImage(file);
-          const photoIndex = ++nextAreaPhotoIndex;
-          const photoId = crypto.randomUUID();
-          const name = item
-            ? `${targetArea.name}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
-            : `${targetArea.name}: Category photo ${photoIndex}`;
-
-          currentServerReport = normalizeReport(await queueReportWrite(() =>
-            api.uploadPhoto(currentServerReport.id!, processed.blob, {
-              id: photoId,
-              name,
-              areaName: targetArea.name,
-              itemId: item?.id,
-              itemName: item?.name,
-              photoIndex,
-              isCover: false,
-            })
-          ));
-          mergePhotoMutationResult(currentServerReport);
-
-        }
-
-        setStatusMessage({
-          text: `Uploaded ${files.length} photo${files.length === 1 ? '' : 's'} to ${item?.name || targetArea.name}.`,
-          type: 'success',
-        });
       } catch (error: any) {
-        const failure = error.message || 'Unable to upload photos.';
+        const failure = error.message || 'Unable to process photographs.';
         lastPhotoUploadFailureRef.current = failure;
         setStatusMessage({ text: failure, type: 'error' });
       }
@@ -865,6 +895,9 @@ export default function App() {
   const renderPdf = async (): Promise<Blob> => {
     if (!report) throw new Error('No report is open.');
     await photoUploadQueueRef.current;
+    if (await countOfflineOperations() > 0) {
+      throw new Error('Offline edits or photographs are still queued. Synchronise pending work before exporting the report.');
+    }
     if (lastPhotoUploadFailureRef.current) {
       throw new Error('Some photos have not uploaded. Retry the failed photos before exporting the report.');
     }
@@ -899,6 +932,9 @@ export default function App() {
     setExportProgressText('Finishing photo uploads...');
     try {
       await photoUploadQueueRef.current;
+      if (await countOfflineOperations() > 0) {
+        throw new Error('Offline edits or photographs remain queued. Synchronise them before finalising the report.');
+      }
       if (lastPhotoUploadFailureRef.current) {
         throw new Error('Some photos have not uploaded. Retry failed photos before finalising the report.');
       }
