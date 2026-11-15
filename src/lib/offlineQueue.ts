@@ -35,7 +35,15 @@ export interface OfflinePhotoOperation {
   };
 }
 
-export type OfflineOperation = OfflineSaveOperation | OfflinePhotoOperation;
+export interface OfflineCoverOperation {
+  id: string;
+  kind: 'upload-cover';
+  reportId: string;
+  createdAt: string;
+  blob: Blob;
+}
+
+export type OfflineOperation = OfflineSaveOperation | OfflinePhotoOperation | OfflineCoverOperation;
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -108,6 +116,10 @@ export async function queueOfflinePhoto(
     blob,
     metadata,
   });
+}
+
+export async function queueOfflineCover(reportId: string, blob: Blob): Promise<void> {
+  await putOperation({ id: `cover-${reportId}`, kind: 'upload-cover', reportId, createdAt: new Date().toISOString(), blob });
 }
 
 export async function listOfflineOperations(): Promise<OfflineOperation[]> {
@@ -236,6 +248,18 @@ export async function syncOfflineOperations(
         if (!outcome.saved) throw new Error('Offline save did not return a report.');
         updated = outcome.saved;
         sourceReports[operation.reportId] = operation.report;
+      } else if (operation.kind === 'upload-cover') {
+        let completed: ReportData | undefined;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            completed = await api.uploadCoverPhoto(operation.reportId, operation.blob);
+            break;
+          } catch (error) {
+            if (!isRevisionConflict(error) || attempt === 2) throw error;
+          }
+        }
+        if (!completed) throw new Error('Offline cover photo upload did not finish.');
+        updated = completed;
       } else {
         // A previous upload may have committed but its response was lost.
         // The server treats an existing photo ID as a successful replay.
