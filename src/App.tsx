@@ -1086,7 +1086,7 @@ export default function App() {
         )}
       </div>
 
-      {unresolvedConflict?.reportId === report.id && (
+      {unresolvedConflict && unresolvedConflict.reportId === report.id && (
         <div role="alert" className="px-4 lg:px-8 py-3 border-b border-amber-300 bg-amber-50 text-amber-950 text-sm">
           <p className="font-bold">Cloud save paused: overlapping edits detected</p>
           <p className="mt-1">Both copies changed: {unresolvedConflict.fields.slice(0, 6).join(', ')}. Your local edits remain cached. Choose the version to retain.</p>
