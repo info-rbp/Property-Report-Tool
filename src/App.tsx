@@ -132,7 +132,7 @@ export default function App() {
           acknowledgeReport(cloud);
           const hydrated = await hydrateOfflinePhotoPreviews(cloud);
           const current = reportRef.current;
-          if (current?.id === cloud.id) {
+          if (current && cloud.id && current.id === cloud.id) {
             const source = result.sourceReports[cloud.id];
             const merged = source
               ? reconcileReport(source, current, hydrated)
@@ -245,6 +245,7 @@ export default function App() {
         for (let attempt = 0; attempt < 3; attempt += 1) {
           const currentDraft = reportRef.current?.id === reportId ? reportRef.current : latest;
           const version = serverVersionsRef.current[reportId] || currentDraft.updatedAt;
+          if (!version) throw new Error('Cannot save a report without an acknowledged cloud revision.');
           try {
             saved = normalizeReport(await api.saveReport(reportForCloudSave(currentDraft), version));
             acknowledgeReport(saved);
@@ -677,7 +678,7 @@ export default function App() {
 
     try {
       const parsed = await parseCsvFile(file);
-      const current = reportRef.current?.id === report.id ? reportRef.current : report;
+      const current = reportRef.current && reportRef.current.id === report.id ? reportRef.current : report;
       const merged = mergeCsvCommentary(current.areas, parsed.areas);
       const summary = `${merged.updatedItems} existing items updated, ${merged.addedItems} items and ${merged.addedAreas} areas added`;
       if (!window.confirm(`Apply CSV commentary? ${summary}. Existing area/item IDs, photographs and unrelated fields will be preserved. Blank CSV values do not erase existing fields.`)) return;
