@@ -6,12 +6,25 @@ import { ProInspectLogo } from './ProInspectLogo';
 type Mode = 'checking' | 'login' | 'bootstrap' | 'forgot' | 'reset' | 'ready';
 type Me = Awaited<ReturnType<typeof api.me>>;
 
-function clearLocalReportingData(): void {
+async function deleteLocalDatabase(name: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error || new Error('Unable to clear local report storage.'));
+    request.onblocked = () => reject(new Error('Local storage is open in another ProInspect tab. Close other tabs and retry signing out.'));
+  });
+}
+
+async function clearLocalReportingData(): Promise<void> {
+  // Never carry locally cached report commentary or media into another login.
+  await Promise.all([
+    deleteLocalDatabase('proinspect-report-cache-v1'),
+    deleteLocalDatabase('proinspect-offline-work-v1'),
+  ]);
+  const names = await caches.keys();
+  await Promise.all(names.filter((name) => name.startsWith('proinspect-shell-')).map((name) => caches.delete(name)));
   localStorage.removeItem('proinspect:lastProperty');
   localStorage.removeItem('proinspect:lastReportId');
-  // Cached property reports and queued local edits must not carry across user sessions.
-  indexedDB.deleteDatabase('proinspect-report-cache-v1');
-  indexedDB.deleteDatabase('proinspect-offline-work-v1');
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
@@ -99,8 +112,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         setMessage('There are unsynchronised edits or photos on this device. Synchronise them before signing out.');
         return;
       }
+      await clearLocalReportingData();
       await api.logout();
-      clearLocalReportingData();
       // Require ProInspect sign-in again, even if the Access migration fallback remains enabled.
       window.location.reload();
     } catch (error) {

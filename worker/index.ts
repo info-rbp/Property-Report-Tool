@@ -466,7 +466,12 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         throw new HttpError(409, 'The report type cannot be changed after the report has been created.');
       }
 
-      if (body.expectedUpdatedAt && body.expectedUpdatedAt !== row.updated_at) {
+      // A full-report PUT without a precondition can silently discard work.
+      // The UI and all integrations must send the revision they actually read.
+      if (typeof body.expectedUpdatedAt !== 'string' || !body.expectedUpdatedAt.trim()) {
+        throw new HttpError(428, 'A current report revision is required before saving.');
+      }
+      if (body.expectedUpdatedAt !== row.updated_at) {
         throw new HttpError(
           409,
           'This draft changed in another browser or device. Reopen the report to load the latest cloud version before continuing.'
@@ -558,10 +563,22 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (!(file instanceof File) || !photoId || !name) {
         throw new HttpError(400, 'Photo file and metadata are required.');
       }
+      if (!/^[a-zA-Z0-9_-]{1,100}$/.test(photoId)) {
+        throw new HttpError(400, 'Invalid photo identifier.');
+      }
       if (!file.type.startsWith('image/')) throw new HttpError(400, 'Only image uploads are allowed.');
       if (file.size > 5 * 1024 * 1024) throw new HttpError(413, 'Processed image exceeds the 5 MB upload limit.');
 
       const report = parseReport(row);
+      // An upload may have committed even when the browser lost its response.
+      // Treat the stable photo ID as an idempotency key, not an overwrite request.
+      const existingPhoto = report.photos.find((photo) => photo.id === photoId);
+      if (existingPhoto) {
+        if (!existingPhoto.storageKey || !(await env.REPORT_STORAGE.head(existingPhoto.storageKey))) {
+          throw new HttpError(409, 'Photo metadata exists but its stored file is missing. An administrator must repair this record.');
+        }
+        return json(report);
+      }
       const targetArea = report.areas.find(
         (area) => normalizeAreaName(area.name) === normalizeAreaName(areaName)
       );
@@ -572,7 +589,8 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       if (itemId && !linkedItem) {
         throw new HttpError(400, 'The selected reporting item does not belong to the selected report category.');
       }
-      const key = `reports/${reportId}/photos/${photoId}.jpg`;
+      // Immutable R2 key: a failed concurrent retry can delete only its own new object.
+      const key = `reports/${reportId}/photos/${photoId}/${crypto.randomUUID()}.jpg`;
       await env.REPORT_STORAGE.put(key, await file.arrayBuffer(), {
         httpMetadata: { contentType: 'image/jpeg' },
         customMetadata: { reportId, photoId, uploadedBy: userEmail },

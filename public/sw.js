@@ -1,4 +1,4 @@
-const CACHE = 'proinspect-shell-v3';
+const CACHE = 'proinspect-shell-v4';
 const SHELL = ['/manifest.webmanifest', '/proinspect-icon.svg'];
 
 async function precacheApplication() {
@@ -27,7 +27,9 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+    caches.keys().then((keys) => Promise.all(keys.filter((key) =>
+      key.startsWith('proinspect-shell-') && key !== CACHE
+    ).map((key) => caches.delete(key))))
   );
   self.clients.claim();
 });
@@ -37,25 +39,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  const cacheableReportMedia =
-    url.pathname.startsWith('/api/reports/') &&
-    (url.pathname.includes('/photos/') || url.pathname.endsWith('/cover'));
-
-  if (cacheableReportMedia) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(() => caches.match(request))
-    );
-    return;
-  }
-
+  // Never cache authenticated report photos, cover images, PDFs or API JSON.
+  // Earlier versions used Cache Storage for photos; activation removes those
+  // old proinspect-shell caches. IndexedDB handles deliberately queued offline
+  // work separately and is cleared on sign-out after successful sync.
   if (url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {

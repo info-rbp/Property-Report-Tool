@@ -6,6 +6,8 @@ import { readFileSync } from 'node:fs';
 import { ReportWriteCoordinator, mergeCloudPhotoMutation, reportForCloudSave } from '../src/lib/reportWriteCoordinator';
 import { nextReportRevision } from '../src/lib/reportRevision';
 import { isRevisionConflict, reconcileReport } from '../src/lib/reportConflictResolution';
+import { mergeCsvCommentary } from '../src/lib/csvCommentaryMerge';
+import { replayOfflineSave } from '../src/lib/offlineQueue';
 import type { ReportData, ReportPhoto } from '../src/types/report';
 
 const queue = new ReportWriteCoordinator();
@@ -152,6 +154,83 @@ assert.ok(isRevisionConflict({ status: 409, message: 'This draft changed in anot
 assert.ok(!isRevisionConflict({ status: 409, message: 'Completed reports cannot be edited.' }));
 assert.ok(!isRevisionConflict({ status: 500, message: 'This draft changed in another browser or device' }));
 
+// Phase 1: CSV import must patch existing components without changing IDs,
+// deleting unrelated areas, or invalidating photo item references.
+const incomingCsv = [{
+  id: 'random-imported-area', name: ' KITCHEN ',
+  items: [{ id: 'new-random-id', name: ' tap ', agentComments: 'Detailed imported condition.',
+    clean: null, undamaged: false, working: null }],
+}];
+const csvBefore = JSON.stringify(acknowledged.areas);
+const patchedCsv = mergeCsvCommentary(acknowledged.areas, incomingCsv);
+assert.equal(patchedCsv.updatedItems, 1);
+assert.equal(patchedCsv.addedItems, 0);
+assert.equal(patchedCsv.addedAreas, 0);
+assert.equal(patchedCsv.areas[0].id, 'kitchen');
+assert.equal(patchedCsv.areas[0].items[0].id, 'tap');
+assert.equal(patchedCsv.areas[0].items[0].agentComments, 'Detailed imported condition.');
+assert.equal(patchedCsv.areas[0].items[0].clean, true, 'blank status does not erase existing state');
+assert.equal(patchedCsv.areas[0].items[0].undamaged, false);
+assert.equal(patchedCsv.areas[0].items[1].agentComments, 'Original sink');
+assert.equal(JSON.stringify(acknowledged.areas), csvBefore, 'CSV merger must be immutable');
+const csvAdded = mergeCsvCommentary(acknowledged.areas, [
+  { id: 'csv-new-area', name: 'Bedroom', items: [{ id: 'csv-new-item', name: 'Walls', agentComments: 'Clean' }] },
+]);
+assert.equal(csvAdded.addedAreas, 1);
+assert.equal(csvAdded.areas[0].id, 'kitchen');
+assert.throws(() => mergeCsvCommentary(acknowledged.areas, [
+  { id: 'wrong', name: 'Kitchen', items: [
+    { id: 'a', name: 'Tap', agentComments: 'A' },
+    { id: 'b', name: 'tap', agentComments: 'B' },
+  ] },
+]), /duplicate/i);
+
+let replaySaveAttempts = 0;
+let latestExpected = '';
+const recoveredOffline = await replayOfflineSave({
+  id: 'offline-save', kind: 'save-report', reportId: acknowledged.id!, createdAt: acknowledged.updatedAt!,
+  report: localEdits, baseReport: acknowledged, expectedUpdatedAt: acknowledged.updatedAt,
+}, {
+  getReport: async () => remoteEdits,
+  saveReport: async (draft, expected) => {
+    replaySaveAttempts += 1;
+    latestExpected = expected;
+    if (replaySaveAttempts === 1) {
+      throw Object.assign(new Error('This draft changed in another browser or device.'), { status: 409 });
+    }
+    return { ...draft, updatedAt: '2026-11-08T07:00:03.000Z' };
+  },
+});
+assert.equal(replaySaveAttempts, 2);
+assert.equal(latestExpected, remoteEdits.updatedAt);
+assert.equal(recoveredOffline.conflict, undefined);
+assert.equal(recoveredOffline.saved?.areas[0].items[0].agentComments, 'Edited locally');
+assert.equal(recoveredOffline.saved?.areas[0].items[1].agentComments, 'Changed on second tab');
+assert.equal(recoveredOffline.saved?.photos.length, 2);
+const competingOffline = await replayOfflineSave({
+  id: 'offline-conflict', kind: 'save-report', reportId: acknowledged.id!, createdAt: acknowledged.updatedAt!,
+  report: localEdits, baseReport: acknowledged, expectedUpdatedAt: acknowledged.updatedAt,
+}, {
+  getReport: async () => ({
+    ...remoteEdits,
+    areas: [{ ...remoteEdits.areas[0], items: [
+      { ...remoteEdits.areas[0].items[0], agentComments: 'Changed by another editor' },
+      remoteEdits.areas[0].items[1],
+    ] }],
+  }),
+  saveReport: async () => { throw Object.assign(new Error('This draft changed in another browser or device.'), { status: 409 }); },
+});
+assert.ok(competingOffline.conflict?.fields.some((field) => field.endsWith('agentComments')));
+assert.equal(competingOffline.saved, undefined);
+const legacyOffline = await replayOfflineSave({
+  id: 'legacy-offline', kind: 'save-report', reportId: acknowledged.id!, createdAt: acknowledged.updatedAt!,
+  report: localEdits,
+}, {
+  getReport: async () => remoteEdits,
+  saveReport: async () => { throw new Error('An unguarded legacy save must never be attempted'); },
+});
+assert.deepEqual(legacyOffline.conflict?.fields, ['Offline draft with no confirmed cloud revision']);
+
 const current = '2026-11-08T07:00:00.123Z';
 assert.equal(nextReportRevision(current, Date.parse(current)), '2026-11-08T07:00:00.124Z');
 assert.equal(nextReportRevision(current, Date.parse(current) - 10), '2026-11-08T07:00:00.124Z');
@@ -192,6 +271,8 @@ assert.ok(commentaryMarkup.includes('resize-none') && commentaryMarkup.includes(
 const app = readFileSync('src/App.tsx', 'utf8');
 const photoManager = readFileSync('src/components/PhotoManager.tsx', 'utf8');
 const worker = readFileSync('worker/index.ts', 'utf8');
+const serviceWorker = readFileSync('public/sw.js', 'utf8');
+const authGate = readFileSync('src/components/AuthGate.tsx', 'utf8');
 assert.ok(!app.includes('requestAnimationFrame('),
   'photo uploads must not depend on animation frames, which pause in background Chrome tabs');
 assert.ok(app.includes('min-h-[calc(100vh-125px)]'),
@@ -213,6 +294,18 @@ assert.ok(app.includes('reconcileReport(baseline, localNow, cloud)'), 'conflict 
 assert.ok(app.includes('setUnresolvedConflict({ reportId, fields: merged.conflicts })'), 'same-field conflicts must pause for user choice');
 assert.ok(app.includes('unresolvedConflictRef.current === report.id'), 'autosave must stop while conflicting edits remain');
 assert.ok(worker.includes('WHERE id = ? AND updated_at = ?'), 'D1 atomic compare-and-set must remain in place');
+assert.ok(worker.includes('new HttpError(428,'), 'full-report saves require a confirmed revision');
+assert.ok(worker.includes('REPORT_STORAGE.head(existingPhoto.storageKey)'), 'duplicate photo IDs must be idempotent');
+assert.ok(worker.includes('photos/${photoId}/${crypto.randomUUID()}.jpg'), 'new photo object keys must be immutable');
+assert.ok(!serviceWorker.includes('cacheableReportMedia'), 'never cache authenticated photos in Cache Storage');
+assert.ok(serviceWorker.includes("url.pathname.startsWith('/api/')"), 'all private API requests bypass the service worker cache');
+assert.ok(serviceWorker.includes('proinspect-shell-v4'), 'upgraded SW must clear older private media caches');
+assert.ok(authGate.includes('await clearLocalReportingData()'), 'sign-out must await private cache removal');
+assert.ok(app.includes('mergeCsvCommentary(current.areas, parsed.areas)'), 'CSV import must merge existing items');
+assert.ok(app.includes('await queueOfflinePhoto(latestTargetReport.id!, processed.blob, metadata)'), 'photo uploads must enter a durable outbox first');
+assert.ok(app.includes('await queueOfflineCover(activeReport.id!, processed.blob)'), 'cover images must have retryable storage');
+assert.ok(app.includes('Retry cloud synchronisation'), 'offline and failed photos need an explicit retry control');
+assert.ok(app.includes('await countOfflineOperations() > 0'), 'finalisation and export must block while pending work remains');
 
 console.log('Report save/upload race regression passed: serial writes, latest-draft snapshot,');
 console.log('live edit/photo metadata preservation, failed-write recovery, and unique CAS revisions.');

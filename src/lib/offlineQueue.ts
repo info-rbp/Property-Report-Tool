@@ -1,5 +1,7 @@
 import { api } from './api';
 import type { ReportData, ReportPhoto } from '../types/report';
+import { isRevisionConflict, reconcileReport } from './reportConflictResolution';
+import { reportForCloudSave } from './reportWriteCoordinator';
 
 const DB_NAME = 'proinspect-offline-work-v1';
 const DB_VERSION = 1;
@@ -12,6 +14,8 @@ export interface OfflineSaveOperation {
   createdAt: string;
   report: ReportData;
   expectedUpdatedAt?: string;
+  /** Cloud snapshot acknowledged before offline edits began. */
+  baseReport?: ReportData;
 }
 
 export interface OfflinePhotoOperation {
@@ -31,7 +35,15 @@ export interface OfflinePhotoOperation {
   };
 }
 
-export type OfflineOperation = OfflineSaveOperation | OfflinePhotoOperation;
+export interface OfflineCoverOperation {
+  id: string;
+  kind: 'upload-cover';
+  reportId: string;
+  createdAt: string;
+  blob: Blob;
+}
+
+export type OfflineOperation = OfflineSaveOperation | OfflinePhotoOperation | OfflineCoverOperation;
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -59,7 +71,7 @@ async function putOperation(operation: OfflineOperation): Promise<void> {
   db.close();
 }
 
-export async function queueOfflineSave(report: ReportData, expectedUpdatedAt?: string): Promise<void> {
+export async function queueOfflineSave(report: ReportData, expectedUpdatedAt?: string, baseReport?: ReportData): Promise<void> {
   if (!report.id) return;
   const reportId = report.id;
   // Keep one save operation per report, but retain its original queue position.
@@ -83,6 +95,7 @@ export async function queueOfflineSave(report: ReportData, expectedUpdatedAt?: s
       createdAt: first?.createdAt || new Date().toISOString(),
       report,
       expectedUpdatedAt: first?.expectedUpdatedAt || expectedUpdatedAt,
+      baseReport: first?.baseReport || baseReport,
     } satisfies OfflineSaveOperation);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -103,6 +116,10 @@ export async function queueOfflinePhoto(
     blob,
     metadata,
   });
+}
+
+export async function queueOfflineCover(reportId: string, blob: Blob): Promise<void> {
+  await putOperation({ id: `cover-${reportId}`, kind: 'upload-cover', reportId, createdAt: new Date().toISOString(), blob });
 }
 
 export async function listOfflineOperations(): Promise<OfflineOperation[]> {
@@ -131,38 +148,156 @@ export async function countOfflineOperations(): Promise<number> {
   return (await listOfflineOperations()).length;
 }
 
+export interface OfflineReplayConflict {
+  reportId: string;
+  fields: string[];
+  local: ReportData;
+  cloud: ReportData;
+  queuedReport: ReportData;
+}
+
+export interface OfflineReplayResult {
+  reports: ReportData[];
+  remaining: number;
+  sourceReports: Record<string, ReportData>;
+  conflict?: OfflineReplayConflict;
+  failure?: string;
+}
+
+/**
+ * A stale queued draft is reconciled against its captured cloud baseline.
+ * Legacy queued drafts without a baseline are stopped for explicit review;
+ * they are never sent as unguarded full-document PUTs.
+ */
+export async function replayOfflineSave(
+  operation: OfflineSaveOperation,
+  client: Pick<typeof api, 'saveReport' | 'getReport'> = api,
+): Promise<{ saved?: ReportData; conflict?: OfflineReplayConflict }> {
+  let expected = operation.expectedUpdatedAt || operation.baseReport?.updatedAt;
+  let candidate = reportForCloudSave(operation.report);
+  let baseline = operation.baseReport;
+
+  if (!expected) {
+    const cloud = await client.getReport(operation.reportId);
+    return {
+      conflict: {
+        reportId: operation.reportId,
+        fields: ['Offline draft with no confirmed cloud revision'],
+        local: operation.report,
+        cloud,
+        queuedReport: operation.report,
+      },
+    };
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (!expected) throw new Error('Cannot replay without a cloud revision.');
+    try {
+      return { saved: await client.saveReport(candidate, expected) };
+    } catch (error) {
+      if (!isRevisionConflict(error)) throw error;
+      const cloud = await client.getReport(operation.reportId);
+      if (!baseline) {
+        return {
+          conflict: {
+            reportId: operation.reportId,
+            fields: ['Legacy offline draft without a cloud baseline'],
+            local: operation.report,
+            cloud,
+            queuedReport: operation.report,
+          },
+        };
+      }
+      const merged = reconcileReport(baseline, candidate, cloud);
+      if (merged.conflicts.length) {
+        return {
+          conflict: {
+            reportId: operation.reportId,
+            fields: merged.conflicts,
+            local: merged.report,
+            cloud,
+            queuedReport: operation.report,
+          },
+        };
+      }
+      candidate = reportForCloudSave(merged.report);
+      baseline = cloud;
+      expected = cloud.updatedAt;
+    }
+  }
+  throw new Error('Offline draft could not be synchronised after repeated cloud revisions.');
+}
+
 export async function syncOfflineOperations(
   onProgress?: (remaining: number) => void,
-): Promise<{ reports: ReportData[]; remaining: number }> {
+): Promise<OfflineReplayResult> {
   const operations = await listOfflineOperations();
   const reports = new Map<string, ReportData>();
+  const sourceReports: Record<string, ReportData> = {};
   let remaining = operations.length;
 
   for (const operation of operations) {
     try {
       let updated: ReportData;
       if (operation.kind === 'save-report') {
-        // Offline photo blobs are replayed as separate upload operations. Do not persist
-        // placeholder photo metadata to D1 before the R2 upload succeeds.
-        const reportForCloud: ReportData = {
-          ...operation.report,
-          photos: operation.report.photos.filter((photo) => !photo.offlinePending),
-        };
-        updated = await api.saveReport(reportForCloud, operation.expectedUpdatedAt);
+        const outcome = await replayOfflineSave(operation);
+        if (outcome.conflict) {
+          return {
+            reports: Array.from(reports.values()), remaining,
+            sourceReports, conflict: outcome.conflict,
+          };
+        }
+        if (!outcome.saved) throw new Error('Offline save did not return a report.');
+        updated = outcome.saved;
+        sourceReports[operation.reportId] = operation.report;
+      } else if (operation.kind === 'upload-cover') {
+        let completed: ReportData | undefined;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            completed = await api.uploadCoverPhoto(operation.reportId, operation.blob);
+            break;
+          } catch (error) {
+            if (!isRevisionConflict(error) || attempt === 2) throw error;
+          }
+        }
+        if (!completed) throw new Error('Offline cover photo upload did not finish.');
+        updated = completed;
       } else {
-        updated = await api.uploadPhoto(operation.reportId, operation.blob, operation.metadata);
+        // A previous upload may have committed but its response was lost.
+        // The server treats an existing photo ID as a successful replay.
+        let completed: ReportData | undefined;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            completed = await api.uploadPhoto(operation.reportId, operation.blob, operation.metadata);
+            break;
+          } catch (error) {
+            if (!isRevisionConflict(error) || attempt === 2) throw error;
+          }
+        }
+        if (!completed) throw new Error('Offline photo upload did not finish.');
+        updated = completed;
       }
       reports.set(operation.reportId, updated);
       await removeOfflineOperation(operation.id);
       remaining -= 1;
       onProgress?.(remaining);
-    } catch {
-      // Preserve this and all later operations so the user can retry without losing work.
-      break;
+    } catch (error) {
+      // Keep failed and later operations in IndexedDB; show a reason and allow retry.
+      return {
+        reports: Array.from(reports.values()), remaining, sourceReports,
+        failure: error instanceof Error ? error.message : 'Offline replay failed.',
+      };
     }
   }
+  return { reports: Array.from(reports.values()), remaining, sourceReports };
+}
 
-  return { reports: Array.from(reports.values()), remaining };
+export async function removeOfflineSaveForReport(reportId: string): Promise<void> {
+  const operations = await listOfflineOperations();
+  for (const operation of operations) {
+    if (operation.kind === 'save-report' && operation.reportId === reportId) {
+      await removeOfflineOperation(operation.id);
+    }
+  }
 }
 
 export function optimisticOfflinePhoto(

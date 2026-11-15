@@ -26,14 +26,19 @@ import { createReportFromTemplate, createTemplateSnapshot } from './lib/template
 import { api } from './lib/api';
 import { cacheReport, getCachedReport, removeCachedReport } from './lib/cache';
 import { downloadStarterCsv, parseCsvFile } from './lib/csvParser';
+import { mergeCsvCommentary } from './lib/csvCommentaryMerge';
 import { processInspectionImage } from './lib/imageProcessor';
 import { normalizeAreaName } from './lib/reportFormatting';
 import {
   countOfflineOperations,
   hydrateOfflinePhotoPreviews,
+  listOfflineOperations,
   optimisticOfflinePhoto,
   queueOfflinePhoto,
+  queueOfflineCover,
   queueOfflineSave,
+  removeOfflineOperation,
+  removeOfflineSaveForReport,
   syncOfflineOperations,
 } from './lib/offlineQueue';
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
@@ -76,6 +81,8 @@ export default function App() {
   const [exportProgressText, setExportProgressText] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [pendingOfflineOperations, setPendingOfflineOperations] = useState(0);
+  const [isSyncingOffline, setIsSyncingOffline] = useState(false);
+  const [photoFailures, setPhotoFailures] = useState<Array<{ name: string; message: string; queued: boolean }>>([]);
   const [unresolvedConflict, setUnresolvedConflict] = useState<{ reportId: string; fields: string[] } | null>(null);
 
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -88,6 +95,8 @@ export default function App() {
   const photoUploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const queuedPhotoCountRef = useRef(0);
   const lastPhotoUploadFailureRef = useRef<string | null>(null);
+  const isOfflineSyncingRef = useRef(false);
+  const retryOfflineSyncRef = useRef<() => Promise<void>>(async () => undefined);
   const reportRef = useRef<ReportData | null>(null);
 
   useEffect(() => {
@@ -102,52 +111,95 @@ export default function App() {
   useEffect(() => {
     const refreshCount = () => countOfflineOperations().then(setPendingOfflineOperations).catch(() => undefined);
     const sync = async () => {
+      if (isOfflineSyncingRef.current || !navigator.onLine) return;
+      isOfflineSyncingRef.current = true;
+      setIsSyncingOffline(true);
       setIsOffline(false);
       try {
+        const initiallyPending = await countOfflineOperations();
+        if (initiallyPending === 0) {
+          setPendingOfflineOperations(0);
+          return;
+        }
         const result = await queueReportWrite(() =>
           syncOfflineOperations((remaining) => setPendingOfflineOperations(remaining))
         );
+        let combinedNeedsReview = false;
         const currentId = reportRef.current?.id;
-        const updated = currentId ? result.reports.filter((candidate) => candidate.id === currentId).at(-1) : undefined;
+        const updated = currentId ? result.reports.find((candidate) => candidate.id === currentId) : undefined;
         if (updated) {
-          const normalized = await hydrateOfflinePhotoPreviews(normalizeReport(updated));
-          acknowledgeReport(normalized);
+          const cloud = normalizeReport(updated);
+          acknowledgeReport(cloud);
+          const hydrated = await hydrateOfflinePhotoPreviews(cloud);
           const current = reportRef.current;
-          if (current && current.id === normalized.id) {
-            const merged = mergeCloudPhotoMutation(current, normalized);
-            reportRef.current = merged;
-            setReport((previous) =>
-              previous && previous.id === normalized.id ? mergeCloudPhotoMutation(previous, normalized) : previous
-            );
-            await cacheReport(merged).catch(() => undefined);
+          if (current && cloud.id && current.id === cloud.id) {
+            const source = result.sourceReports[cloud.id];
+            const merged = source
+              ? reconcileReport(source, current, hydrated)
+              : { report: mergeCloudPhotoMutation(current, hydrated), conflicts: [] };
+            reportRef.current = merged.report;
+            setReport((previous) => previous?.id === cloud.id ? merged.report : previous);
+            await cacheReport(merged.report).catch(() => undefined);
+            if (merged.conflicts.length && !result.conflict) {
+              combinedNeedsReview = true;
+              unresolvedConflictRef.current = cloud.id;
+              setUnresolvedConflict({ reportId: cloud.id, fields: merged.conflicts });
+            }
           } else {
-            await cacheReport(normalized).catch(() => undefined);
+            await cacheReport(hydrated).catch(() => undefined);
           }
         }
-        setPendingOfflineOperations(result.remaining);
-        if (result.remaining === 0) {
-          setStatusMessage({ text: 'Offline changes synced to the cloud.', type: 'success' });
-        } else {
+        if (result.conflict) {
+          const conflict = result.conflict;
+          const current = reportRef.current;
+          const hydrated = await hydrateOfflinePhotoPreviews(normalizeReport(conflict.local));
+          const merged = current?.id === conflict.reportId
+            ? reconcileReport(conflict.queuedReport, current, hydrated)
+            : { report: hydrated, conflicts: [] };
+          acknowledgeReport(normalizeReport(conflict.cloud));
+          if (current?.id === conflict.reportId) {
+            reportRef.current = merged.report;
+            setReport(merged.report);
+            await cacheReport(merged.report).catch(() => undefined);
+            unresolvedConflictRef.current = conflict.reportId;
+            setUnresolvedConflict({
+              reportId: conflict.reportId,
+              fields: [...new Set([...conflict.fields, ...merged.conflicts])],
+            });
+          }
           setStatusMessage({
-            text: `${result.remaining} offline change${result.remaining === 1 ? '' : 's'} still need attention. A cloud conflict or connection error stopped automatic sync.`,
+            text: `Offline edits need review for report ${conflict.reportId}. The queued work remains safely on this device.`,
             type: 'error',
           });
+        } else if (result.failure) {
+          setStatusMessage({ text: `Offline sync stopped: ${result.failure}. Retained ${result.remaining} queued operation(s).`, type: 'error' });
+        } else if (combinedNeedsReview) {
+          setStatusMessage({ text: 'Local edits and cloud changes need review before further saving.', type: 'error' });
+        } else if (result.remaining === 0) {
+          lastPhotoUploadFailureRef.current = null;
+          setPhotoFailures((previous) => previous.filter((item) => !item.queued));
+          setStatusMessage({ text: 'All queued offline edits and photos synced to the cloud.', type: 'success' });
+        } else {
+          setStatusMessage({ text: `${result.remaining} offline operation(s) still need attention.`, type: 'error' });
         }
+        setPendingOfflineOperations(result.remaining);
       } catch (error: any) {
         setStatusMessage({ text: error.message || 'Unable to sync offline changes.', type: 'error' });
+      } finally {
+        isOfflineSyncingRef.current = false;
+        setIsSyncingOffline(false);
       }
     };
+    retryOfflineSyncRef.current = sync;
     const offline = () => {
       setIsOffline(true);
       void refreshCount();
-      setStatusMessage({ text: 'Offline field mode. Changes and photos will be stored on this device until reception returns.', type: 'info' });
+      setStatusMessage({ text: 'Offline field mode. Changes and photos are stored on this device until reception returns.', type: 'info' });
     };
-
     window.addEventListener('online', sync);
     window.addEventListener('offline', offline);
     void refreshCount();
     if (navigator.onLine) void sync();
-
     return () => {
       window.removeEventListener('online', sync);
       window.removeEventListener('offline', offline);
@@ -180,7 +232,7 @@ export default function App() {
         const expectedUpdatedAt = serverVersionsRef.current[reportId] || latest.updatedAt;
         if (!navigator.onLine) {
           await cacheReport(latest).catch(() => undefined);
-          await queueOfflineSave(latest, expectedUpdatedAt);
+          await queueOfflineSave(latest, expectedUpdatedAt, acknowledgedReportsRef.current[reportId]);
           setPendingOfflineOperations(await countOfflineOperations().catch(() => 1));
           setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
           return latest;
@@ -193,6 +245,7 @@ export default function App() {
         for (let attempt = 0; attempt < 3; attempt += 1) {
           const currentDraft = reportRef.current?.id === reportId ? reportRef.current : latest;
           const version = serverVersionsRef.current[reportId] || currentDraft.updatedAt;
+          if (!version) throw new Error('Cannot save a report without an acknowledged cloud revision.');
           try {
             saved = normalizeReport(await api.saveReport(reportForCloudSave(currentDraft), version));
             acknowledgeReport(saved);
@@ -276,7 +329,7 @@ export default function App() {
             },
           };
           const created=normalizeReport(await api.createReport(propertyResult.property.id,context.reportType,linkedDraft));
-          if(created.id)serverVersionsRef.current[created.id]=created.updatedAt;
+          acknowledgeReport(created);
           setSelectedProperty(propertyResult.property);
           localStorage.setItem('proinspect:lastProperty',JSON.stringify(propertyResult.property));
           setReportSummaries(propertyResult.reports);
@@ -414,7 +467,6 @@ export default function App() {
       const created = normalizeReport(await api.createReport(selectedProperty.id, type, blank));
       acknowledgeReport(created);
       reportRef.current = created;
-      reportRef.current = created;
       setReport(created);
       setViewMode('commentary');
       await cacheReport(created);
@@ -431,6 +483,7 @@ export default function App() {
       const prepared = createReportFromTemplate(template.templateData, selectedProperty);
       const created = normalizeReport(await api.createReport(selectedProperty.id, template.reportType, prepared));
       acknowledgeReport(created);
+      reportRef.current = created;
       setReport(created);
       setViewMode('commentary');
       await cacheReport(created);
@@ -468,10 +521,30 @@ export default function App() {
       acknowledgeReport(cloudReport);
       unresolvedConflictRef.current = null;
       setUnresolvedConflict(null);
-      reportRef.current = cloudReport;
-      setReport(cloudReport);
+      const queued = (await listOfflineOperations()).find(
+        (operation) => operation.kind === 'save-report' && operation.reportId === id
+      );
+      const pending = queued?.kind === 'save-report' ? queued : undefined;
+      let active = await hydrateOfflinePhotoPreviews(cloudReport);
+      if (pending) {
+        if (pending.baseReport) {
+          const merged = reconcileReport(pending.baseReport, pending.report, active);
+          active = merged.report;
+          if (merged.conflicts.length || cloudReport.status === 'completed') {
+            unresolvedConflictRef.current = id;
+            setUnresolvedConflict({ reportId: id, fields: merged.conflicts.length ? merged.conflicts : ['Report completed since offline editing'] });
+          }
+        } else {
+          active = await hydrateOfflinePhotoPreviews(pending.report);
+          unresolvedConflictRef.current = id;
+          setUnresolvedConflict({ reportId: id, fields: ['Legacy offline draft requires review'] });
+        }
+        setStatusMessage({ text: 'Locally queued edits were restored for this report. Review or retry synchronisation before finalising.', type: 'info' });
+      }
+      reportRef.current = active;
+      setReport(active);
       localStorage.setItem('proinspect:lastReportId', id);
-      await cacheReport(cloudReport);
+      await cacheReport(active);
       setViewMode('preview');
     } catch (error: any) {
       const cached = await getCachedReport(id).catch(() => null);
@@ -497,6 +570,9 @@ export default function App() {
     if (!conflict || reportRef.current?.id !== conflict.reportId) return;
     try {
       const cloud = normalizeReport(await api.getReport(conflict.reportId));
+      if (keepLocal && cloud.status === 'completed') {
+        throw new Error('This report is already completed and cannot be modified. Preserve the local backup for review.');
+      }
       if (!keepLocal) {
         // A deliberate cloud reload must never irreversibly discard edits.
         // Export the current local draft before the cloud snapshot replaces it.
@@ -509,6 +585,7 @@ export default function App() {
         link.click();
         link.remove();
         window.setTimeout(() => URL.revokeObjectURL(backupUrl), 60_000);
+        await removeOfflineSaveForReport(conflict.reportId);
         acknowledgeReport(cloud);
         reportRef.current = cloud;
         setReport(cloud);
@@ -528,6 +605,8 @@ export default function App() {
       setUnresolvedConflict(null);
       await cacheReport(candidate).catch(() => undefined);
       await persistDraft(candidate);
+      await removeOfflineSaveForReport(conflict.reportId);
+      setPendingOfflineOperations(await countOfflineOperations());
       setStatusMessage({ text: 'Selected local edits saved against the latest cloud version.', type: 'success' });
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to resolve conflict; changes remain cached.', type: 'error' });
@@ -599,12 +678,16 @@ export default function App() {
 
     try {
       const parsed = await parseCsvFile(file);
-      setReport((current) => current ? { ...current, areas: parsed.areas } : current);
+      const current = reportRef.current && reportRef.current.id === report.id ? reportRef.current : report;
+      const merged = mergeCsvCommentary(current.areas, parsed.areas);
+      const summary = `${merged.updatedItems} existing items updated, ${merged.addedItems} items and ${merged.addedAreas} areas added`;
+      if (!window.confirm(`Apply CSV commentary? ${summary}. Existing area/item IDs, photographs and unrelated fields will be preserved. Blank CSV values do not erase existing fields.`)) return;
+      const next = { ...current, areas: merged.areas };
+      reportRef.current = next;
+      setReport(next);
+      await cacheReport(next).catch(() => undefined);
       setViewMode('commentary');
-      setStatusMessage({
-        text: `Imported commentary for ${parsed.areas.length} areas from ${file.name}.`,
-        type: 'success',
-      });
+      setStatusMessage({ text: `CSV applied safely: ${summary}.`, type: 'success' });
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to import CSV.', type: 'error' });
     }
@@ -655,29 +738,33 @@ export default function App() {
   };
 
   const handleUploadCoverPhoto = async (file: File) => {
-    if (!reportRef.current?.id || reportRef.current.status === 'completed') return;
-    lastPhotoUploadFailureRef.current = null;
-
-    setStatusMessage({
-      text: 'Cover photo queued for upload. You can continue working while it uploads.',
-      type: 'info',
-    });
-
+    const activeReport = reportRef.current;
+    if (!activeReport?.id || activeReport.status === 'completed') return;
     return enqueuePhotoWork(1, async () => {
       try {
-        const latest = reportRef.current;
-        if (!latest?.id || latest.status === 'completed') return;
-        await saveDraftImmediately(latest);
+        await saveDraftImmediately(activeReport);
         const processed = await processInspectionImage(file);
+        await queueOfflineCover(activeReport.id!, processed.blob);
+        setPendingOfflineOperations(await countOfflineOperations());
+        if (!navigator.onLine) {
+          setStatusMessage({ text: 'Cover photo safely queued on this device until connectivity returns.', type: 'info' });
+          return;
+        }
         const updated = normalizeReport(await queueReportWrite(() =>
-          api.uploadCoverPhoto(latest.id!, processed.blob)
+          api.uploadCoverPhoto(activeReport.id!, processed.blob)
         ));
         mergePhotoMutationResult(updated);
-        setStatusMessage({ text: 'Cover photo uploaded.', type: 'success' });
+        await removeOfflineOperation(`cover-${activeReport.id}`);
+        setPendingOfflineOperations(await countOfflineOperations());
+        setPhotoFailures((previous) => previous.filter((item) => item.name !== file.name));
+        setStatusMessage({ text: 'Cover photo uploaded and verified.', type: 'success' });
       } catch (error: any) {
         const failure = error.message || 'Unable to upload cover photo.';
         lastPhotoUploadFailureRef.current = failure;
-        setStatusMessage({ text: failure, type: 'error' });
+        setPhotoFailures((previous) => [...previous.filter((item) => item.name !== file.name),
+          { name: file.name, message: failure, queued: true }]);
+        setStatusMessage({ text: `Cover photo: ${failure}. Retry queued uploads when online.`, type: 'error' });
+        setPendingOfflineOperations(await countOfflineOperations().catch(() => 0));
       }
     });
   };
@@ -690,10 +777,8 @@ export default function App() {
   ) => {
     const activeReport = reportRef.current;
     if (!activeReport?.id || activeReport.status === 'completed' || files.length === 0) return;
-    lastPhotoUploadFailureRef.current = null;
-
     setStatusMessage({
-      text: `Queued ${files.length} photo${files.length === 1 ? '' : 's'} for upload. You can continue editing or queue photos to other categories/items.`,
+      text: `Processing ${files.length} photograph(s). Each processed file is queued safely before upload.`,
       type: 'info',
     });
 
@@ -702,93 +787,120 @@ export default function App() {
         const latestBeforeSave = reportRef.current;
         if (!latestBeforeSave?.id || latestBeforeSave.status === 'completed') return;
         const savedDraft = await saveDraftImmediately(latestBeforeSave);
-
         const latestTargetReport = reportRef.current || savedDraft;
         const targetArea = areaId
           ? latestTargetReport.areas.find((area) => area.id === areaId)
           : latestTargetReport.areas.find((area) => normalizeAreaName(area.name) === normalizeAreaName(areaName));
-        if (!targetArea) {
-          throw new Error('The selected photo category no longer exists. Drop the photos onto the category again.');
-        }
+        if (!targetArea) throw new Error('The selected photo category no longer exists. Reassign the files and retry.');
+        const item = itemId ? targetArea.items.find((candidate) => candidate.id === itemId) : undefined;
+        if (itemId && !item) throw new Error('The selected reporting item no longer exists. Reassign the files and retry.');
 
-        const item = itemId
-          ? targetArea.items.find((candidate) => candidate.id === itemId)
-          : undefined;
-        if (itemId && !item) {
-          throw new Error('The selected reporting item no longer exists. Drop the photos onto the item again.');
-        }
+        let nextAreaPhotoIndex = latestTargetReport.photos
+          .filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
+          .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
+        let uploaded = 0;
+        let queued = 0;
+        const failures: Array<{ name: string; message: string; queued: boolean }> = [];
 
-        if (!navigator.onLine) {
-          let nextAreaPhotoIndex = latestTargetReport.photos
-            .filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
-            .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
+        for (const file of files) {
+          let processed: Awaited<ReturnType<typeof processInspectionImage>>;
+          try {
+            processed = await processInspectionImage(file);
+          } catch (error) {
+            failures.push({
+              name: file.name,
+              message: error instanceof Error ? error.message : 'Unable to process image.',
+              queued: false,
+            });
+            continue;
+          }
+          const photoIndex = ++nextAreaPhotoIndex;
+          const photoId = crypto.randomUUID();
+          const metadata = {
+            id: photoId,
+            name: item
+              ? `${targetArea.name}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
+              : `${targetArea.name}: Category photo ${photoIndex}`,
+            areaName: targetArea.name,
+            itemId: item?.id,
+            itemName: item?.name,
+            photoIndex,
+            isCover: false,
+          };
 
-          for (const file of files) {
-            const processed = await processInspectionImage(file);
-            const photoIndex = ++nextAreaPhotoIndex;
-            const photoId = crypto.randomUUID();
-            const metadata = {
-              id: photoId,
-              name: item
-                ? `${targetArea.name}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
-                : `${targetArea.name}: Category photo ${photoIndex}`,
-              areaName: targetArea.name,
-              itemId: item?.id,
-              itemName: item?.name,
-              photoIndex,
-              isCover: false,
-            };
+          try {
+            // Durable write-ahead outbox: if the upload succeeds but the
+            // response is lost, offline replay uses the same idempotent ID.
             await queueOfflinePhoto(latestTargetReport.id!, processed.blob, metadata);
+          } catch (error) {
+            failures.push({
+              name: file.name,
+              message: error instanceof Error ? error.message : 'Unable to store the upload for recovery.',
+              queued: false,
+            });
+            continue;
+          }
+
+          if (!navigator.onLine) {
+            queued += 1;
             const pendingPhoto = optimisticOfflinePhoto(metadata, processed.blob);
             setReport((current) => {
               if (!current || current.id !== latestTargetReport.id) return current;
-              const updated = { ...current, photos: [...current.photos, pendingPhoto] };
-              reportRef.current = updated;
-              return updated;
+              if (current.photos.some((photo) => photo.id === pendingPhoto.id)) return current;
+              const next = { ...current, photos: [...current.photos, pendingPhoto] };
+              reportRef.current = next;
+              return next;
+            });
+            continue;
+          }
+
+          try {
+            const updated = normalizeReport(await queueReportWrite(() =>
+              api.uploadPhoto(latestTargetReport.id!, processed.blob, metadata)
+            ));
+            mergePhotoMutationResult(updated);
+            await removeOfflineOperation(`photo-${photoId}`);
+            uploaded += 1;
+            setPhotoFailures((previous) => previous.filter((failed) => failed.name !== file.name));
+          } catch (error) {
+            queued += 1;
+            failures.push({
+              name: file.name,
+              message: error instanceof Error ? error.message : 'Upload failed.',
+              queued: true,
+            });
+            const pendingPhoto = optimisticOfflinePhoto(metadata, processed.blob);
+            setReport((current) => {
+              if (!current || current.id !== latestTargetReport.id) return current;
+              if (current.photos.some((photo) => photo.id === pendingPhoto.id)) return current;
+              const next = { ...current, photos: [...current.photos, pendingPhoto] };
+              reportRef.current = next;
+              return next;
             });
           }
-          setPendingOfflineOperations(await countOfflineOperations());
-          setStatusMessage({
-            text: `Saved ${files.length} photo${files.length === 1 ? '' : 's'} on this device for upload when reception returns.`,
-            type: 'info',
+        }
+
+        setPendingOfflineOperations(await countOfflineOperations());
+        if (failures.length) {
+          lastPhotoUploadFailureRef.current = failures[0].message;
+          setPhotoFailures((previous) => {
+            const retryNames = new Set(files.map((file) => file.name));
+            return [...previous.filter((item) => !retryNames.has(item.name)), ...failures];
           });
-          return;
+          setStatusMessage({
+            text: `${uploaded} photo(s) uploaded, ${queued} queued for retry, ${failures.length} file(s) need attention. See the failed file list.`,
+            type: 'error',
+          });
+        } else {
+          setStatusMessage({
+            text: navigator.onLine
+              ? `${uploaded} photograph(s) uploaded to ${item?.name || targetArea.name}.`
+              : `${queued} photograph(s) safely queued on this device for upload when online.`,
+            type: navigator.onLine ? 'success' : 'info',
+          });
         }
-
-        let currentServerReport = savedDraft;
-        let nextAreaPhotoIndex = currentServerReport.photos
-          .filter((photo) => normalizeAreaName(photo.areaName) === normalizeAreaName(targetArea.name))
-          .reduce((max, photo) => Math.max(max, photo.photoIndex || 0), 0);
-
-        for (const file of files) {
-          const processed = await processInspectionImage(file);
-          const photoIndex = ++nextAreaPhotoIndex;
-          const photoId = crypto.randomUUID();
-          const name = item
-            ? `${targetArea.name}: ${item.name || 'Reporting item'} (photo ${photoIndex})`
-            : `${targetArea.name}: Category photo ${photoIndex}`;
-
-          currentServerReport = normalizeReport(await queueReportWrite(() =>
-            api.uploadPhoto(currentServerReport.id!, processed.blob, {
-              id: photoId,
-              name,
-              areaName: targetArea.name,
-              itemId: item?.id,
-              itemName: item?.name,
-              photoIndex,
-              isCover: false,
-            })
-          ));
-          mergePhotoMutationResult(currentServerReport);
-
-        }
-
-        setStatusMessage({
-          text: `Uploaded ${files.length} photo${files.length === 1 ? '' : 's'} to ${item?.name || targetArea.name}.`,
-          type: 'success',
-        });
       } catch (error: any) {
-        const failure = error.message || 'Unable to upload photos.';
+        const failure = error.message || 'Unable to process photographs.';
         lastPhotoUploadFailureRef.current = failure;
         setStatusMessage({ text: failure, type: 'error' });
       }
@@ -812,6 +924,9 @@ export default function App() {
   const renderPdf = async (): Promise<Blob> => {
     if (!report) throw new Error('No report is open.');
     await photoUploadQueueRef.current;
+    if (await countOfflineOperations() > 0) {
+      throw new Error('Offline edits or photographs are still queued. Synchronise pending work before exporting the report.');
+    }
     if (lastPhotoUploadFailureRef.current) {
       throw new Error('Some photos have not uploaded. Retry the failed photos before exporting the report.');
     }
@@ -846,6 +961,9 @@ export default function App() {
     setExportProgressText('Finishing photo uploads...');
     try {
       await photoUploadQueueRef.current;
+      if (await countOfflineOperations() > 0) {
+        throw new Error('Offline edits or photographs remain queued. Synchronise them before finalising the report.');
+      }
       if (lastPhotoUploadFailureRef.current) {
         throw new Error('Some photos have not uploaded. Retry failed photos before finalising the report.');
       }
@@ -940,6 +1058,16 @@ export default function App() {
             {statusMessage.text}
           </div>
         )}
+        {pendingOfflineOperations > 0 && (
+          <div className="px-4 py-3 bg-blue-50 text-blue-950 border-b border-blue-200 text-xs flex items-center gap-3 flex-wrap">
+            <span>{pendingOfflineOperations} unsynchronised report/photo operation(s) safely queued on this device.</span>
+            <button type="button" disabled={isSyncingOffline || isOffline}
+              onClick={() => void retryOfflineSyncRef.current()}
+              className="rounded bg-blue-800 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
+              {isSyncingOffline ? 'Synchronising…' : 'Retry cloud synchronisation'}
+            </button>
+          </div>
+        )}
         <PropertiesDashboard
           properties={properties}
           userEmail={userEmail}
@@ -967,6 +1095,16 @@ export default function App() {
               : 'bg-blue-50 text-blue-800 border-blue-200'
           }`}>
             {statusMessage.text}
+          </div>
+        )}
+        {pendingOfflineOperations > 0 && (
+          <div className="px-4 py-3 bg-blue-50 text-blue-950 border-b border-blue-200 text-xs flex items-center gap-3 flex-wrap">
+            <span>{pendingOfflineOperations} unsynchronised report/photo operation(s) safely queued on this device.</span>
+            <button type="button" disabled={isSyncingOffline || isOffline}
+              onClick={() => void retryOfflineSyncRef.current()}
+              className="rounded bg-blue-800 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
+              {isSyncingOffline ? 'Synchronising…' : 'Retry cloud synchronisation'}
+            </button>
           </div>
         )}
         <ReportDashboard
@@ -1104,6 +1242,30 @@ export default function App() {
             <button type="button" onClick={() => void resolveConflict(true)} className="rounded bg-amber-900 text-white px-3 py-1.5 font-semibold">Keep my edits</button>
             <button type="button" onClick={() => void resolveConflict(false)} className="rounded border border-amber-800 px-3 py-1.5 font-semibold">Load cloud version</button>
           </div>
+        </div>
+      )}
+
+      {pendingOfflineOperations > 0 && (
+        <div className="px-4 lg:px-8 py-3 border-b border-blue-200 bg-blue-50 text-blue-950 text-sm flex flex-wrap items-center gap-3">
+          <span className="font-semibold">{pendingOfflineOperations} unsynchronised edit/photo operation(s) saved on this device.</span>
+          <button type="button"
+            disabled={isSyncingOffline || isUploadingPhotos || isOffline || Boolean(unresolvedConflict)}
+            onClick={() => void retryOfflineSyncRef.current()}
+            className="rounded bg-blue-800 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
+            {isSyncingOffline ? 'Synchronising…' : 'Retry cloud synchronisation'}
+          </button>
+        </div>
+      )}
+      {photoFailures.length > 0 && (
+        <div role="alert" className="px-4 lg:px-8 py-3 border-b border-red-200 bg-red-50 text-red-900 text-xs">
+          <p className="font-bold">Photographs needing attention ({photoFailures.length})</p>
+          <ul className="mt-1 list-disc pl-5">
+            {photoFailures.slice(0, 12).map((item, index) => (
+              <li key={item.name + index}>
+                {item.name}: {item.message}. {item.queued ? 'Stored for retry using the button above.' : 'Re-select this source image after correcting the issue.'}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

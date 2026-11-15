@@ -87,7 +87,7 @@ export const api = {
   getReport: (id: string) =>
     apiRequest<ReportData>(`/api/reports/${encodeURIComponent(id)}`),
 
-  saveReport: (report: ReportData, expectedUpdatedAt?: string) =>
+  saveReport: (report: ReportData, expectedUpdatedAt: string) =>
     apiRequest<ReportData>(`/api/reports/${encodeURIComponent(report.id || '')}`, {
       method: 'PUT',
       body: JSON.stringify({ report, expectedUpdatedAt }),
