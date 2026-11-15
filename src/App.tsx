@@ -39,6 +39,7 @@ import {
 import { downloadPdfBlob, generateReportPdf } from './lib/reportPdf';
 import { reportValidationMessage, validateReportForFinalization } from './lib/reportValidation';
 import { ReportWriteCoordinator, mergeCloudPhotoMutation, reportForCloudSave } from './lib/reportWriteCoordinator';
+import { isRevisionConflict, reconcileReport } from './lib/reportConflictResolution';
 import { PropertyRecord, ReportData, ReportSummary, ReportType } from './types/report';
 import type { ReportTemplateRecord } from './types/workflow';
 
@@ -75,10 +76,13 @@ export default function App() {
   const [exportProgressText, setExportProgressText] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [pendingOfflineOperations, setPendingOfflineOperations] = useState(0);
+  const [unresolvedConflict, setUnresolvedConflict] = useState<{ reportId: string; fields: string[] } | null>(null);
 
   const csvInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<number | null>(null);
   const serverVersionsRef = useRef<Record<string, string | undefined>>({});
+  const acknowledgedReportsRef = useRef<Record<string, ReportData>>({});
+  const unresolvedConflictRef = useRef<string | null>(null);
   const reportWriteQueueRef = useRef(new ReportWriteCoordinator());
   const queuedSaveCountRef = useRef(0);
   const photoUploadQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -107,7 +111,7 @@ export default function App() {
         const updated = currentId ? result.reports.filter((candidate) => candidate.id === currentId).at(-1) : undefined;
         if (updated) {
           const normalized = await hydrateOfflinePhotoPreviews(normalizeReport(updated));
-          if (normalized.id) serverVersionsRef.current[normalized.id] = normalized.updatedAt;
+          acknowledgeReport(normalized);
           const current = reportRef.current;
           if (current && current.id === normalized.id) {
             const merged = mergeCloudPhotoMutation(current, normalized);
@@ -156,6 +160,12 @@ export default function App() {
     return list;
   };
 
+  const acknowledgeReport = (confirmed: ReportData) => {
+    if (!confirmed.id) return;
+    serverVersionsRef.current[confirmed.id] = confirmed.updatedAt;
+    acknowledgedReportsRef.current[confirmed.id] = confirmed;
+  };
+
   const persistDraft = (draft: ReportData): Promise<ReportData> => {
     if (!draft.id || draft.status === 'completed') return Promise.resolve(draft);
     const reportId = draft.id;
@@ -176,8 +186,42 @@ export default function App() {
           return latest;
         }
 
-        const saved = normalizeReport(await api.saveReport(reportForCloudSave(latest), expectedUpdatedAt));
-        serverVersionsRef.current[reportId] = saved.updatedAt;
+        if (unresolvedConflictRef.current === reportId) {
+          throw new Error('Overlapping cloud edits require resolution before saving.');
+        }
+        let saved: ReportData | undefined;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const currentDraft = reportRef.current?.id === reportId ? reportRef.current : latest;
+          const version = serverVersionsRef.current[reportId] || currentDraft.updatedAt;
+          try {
+            saved = normalizeReport(await api.saveReport(reportForCloudSave(currentDraft), version));
+            acknowledgeReport(saved);
+            break;
+          } catch (error) {
+            if (!isRevisionConflict(error) || attempt === 2) throw error;
+            const cloud = normalizeReport(await api.getReport(reportId));
+            const baseline = acknowledgedReportsRef.current[reportId];
+            if (!baseline) {
+              unresolvedConflictRef.current = reportId;
+              setUnresolvedConflict({ reportId, fields: ['Cached report without confirmed baseline'] });
+              throw new Error('The cloud version has changed. Local edits are cached but need manual review.');
+            }
+            const localNow = reportRef.current?.id === reportId ? reportRef.current : currentDraft;
+            const merged = reconcileReport(baseline, localNow, cloud);
+            acknowledgeReport(cloud);
+            reportRef.current = merged.report;
+            setReport((previous) => previous?.id === reportId ? merged.report : previous);
+            await cacheReport(merged.report).catch(() => undefined);
+            if (merged.conflicts.length) {
+              unresolvedConflictRef.current = reportId;
+              setUnresolvedConflict({ reportId, fields: merged.conflicts });
+              throw new Error('Another session edited the same fields. Your changes remain cached for review.');
+            }
+            setStatusMessage({ text: 'Independent cloud updates merged with this draft; saving again.', type: 'info' });
+          }
+        }
+        if (!saved) throw new Error('Unable to save report.');
+
 
         // Do not replace the active form with the server response: the user may
         // have continued typing while this save was in flight. Only advance its
@@ -285,6 +329,7 @@ export default function App() {
 
   useEffect(() => {
     if (!report?.id || report.status === 'completed') return;
+    if (unresolvedConflictRef.current === report.id) return;
 
     if (isUploadingPhotos || isCompleting) {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
@@ -335,6 +380,7 @@ export default function App() {
       localStorage.setItem('proinspect:lastProperty', JSON.stringify(result.property));
       setReportSummaries(result.reports);
       setReport(null);
+      reportRef.current = null;
     } catch (error: any) {
       setStatusMessage({ text: error.message || 'Unable to open property.', type: 'error' });
     } finally {
@@ -366,7 +412,9 @@ export default function App() {
     try {
       const blank = createBlankReport(type, selectedProperty);
       const created = normalizeReport(await api.createReport(selectedProperty.id, type, blank));
-      if (created.id) serverVersionsRef.current[created.id] = created.updatedAt;
+      acknowledgeReport(created);
+      reportRef.current = created;
+      reportRef.current = created;
       setReport(created);
       setViewMode('commentary');
       await cacheReport(created);
@@ -382,7 +430,7 @@ export default function App() {
     try {
       const prepared = createReportFromTemplate(template.templateData, selectedProperty);
       const created = normalizeReport(await api.createReport(selectedProperty.id, template.reportType, prepared));
-      if (created.id) serverVersionsRef.current[created.id] = created.updatedAt;
+      acknowledgeReport(created);
       setReport(created);
       setViewMode('commentary');
       await cacheReport(created);
@@ -417,7 +465,10 @@ export default function App() {
     try {
       setIsLoading(true);
       const cloudReport = normalizeReport(await api.getReport(id));
-      if (cloudReport.id) serverVersionsRef.current[cloudReport.id] = cloudReport.updatedAt;
+      acknowledgeReport(cloudReport);
+      unresolvedConflictRef.current = null;
+      setUnresolvedConflict(null);
+      reportRef.current = cloudReport;
       setReport(cloudReport);
       localStorage.setItem('proinspect:lastReportId', id);
       await cacheReport(cloudReport);
@@ -438,6 +489,48 @@ export default function App() {
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const resolveConflict = async (keepLocal: boolean) => {
+    const conflict = unresolvedConflict;
+    if (!conflict || reportRef.current?.id !== conflict.reportId) return;
+    try {
+      const cloud = normalizeReport(await api.getReport(conflict.reportId));
+      if (!keepLocal) {
+        // A deliberate cloud reload must never irreversibly discard edits.
+        // Export the current local draft before the cloud snapshot replaces it.
+        const backup = new Blob([JSON.stringify(reportRef.current, null, 2)], { type: 'application/json' });
+        const backupUrl = URL.createObjectURL(backup);
+        const link = document.createElement('a');
+        link.href = backupUrl;
+        link.download = `ProInspect_unsaved_${conflict.reportId}_${Date.now()}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(backupUrl), 60_000);
+        acknowledgeReport(cloud);
+        reportRef.current = cloud;
+        setReport(cloud);
+        unresolvedConflictRef.current = null;
+        setUnresolvedConflict(null);
+        setStatusMessage({ text: 'Latest cloud report loaded. The unsaved local draft was exported as a JSON backup before reloading.', type: 'info' });
+        return;
+      }
+      const baseline = acknowledgedReportsRef.current[conflict.reportId];
+      const candidate = baseline
+        ? reconcileReport(baseline, reportRef.current, cloud).report
+        : { ...reportRef.current, updatedAt: cloud.updatedAt };
+      acknowledgeReport(cloud);
+      reportRef.current = candidate;
+      setReport(candidate);
+      unresolvedConflictRef.current = null;
+      setUnresolvedConflict(null);
+      await cacheReport(candidate).catch(() => undefined);
+      await persistDraft(candidate);
+      setStatusMessage({ text: 'Selected local edits saved against the latest cloud version.', type: 'success' });
+    } catch (error: any) {
+      setStatusMessage({ text: error.message || 'Unable to resolve conflict; changes remain cached.', type: 'error' });
     }
   };
 
@@ -486,6 +579,7 @@ export default function App() {
       }
     }
     setReport(null);
+    reportRef.current = null;
     setViewMode('preview');
     await refreshSelectedProperty().catch(() => undefined);
   };
@@ -545,7 +639,7 @@ export default function App() {
   };
 
   const mergePhotoMutationResult = (updated: ReportData) => {
-    if (updated.id) serverVersionsRef.current[updated.id] = updated.updatedAt;
+    acknowledgeReport(updated);
     // Update the imperative snapshot immediately; React may batch the state
     // update until after the next queued write begins.
     const active = reportRef.current;
@@ -777,7 +871,7 @@ export default function App() {
       }
       setExportProgressText('Storing completed PDF...');
       const completed = normalizeReport(await queueReportWrite(() => api.completeReport(savedDraft.id!, blob)));
-      if (completed.id) serverVersionsRef.current[completed.id] = completed.updatedAt;
+      acknowledgeReport(completed);
       setReport(completed);
       await cacheReport(completed);
       downloadPdfBlob(blob, pdfFilename(completed));
@@ -1001,6 +1095,17 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {unresolvedConflict && unresolvedConflict.reportId === report.id && (
+        <div role="alert" className="px-4 lg:px-8 py-3 border-b border-amber-300 bg-amber-50 text-amber-950 text-sm">
+          <p className="font-bold">Cloud save paused: overlapping edits detected</p>
+          <p className="mt-1">Both copies changed: {unresolvedConflict.fields.slice(0, 6).join(', ')}. Your local edits remain cached. Choose the version to retain.</p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            <button type="button" onClick={() => void resolveConflict(true)} className="rounded bg-amber-900 text-white px-3 py-1.5 font-semibold">Keep my edits</button>
+            <button type="button" onClick={() => void resolveConflict(false)} className="rounded border border-amber-800 px-3 py-1.5 font-semibold">Load cloud version</button>
+          </div>
+        </div>
+      )}
 
       {statusMessage && (
         <div className={`px-4 py-2.5 text-xs flex items-center justify-between border-b ${
