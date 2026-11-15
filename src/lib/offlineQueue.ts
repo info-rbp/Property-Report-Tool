@@ -190,6 +190,7 @@ export async function replayOfflineSave(
     };
   }
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (!expected) throw new Error('Cannot replay without a cloud revision.');
     try {
       return { saved: await client.saveReport(candidate, expected) };
     } catch (error) {
